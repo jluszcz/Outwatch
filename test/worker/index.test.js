@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { env } from 'cloudflare:test';
 import worker from '../../src/index.js';
 
@@ -25,37 +25,7 @@ async function req(method, path, { body, email, envOverrides } = {}) {
     return worker.fetch(new Request(`https://example.com${path}`, init), makeEnv(envOverrides));
 }
 
-beforeAll(async () => {
-    await env.DB.prepare(`
-        CREATE TABLE IF NOT EXISTS users (
-            id         TEXT PRIMARY KEY,
-            name       TEXT NOT NULL,
-            sort_order INTEGER NOT NULL DEFAULT 0
-        )
-    `).run();
-    await env.DB.prepare(`
-        CREATE TABLE IF NOT EXISTS user_emails (
-            email   TEXT PRIMARY KEY,
-            user_id TEXT NOT NULL
-        )
-    `).run();
-    await env.DB.prepare(`
-        CREATE TABLE IF NOT EXISTS seasons (
-            id            INTEGER PRIMARY KEY,
-            subtitle      TEXT NOT NULL DEFAULT '',
-            wikipedia_url TEXT NOT NULL
-        )
-    `).run();
-    await env.DB.prepare(`
-        CREATE TABLE IF NOT EXISTS watched (
-            user_id    TEXT NOT NULL,
-            season_id  INTEGER NOT NULL,
-            created_at TEXT NOT NULL,
-            PRIMARY KEY (user_id, season_id)
-        )
-    `).run();
-});
-
+// Schema comes from the real migrations/*.sql, applied in test/apply-migrations.js.
 beforeEach(async () => {
     await env.DB.exec('DELETE FROM watched');
     await env.DB.exec('DELETE FROM user_emails');
