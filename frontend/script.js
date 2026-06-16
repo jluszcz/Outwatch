@@ -69,7 +69,7 @@ function Header({ theme, onToggleTheme }) {
     const title = theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
     return html`
         <header class="header">
-            <h1 class="title">Outwatch</h1>
+            <h1 class="title">Outwit, Outplay, Outlast, Outwatch</h1>
             <button class="theme-btn" title=${title} onClick=${onToggleTheme}>
                 ${theme === 'dark' ? html`<${SunIcon}/>` : html`<${MoonIcon}/>`}
             </button>
@@ -107,6 +107,11 @@ function SeasonRow({ season, users, meId, fullyWatched, onToggle }) {
 function Board({ users, seasons, meId, onToggle }) {
     const userCount = users.length;
     const sorted = useMemo(() => sortSeasons(seasons, userCount), [seasons, userCount]);
+    // Show the current user's column left-most.
+    const orderedUsers = useMemo(
+        () => [...users].sort((a, b) => (b.id === meId) - (a.id === meId)),
+        [users, meId],
+    );
 
     return html`
         <div class="table-wrapper">
@@ -114,7 +119,7 @@ function Board({ users, seasons, meId, onToggle }) {
                 <thead>
                     <tr>
                         <th class="season-head">Season</th>
-                        ${users.map(u => html`
+                        ${orderedUsers.map(u => html`
                             <th key=${u.id} class=${'check-head' + (u.id === meId ? ' mine' : '')}>
                                 ${u.name}${u.id === meId ? html`<span class="you"> (you)</span>` : null}
                             </th>
@@ -125,7 +130,7 @@ function Board({ users, seasons, meId, onToggle }) {
                     ${sorted.map(s => html`<${SeasonRow}
                         key=${s.id}
                         season=${s}
-                        users=${users}
+                        users=${orderedUsers}
                         meId=${meId}
                         fullyWatched=${isFullyWatched(s, userCount)}
                         onToggle=${onToggle}
