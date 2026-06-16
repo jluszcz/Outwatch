@@ -1,0 +1,39 @@
+{
+  "name": "outwatch",
+  "version": "1.0.0",
+  "description": "Track which seasons of Survivor a small group has watched",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "node build.js",
+    "dev": "concurrently -k -n bundle,worker -c cyan,magenta \"node build.js --watch\" \"wrangler dev\"",
+    "deploy": "npm run build && wrangler deploy",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "author": "Jacob Luszcz",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "overrides": {
+    "undici": "^7.24.6",
+    "picomatch": "^4.0.4"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.16.10",
+    "@cloudflare/workers-types": "^4.20260317.1",
+    "concurrently": "^10.0.3",
+    "csso-cli": "^4.0.2",
+    "esbuild": "^0.28.1",
+    "vitest": "^4.1.5",
+    "wrangler": "^4.75.0"
+  },
+  "dependencies": {
+    "@hono/zod-validator": "^0.8.0",
+    "hono": "^4.12.23",
+    "htm": "^3.1.1",
+    "preact": "^10.29.2",
+    "zod": "^4.4.3"
+  }
+}

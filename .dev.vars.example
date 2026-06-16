@@ -1,0 +1,5 @@
+# Local dev only. Copy to .dev.vars (gitignored) and set to one of the login
+# emails from your roster.sql to simulate being signed in — Cloudflare Access is
+# bypassed in `wrangler dev`, so without this every request is treated as "not
+# signed in".
+DEV_USER_EMAIL=alice@example.com
