@@ -7,7 +7,7 @@ const app = new Hono();
 
 const onInvalid = (result, c) => {
     if (!result.success) {
-        const message = result.error.issues.map(i => i.message).join('; ') || 'Invalid input';
+        const message = result.error.issues.map((i) => i.message).join('; ') || 'Invalid input';
         return c.json({ error: message }, 400);
     }
 };
@@ -17,7 +17,11 @@ const watchedCreate = z.object({
 });
 
 app.onError((err, c) => {
-    if (err instanceof HTTPException && err.status === 400 && err.message === 'Malformed JSON in request body') {
+    if (
+        err instanceof HTTPException &&
+        err.status === 400 &&
+        err.message === 'Malformed JSON in request body'
+    ) {
         return c.json({ error: 'Invalid JSON body' }, 400);
     }
     throw err;
@@ -39,8 +43,10 @@ async function callerUser(c) {
     return c.env.DB.prepare(
         `SELECT users.id, users.name
          FROM user_emails JOIN users ON users.id = user_emails.user_id
-         WHERE user_emails.email = ?`
-    ).bind(email).first();
+         WHERE user_emails.email = ?`,
+    )
+        .bind(email)
+        .first();
 }
 
 app.get('/api/board', async (c) => {
@@ -52,12 +58,12 @@ app.get('/api/board', async (c) => {
         c.env.DB.prepare('SELECT season_id, user_id FROM watched').all(),
     ]);
 
-    const watchedBySeason = new Map(seasons.map(s => [s.id, []]));
+    const watchedBySeason = new Map(seasons.map((s) => [s.id, []]));
     for (const row of watched) {
         watchedBySeason.get(row.season_id)?.push(row.user_id);
     }
 
-    const board = seasons.map(s => ({
+    const board = seasons.map((s) => ({
         id: s.id,
         subtitle: s.subtitle,
         wikipedia_url: s.wikipedia_url,
@@ -76,13 +82,17 @@ app.post('/api/watched', zValidator('json', watchedCreate, onInvalid), async (c)
     if (!me) return c.json({ error: 'Your account is not on the watch list' }, 403);
 
     const { season_id } = c.req.valid('json');
-    const season = await c.env.DB.prepare('SELECT id FROM seasons WHERE id = ?').bind(season_id).first();
+    const season = await c.env.DB.prepare('SELECT id FROM seasons WHERE id = ?')
+        .bind(season_id)
+        .first();
     if (!season) return c.json({ error: `Unknown season: ${season_id}` }, 404);
 
     const now = new Date().toISOString();
     await c.env.DB.prepare(
-        'INSERT OR IGNORE INTO watched (user_id, season_id, created_at) VALUES (?, ?, ?)'
-    ).bind(me.id, season_id, now).run();
+        'INSERT OR IGNORE INTO watched (user_id, season_id, created_at) VALUES (?, ?, ?)',
+    )
+        .bind(me.id, season_id, now)
+        .run();
 
     return c.json({ success: true, user_id: me.id, season_id }, 201);
 });
@@ -96,9 +106,9 @@ app.delete('/api/watched/:season_id', async (c) => {
         return c.json({ error: 'season_id must be a positive integer' }, 400);
     }
 
-    await c.env.DB.prepare(
-        'DELETE FROM watched WHERE user_id = ? AND season_id = ?'
-    ).bind(me.id, seasonId).run();
+    await c.env.DB.prepare('DELETE FROM watched WHERE user_id = ? AND season_id = ?')
+        .bind(me.id, seasonId)
+        .run();
 
     return c.json({ success: true, user_id: me.id, season_id: seasonId });
 });

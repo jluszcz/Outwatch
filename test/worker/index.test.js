@@ -10,7 +10,13 @@ function makeEnv(overrides = {}) {
     // .dev.vars value, which would otherwise leak in and make those tests pass
     // (or fail) incidentally depending on local config. Tests that need the
     // dev-fallback behavior re-add it via envOverrides.
-    return { ...env, DEV_USER_EMAIL: undefined, ASSETS: { fetch: mockAssetsFetch }, DB: env.DB, ...overrides };
+    return {
+        ...env,
+        DEV_USER_EMAIL: undefined,
+        ASSETS: { fetch: mockAssetsFetch },
+        DB: env.DB,
+        ...overrides,
+    };
 }
 
 // `email` simulates the Cloudflare Access identity header. Omit it to act as an
@@ -33,22 +39,22 @@ beforeEach(async () => {
     await env.DB.exec('DELETE FROM seasons');
     // 'Alice' is one person; 'Bob & Carol' is a couple sharing a column with two emails.
     await env.DB.prepare(
-        "INSERT INTO users (id, name, sort_order) VALUES ('user-alice', 'Alice', 1)"
+        "INSERT INTO users (id, name, sort_order) VALUES ('user-alice', 'Alice', 1)",
     ).run();
     await env.DB.prepare(
-        "INSERT INTO users (id, name, sort_order) VALUES ('user-bob', 'Bob & Carol', 2)"
+        "INSERT INTO users (id, name, sort_order) VALUES ('user-bob', 'Bob & Carol', 2)",
     ).run();
     await env.DB.exec(
-        "INSERT INTO user_emails (email, user_id) VALUES " +
-        "('alice@example.com', 'user-alice'), " +
-        "('bob@example.com', 'user-bob'), " +
-        "('carol@example.com', 'user-bob')"
+        'INSERT INTO user_emails (email, user_id) VALUES ' +
+            "('alice@example.com', 'user-alice'), " +
+            "('bob@example.com', 'user-bob'), " +
+            "('carol@example.com', 'user-bob')",
     );
     await env.DB.prepare(
-        "INSERT INTO seasons (id, subtitle, wikipedia_url) VALUES (1, 'Borneo', 'https://en.wikipedia.org/wiki/Survivor:_Borneo')"
+        "INSERT INTO seasons (id, subtitle, wikipedia_url) VALUES (1, 'Borneo', 'https://en.wikipedia.org/wiki/Survivor:_Borneo')",
     ).run();
     await env.DB.prepare(
-        "INSERT INTO seasons (id, subtitle, wikipedia_url) VALUES (41, '', 'https://en.wikipedia.org/wiki/Survivor_41')"
+        "INSERT INTO seasons (id, subtitle, wikipedia_url) VALUES (41, '', 'https://en.wikipedia.org/wiki/Survivor_41')",
     ).run();
 });
 
@@ -79,8 +85,8 @@ describe('GET /api/board', () => {
         const r = await req('GET', '/api/board');
         expect(r.status).toBe(200);
         const { users, seasons } = await r.json();
-        expect(users.map(u => u.name)).toEqual(['Alice', 'Bob & Carol']);
-        expect(seasons.map(s => s.id)).toEqual([1, 41]);
+        expect(users.map((u) => u.name)).toEqual(['Alice', 'Bob & Carol']);
+        expect(seasons.map((s) => s.id)).toEqual([1, 41]);
     });
 
     it('does not leak user emails to the client', async () => {
@@ -111,14 +117,18 @@ describe('GET /api/board', () => {
     });
 
     it('returns me: null when the email is not a known user', async () => {
-        const { me } = await (await req('GET', '/api/board', { email: 'stranger@example.com' })).json();
+        const { me } = await (
+            await req('GET', '/api/board', { email: 'stranger@example.com' })
+        ).json();
         expect(me).toBeNull();
     });
 
     it('falls back to DEV_USER_EMAIL when no Access header is present', async () => {
-        const { me } = await (await req('GET', '/api/board', {
-            envOverrides: { DEV_USER_EMAIL: 'alice@example.com' },
-        })).json();
+        const { me } = await (
+            await req('GET', '/api/board', {
+                envOverrides: { DEV_USER_EMAIL: 'alice@example.com' },
+            })
+        ).json();
         expect(me.id).toBe('user-alice');
     });
 
@@ -126,9 +136,9 @@ describe('GET /api/board', () => {
         await req('POST', '/api/watched', { body: { season_id: 1 }, email: 'alice@example.com' });
         await req('POST', '/api/watched', { body: { season_id: 1 }, email: 'bob@example.com' });
         const { seasons } = await (await req('GET', '/api/board')).json();
-        const s1 = seasons.find(s => s.id === 1);
+        const s1 = seasons.find((s) => s.id === 1);
         expect(s1.watched_by.sort()).toEqual(['user-alice', 'user-bob']);
-        const s41 = seasons.find(s => s.id === 41);
+        const s41 = seasons.find((s) => s.id === 41);
         expect(s41.watched_by).toEqual([]);
     });
 });
@@ -139,7 +149,10 @@ describe('GET /api/board', () => {
 
 describe('POST /api/watched', () => {
     it('marks the calling user as having watched a season', async () => {
-        const r = await req('POST', '/api/watched', { body: { season_id: 1 }, email: 'alice@example.com' });
+        const r = await req('POST', '/api/watched', {
+            body: { season_id: 1 },
+            email: 'alice@example.com',
+        });
         expect(r.status).toBe(201);
         const body = await r.json();
         expect(body).toMatchObject({ success: true, user_id: 'user-alice', season_id: 1 });
@@ -147,22 +160,37 @@ describe('POST /api/watched', () => {
 
     it('is idempotent — marking twice does not error or duplicate', async () => {
         await req('POST', '/api/watched', { body: { season_id: 1 }, email: 'alice@example.com' });
-        const r = await req('POST', '/api/watched', { body: { season_id: 1 }, email: 'alice@example.com' });
+        const r = await req('POST', '/api/watched', {
+            body: { season_id: 1 },
+            email: 'alice@example.com',
+        });
         expect(r.status).toBe(201);
         const row = await env.DB.prepare(
-            'SELECT COUNT(*) AS count FROM watched WHERE user_id = ? AND season_id = ?'
-        ).bind('user-alice', 1).first();
+            'SELECT COUNT(*) AS count FROM watched WHERE user_id = ? AND season_id = ?',
+        )
+            .bind('user-alice', 1)
+            .first();
         expect(row.count).toBe(1);
     });
 
     it('attributes to the caller, not a client-supplied id', async () => {
         // The body has no user_id field; identity is server-derived from the email.
-        await req('POST', '/api/watched', { body: { season_id: 1, user_id: 'user-bob' }, email: 'alice@example.com' });
-        const { user_id } = await (await req('POST', '/api/watched', {
-            body: { season_id: 41 }, email: 'alice@example.com',
-        })).json();
+        await req('POST', '/api/watched', {
+            body: { season_id: 1, user_id: 'user-bob' },
+            email: 'alice@example.com',
+        });
+        const { user_id } = await (
+            await req('POST', '/api/watched', {
+                body: { season_id: 41 },
+                email: 'alice@example.com',
+            })
+        ).json();
         expect(user_id).toBe('user-alice');
-        const bobRows = await env.DB.prepare('SELECT COUNT(*) AS count FROM watched WHERE user_id = ?').bind('user-bob').first();
+        const bobRows = await env.DB.prepare(
+            'SELECT COUNT(*) AS count FROM watched WHERE user_id = ?',
+        )
+            .bind('user-bob')
+            .first();
         expect(bobRows.count).toBe(0);
     });
 
@@ -171,16 +199,19 @@ describe('POST /api/watched', () => {
         // can later remove it — they act as one column.
         await req('POST', '/api/watched', { body: { season_id: 41 }, email: 'carol@example.com' });
         let { seasons } = await (await req('GET', '/api/board')).json();
-        expect(seasons.find(s => s.id === 41).watched_by).toEqual(['user-bob']);
+        expect(seasons.find((s) => s.id === 41).watched_by).toEqual(['user-bob']);
 
         const del = await req('DELETE', '/api/watched/41', { email: 'bob@example.com' });
         expect(del.status).toBe(200);
         ({ seasons } = await (await req('GET', '/api/board')).json());
-        expect(seasons.find(s => s.id === 41).watched_by).toEqual([]);
+        expect(seasons.find((s) => s.id === 41).watched_by).toEqual([]);
     });
 
     it('returns 403 when the caller is not a known user', async () => {
-        const r = await req('POST', '/api/watched', { body: { season_id: 1 }, email: 'stranger@example.com' });
+        const r = await req('POST', '/api/watched', {
+            body: { season_id: 1 },
+            email: 'stranger@example.com',
+        });
         expect(r.status).toBe(403);
     });
 
@@ -190,7 +221,10 @@ describe('POST /api/watched', () => {
     });
 
     it('returns 404 for an unknown season', async () => {
-        const r = await req('POST', '/api/watched', { body: { season_id: 999 }, email: 'alice@example.com' });
+        const r = await req('POST', '/api/watched', {
+            body: { season_id: 999 },
+            email: 'alice@example.com',
+        });
         expect(r.status).toBe(404);
     });
 
@@ -200,7 +234,10 @@ describe('POST /api/watched', () => {
     });
 
     it('returns 400 when season_id is not a positive integer', async () => {
-        const r = await req('POST', '/api/watched', { body: { season_id: -3 }, email: 'alice@example.com' });
+        const r = await req('POST', '/api/watched', {
+            body: { season_id: -3 },
+            email: 'alice@example.com',
+        });
         expect(r.status).toBe(400);
     });
 
@@ -208,10 +245,13 @@ describe('POST /api/watched', () => {
         const r = await worker.fetch(
             new Request('https://example.com/api/watched', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Cf-Access-Authenticated-User-Email': 'alice@example.com' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Cf-Access-Authenticated-User-Email': 'alice@example.com',
+                },
                 body: 'not-json',
             }),
-            makeEnv()
+            makeEnv(),
         );
         expect(r.status).toBe(400);
         expect((await r.json()).error).toBe('Invalid JSON body');
@@ -232,7 +272,7 @@ describe('DELETE /api/watched/:season_id', () => {
         const r = await req('DELETE', '/api/watched/1', { email: 'alice@example.com' });
         expect(r.status).toBe(200);
         const { seasons } = await (await req('GET', '/api/board')).json();
-        expect(seasons.find(s => s.id === 1).watched_by).toEqual(['user-bob']);
+        expect(seasons.find((s) => s.id === 1).watched_by).toEqual(['user-bob']);
     });
 
     it('is a no-op (still 200) when the mark does not exist', async () => {
