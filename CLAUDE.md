@@ -17,7 +17,7 @@ It is a sibling of the **Seen** project and follows the same stack and structure
 
 - `frontend/` — Preact + htm frontend source
     - `script.js` — `App` component + child components managing state and rendering
-    - `utils.js` — Pure helpers (`seasonLabel`, `isFullyWatched`, `sortSeasons`); shared with tests
+    - `utils.js` — Pure helpers (`seasonLabel`, `isFullyWatched`, `sortSeasons`, `sortBySeenCount`); shared with tests
 - `public/` — Served static assets
     - `index.html` — App shell that loads the bundled script
     - `styles.css` — Theme tokens + layout
@@ -94,8 +94,10 @@ names and emails out of source control. `seed.sql` holds only optional sample
 ### Frontend
 
 - `App` fetches `/api/board` once and owns `users`, `seasons`, `me` state.
-- `sortSeasons` (in `utils.js`) sinks fully-watched seasons to the bottom while
-  keeping natural season-number order within each group.
+- The `Board` component supports two sort modes toggled by a button group:
+  - `sortSeasons` (default, "Season" mode) — sinks fully-watched seasons to the bottom, then sorts by season number.
+  - `sortBySeenCount` ("Seen Count" mode) — sinks fully-watched seasons to the bottom, then sorts by ascending watcher count (ties broken by season number).
+  Both functions live in `utils.js` and are shared with tests.
 - Checkbox toggles are optimistic: the cell flips immediately, then reconciles
   with the server and reverts on failure.
 - Only the current user's column checkboxes are enabled; others are read-only.
