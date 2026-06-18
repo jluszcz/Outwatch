@@ -21,11 +21,16 @@ export function sortSeasons(seasons, userCount) {
     });
 }
 
-// Sorts by number of watchers ascending (fewest seen first), then by season
+// Fully-watched seasons sink to the bottom (matching sortSeasons). Within each
+// tier, sorts by watcher count ascending (fewest seen first), then by season
 // number for stability. Does not mutate the input.
-export function sortBySeenCount(seasons) {
+export function sortBySeenCount(seasons, userCount) {
     return [...seasons].sort((a, b) => {
-        if (a.watched_by.length !== b.watched_by.length) return a.watched_by.length - b.watched_by.length;
+        const aw = isFullyWatched(a, userCount) ? 1 : 0;
+        const bw = isFullyWatched(b, userCount) ? 1 : 0;
+        if (aw !== bw) return aw - bw;
+        if (a.watched_by.length !== b.watched_by.length)
+            return a.watched_by.length - b.watched_by.length;
         return a.id - b.id;
     });
 }
