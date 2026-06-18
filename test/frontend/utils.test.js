@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { seasonLabel, isFullyWatched, sortSeasons } from '../../frontend/utils.js';
+import { seasonLabel, isFullyWatched, sortSeasons, sortBySeenCount } from '../../frontend/utils.js';
 
 // ---------------------------------------------------------------------------
 // seasonLabel
@@ -72,5 +72,39 @@ describe('sortSeasons', () => {
     it('keeps natural order when there are no users (nothing sinks)', () => {
         const out = sortSeasons(seasons, 0).map(s => s.id);
         expect(out).toEqual([1, 2, 3, 4]);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// sortBySeenCount
+// ---------------------------------------------------------------------------
+
+describe('sortBySeenCount', () => {
+    const seasons = [
+        { id: 3, subtitle: 'Africa', watched_by: ['a', 'b'] },
+        { id: 1, subtitle: 'Borneo', watched_by: ['a'] },
+        { id: 2, subtitle: 'Outback', watched_by: [] },
+        { id: 4, subtitle: 'Marquesas', watched_by: ['a', 'b'] },
+    ];
+
+    it('does not mutate the input', () => {
+        const copy = [...seasons];
+        sortBySeenCount(seasons);
+        expect(seasons).toEqual(copy);
+    });
+
+    it('sorts ascending by watcher count, then by season number', () => {
+        const out = sortBySeenCount(seasons).map(s => s.id);
+        expect(out).toEqual([2, 1, 3, 4]);
+    });
+
+    it('seasons with equal watcher counts are ordered by season number', () => {
+        const tied = [
+            { id: 5, watched_by: ['a'] },
+            { id: 2, watched_by: ['a'] },
+            { id: 8, watched_by: [] },
+        ];
+        const out = sortBySeenCount(tied).map(s => s.id);
+        expect(out).toEqual([8, 2, 5]);
     });
 });

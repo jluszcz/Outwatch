@@ -180,6 +180,39 @@ body {
 
 .empty-state { text-align: center; color: var(--text-faint); padding: 40px 16px }
 
+.sort-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.sort-label {
+  font-size: .8rem;
+  color: var(--text-muted);
+  margin-right: 2px;
+}
+
+.sort-btn {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-subtle);
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: .8rem;
+  font-family: inherit;
+  transition: color .15s, background .15s, border-color .15s;
+}
+
+.sort-btn:hover { color: var(--text); background: var(--surface-hover) }
+
+.sort-btn.active {
+  background: var(--blue);
+  border-color: var(--blue);
+  color: #fff;
+}
+
 .table-wrapper {
   overflow-x: auto;
   border: 1px solid var(--border);

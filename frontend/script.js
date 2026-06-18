@@ -1,7 +1,7 @@
 import { h, render } from 'preact';
 import { useState, useEffect, useMemo, useCallback } from 'preact/hooks';
 import htm from 'htm';
-import { seasonLabel, isFullyWatched, sortSeasons } from './utils.js';
+import { seasonLabel, isFullyWatched, sortSeasons, sortBySeenCount } from './utils.js';
 
 const html = htm.bind(h);
 
@@ -105,8 +105,12 @@ function SeasonRow({ season, users, meId, fullyWatched, onToggle }) {
 }
 
 function Board({ users, seasons, meId, onToggle }) {
+    const [sortMode, setSortMode] = useState('season');
     const userCount = users.length;
-    const sorted = useMemo(() => sortSeasons(seasons, userCount), [seasons, userCount]);
+    const sorted = useMemo(
+        () => sortMode === 'seen' ? sortBySeenCount(seasons) : sortSeasons(seasons, userCount),
+        [seasons, userCount, sortMode],
+    );
     // Show the current user's column left-most.
     const orderedUsers = useMemo(
         () => [...users].sort((a, b) => (b.id === meId) - (a.id === meId)),
@@ -114,6 +118,18 @@ function Board({ users, seasons, meId, onToggle }) {
     );
 
     return html`
+        <div>
+            <div class="sort-controls">
+                <span class="sort-label">Sort by</span>
+                <button
+                    class=${'sort-btn' + (sortMode === 'season' ? ' active' : '')}
+                    onClick=${() => setSortMode('season')}
+                >Season</button>
+                <button
+                    class=${'sort-btn' + (sortMode === 'seen' ? ' active' : '')}
+                    onClick=${() => setSortMode('seen')}
+                >Seen Count</button>
+            </div>
         <div class="table-wrapper">
             <table id="board">
                 <thead>
@@ -137,6 +153,7 @@ function Board({ users, seasons, meId, onToggle }) {
                     />`)}
                 </tbody>
             </table>
+        </div>
         </div>
     `;
 }

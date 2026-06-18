@@ -20,3 +20,12 @@ export function sortSeasons(seasons, userCount) {
         return a.id - b.id;
     });
 }
+
+// Sorts by number of watchers ascending (fewest seen first), then by season
+// number for stability. Does not mutate the input.
+export function sortBySeenCount(seasons) {
+    return [...seasons].sort((a, b) => {
+        if (a.watched_by.length !== b.watched_by.length) return a.watched_by.length - b.watched_by.length;
+        return a.id - b.id;
+    });
+}
