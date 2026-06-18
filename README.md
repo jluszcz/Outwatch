@@ -1,6 +1,6 @@
 # Outwatch
 
-A shared tracker for which seasons of *Survivor* a small group has watched. One
+A shared tracker for which seasons of _Survivor_ a small group has watched. One
 row per season ("Season X: Subtitle", linked to Wikipedia) and one checkbox
 column per person. You can only toggle your own column — identity comes from
 Cloudflare Access. Once everyone has checked a season, it grays out and sorts to
@@ -10,7 +10,7 @@ Built on Cloudflare Workers with a D1 SQLite database, behind Cloudflare Access.
 
 ## Features
 
-- All 50 U.S. seasons of *Survivor* seeded with official subtitles + Wikipedia links
+- All 50 U.S. seasons of _Survivor_ seeded with official subtitles + Wikipedia links
 - One checkbox column per person/couple; you can only change your own (Access-derived identity)
 - Couples share a column — either partner's login can toggle it
 - Fully-watched seasons gray out and sink to the bottom
@@ -19,13 +19,13 @@ Built on Cloudflare Workers with a D1 SQLite database, behind Cloudflare Access.
 
 ## Stack
 
-| Layer | Technology |
-|---|---|
-| Backend | Cloudflare Workers + Hono + Zod |
-| Database | Cloudflare D1 (SQLite) |
-| Frontend | Preact + htm, bundled with esbuild |
-| Auth | Cloudflare Access |
-| Testing | Vitest + `@cloudflare/vitest-pool-workers` |
+| Layer    | Technology                                 |
+| -------- | ------------------------------------------ |
+| Backend  | Cloudflare Workers + Hono + Zod            |
+| Database | Cloudflare D1 (SQLite)                     |
+| Frontend | Preact + htm, bundled with esbuild         |
+| Auth     | Cloudflare Access                          |
+| Testing  | Vitest + `@cloudflare/vitest-pool-workers` |
 
 ## Getting Started
 
@@ -118,47 +118,47 @@ All routes derive the caller's identity from the
 `Cf-Access-Authenticated-User-Email` header that Cloudflare Access injects (or
 `DEV_USER_EMAIL` locally). Clients never send a user id.
 
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/api/board` | Current user, all users, and all seasons with watched state |
-| `POST` | `/api/watched` | Mark the caller as having watched a season (`{ season_id }`) |
-| `DELETE` | `/api/watched/:season_id` | Unmark the caller for a season |
+| Method   | Path                      | Description                                                  |
+| -------- | ------------------------- | ------------------------------------------------------------ |
+| `GET`    | `/api/board`              | Current user, all users, and all seasons with watched state  |
+| `POST`   | `/api/watched`            | Mark the caller as having watched a season (`{ season_id }`) |
+| `DELETE` | `/api/watched/:season_id` | Unmark the caller for a season                               |
 
 ## Database Schema
 
 **`users`** — board columns (a person or a couple)
 
-| Column | Type | Notes |
-|---|---|---|
-| `id` | TEXT PK | Generic id, e.g. `user-1` |
-| `name` | TEXT | Column header (e.g. `Bob & Carol`) |
-| `sort_order` | INTEGER | Column order |
+| Column       | Type    | Notes                              |
+| ------------ | ------- | ---------------------------------- |
+| `id`         | TEXT PK | Generic id, e.g. `user-1`          |
+| `name`       | TEXT    | Column header (e.g. `Bob & Carol`) |
+| `sort_order` | INTEGER | Column order                       |
 
 **`user_emails`** — maps each Access login email to a column
 
-| Column | Type | Notes |
-|---|---|---|
-| `email` | TEXT PK | Cloudflare Access email (lowercase) |
-| `user_id` | TEXT | References `users.id`; a couple's column has two rows |
+| Column    | Type    | Notes                                                 |
+| --------- | ------- | ----------------------------------------------------- |
+| `email`   | TEXT PK | Cloudflare Access email (lowercase)                   |
+| `user_id` | TEXT    | References `users.id`; a couple's column has two rows |
 
 Both tables are populated from the gitignored `roster.sql`, not a migration —
 see [The roster](#the-roster).
 
-**`seasons`** — *Survivor* seasons (reference data, seeded in migration `0002`)
+**`seasons`** — _Survivor_ seasons (reference data, seeded in migration `0002`)
 
-| Column | Type | Notes |
-|---|---|---|
-| `id` | INTEGER PK | The season number |
-| `subtitle` | TEXT | Official subtitle without the `Survivor: ` prefix; empty for 41–49 |
-| `wikipedia_url` | TEXT | Link to the season's Wikipedia article |
+| Column          | Type       | Notes                                                              |
+| --------------- | ---------- | ------------------------------------------------------------------ |
+| `id`            | INTEGER PK | The season number                                                  |
+| `subtitle`      | TEXT       | Official subtitle without the `Survivor: ` prefix; empty for 41–49 |
+| `wikipedia_url` | TEXT       | Link to the season's Wikipedia article                             |
 
 **`watched`** — one row per (user, season) watched; presence means watched
 
-| Column | Type | Notes |
-|---|---|---|
-| `user_id` | TEXT | References `users.id` |
-| `season_id` | INTEGER | References `seasons.id` |
-| `created_at` | TEXT | ISO timestamp |
+| Column       | Type    | Notes                   |
+| ------------ | ------- | ----------------------- |
+| `user_id`    | TEXT    | References `users.id`   |
+| `season_id`  | INTEGER | References `seasons.id` |
+| `created_at` | TEXT    | ISO timestamp           |
 
 Primary key is `(user_id, season_id)`.
 
@@ -192,7 +192,7 @@ verifies ownership with a one-time emailed code. This works for any email
    from `roster.sql`) for the board to know which column is theirs.
 
 The allow-list in step 3 and the `user_emails` table must agree: Access decides
-*who can get in*; `user_emails` decides *which column they are*.
+_who can get in_; `user_emails` decides _which column they are_.
 
 ## Cost
 

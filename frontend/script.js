@@ -1,7 +1,7 @@
 import { h, render } from 'preact';
 import { useState, useEffect, useMemo, useCallback } from 'preact/hooks';
 import htm from 'htm';
-import { seasonLabel, isFullyWatched, sortSeasons } from './utils.js';
+import { seasonLabel, isFullyWatched, sortSeasons, sortBySeenCount } from './utils.js';
 
 const html = htm.bind(h);
 
@@ -9,7 +9,9 @@ async function api(path, options = {}) {
     const r = await fetch(path, options);
     if (!r.ok) {
         let msg = `${options.method || 'GET'} ${path} failed: ${r.status}`;
-        try { msg = (await r.json()).error || msg; } catch {}
+        try {
+            msg = (await r.json()).error || msg;
+        } catch {}
         throw new Error(msg);
     }
     return r.json();
@@ -29,7 +31,7 @@ function useTheme() {
 
     useEffect(() => {
         const mq = window.matchMedia('(prefers-color-scheme: dark)');
-        const handler = e => {
+        const handler = (e) => {
             // Manual override in localStorage takes priority; only follow OS if none set.
             const stored = localStorage.getItem('theme');
             if (stored === 'light' || stored === 'dark') return;
@@ -39,29 +41,46 @@ function useTheme() {
         return () => mq.removeEventListener('change', handler);
     }, []);
 
-    const toggle = useCallback(
-        () => setTheme(t => t === 'dark' ? 'light' : 'dark'),
-        [],
-    );
+    const toggle = useCallback(() => setTheme((t) => (t === 'dark' ? 'light' : 'dark')), []);
 
     return { theme, toggle };
 }
 
 // Lucide icons (MIT) — currentColor inherits button color from CSS
 const SunIcon = () => html`
-    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
-         fill="none" stroke="currentColor" stroke-width="2"
-         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <circle cx="12" cy="12" r="4"/>
-        <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>
+    <svg
+        xmlns="http://www.w3.org/2000/svg"
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+    >
+        <circle cx="12" cy="12" r="4" />
+        <path
+            d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"
+        />
     </svg>
 `;
 
 const MoonIcon = () => html`
-    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
-         fill="none" stroke="currentColor" stroke-width="2"
-         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>
+    <svg
+        xmlns="http://www.w3.org/2000/svg"
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+    >
+        <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
     </svg>
 `;
 
@@ -71,7 +90,7 @@ function Header({ theme, onToggleTheme }) {
         <header class="header">
             <h1 class="title">Outwit, Outplay, Outlast, Outwatch</h1>
             <button class="theme-btn" title=${title} onClick=${onToggleTheme}>
-                ${theme === 'dark' ? html`<${SunIcon}/>` : html`<${MoonIcon}/>`}
+                ${theme === 'dark' ? html`<${SunIcon} />` : html`<${MoonIcon} />`}
             </button>
         </header>
     `;
@@ -85,7 +104,7 @@ function SeasonRow({ season, users, meId, fullyWatched, onToggle }) {
                     ${seasonLabel(season)}
                 </a>
             </td>
-            ${users.map(u => {
+            ${users.map((u) => {
                 const checked = season.watched_by.includes(u.id);
                 const isMe = u.id === meId;
                 return html`
@@ -95,7 +114,9 @@ function SeasonRow({ season, users, meId, fullyWatched, onToggle }) {
                             checked=${checked}
                             disabled=${!isMe}
                             title=${isMe ? '' : `Only ${u.name} can change this`}
-                            onChange=${isMe ? e => onToggle(season.id, e.target.checked) : undefined}
+                            onChange=${isMe
+                                ? (e) => onToggle(season.id, e.target.checked)
+                                : undefined}
                         />
                     </td>
                 `;
@@ -105,8 +126,15 @@ function SeasonRow({ season, users, meId, fullyWatched, onToggle }) {
 }
 
 function Board({ users, seasons, meId, onToggle }) {
+    const [sortMode, setSortMode] = useState('season');
     const userCount = users.length;
-    const sorted = useMemo(() => sortSeasons(seasons, userCount), [seasons, userCount]);
+    const sorted = useMemo(
+        () =>
+            sortMode === 'seen'
+                ? sortBySeenCount(seasons, userCount)
+                : sortSeasons(seasons, userCount),
+        [seasons, userCount, sortMode],
+    );
     // Show the current user's column left-most.
     const orderedUsers = useMemo(
         () => [...users].sort((a, b) => (b.id === meId) - (a.id === meId)),
@@ -114,29 +142,56 @@ function Board({ users, seasons, meId, onToggle }) {
     );
 
     return html`
-        <div class="table-wrapper">
-            <table id="board">
-                <thead>
-                    <tr>
-                        <th class="season-head">Season</th>
-                        ${orderedUsers.map(u => html`
-                            <th key=${u.id} class=${'check-head' + (u.id === meId ? ' mine' : '')}>
-                                ${u.name}${u.id === meId ? html`<span class="you"> (you)</span>` : null}
-                            </th>
-                        `)}
-                    </tr>
-                </thead>
-                <tbody>
-                    ${sorted.map(s => html`<${SeasonRow}
-                        key=${s.id}
-                        season=${s}
-                        users=${orderedUsers}
-                        meId=${meId}
-                        fullyWatched=${isFullyWatched(s, userCount)}
-                        onToggle=${onToggle}
-                    />`)}
-                </tbody>
-            </table>
+        <div>
+            <div class="sort-controls">
+                <span class="sort-label">Sort by</span>
+                <button
+                    class=${'sort-btn' + (sortMode === 'season' ? ' active' : '')}
+                    onClick=${() => setSortMode('season')}
+                >
+                    Season
+                </button>
+                <button
+                    class=${'sort-btn' + (sortMode === 'seen' ? ' active' : '')}
+                    onClick=${() => setSortMode('seen')}
+                >
+                    Seen Count
+                </button>
+            </div>
+            <div class="table-wrapper">
+                <table id="board">
+                    <thead>
+                        <tr>
+                            <th class="season-head">Season</th>
+                            ${orderedUsers.map(
+                                (u) => html`
+                                    <th
+                                        key=${u.id}
+                                        class=${'check-head' + (u.id === meId ? ' mine' : '')}
+                                    >
+                                        ${u.name}${u.id === meId
+                                            ? html`<span class="you"> (you)</span>`
+                                            : null}
+                                    </th>
+                                `,
+                            )}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${sorted.map(
+                            (s) =>
+                                html`<${SeasonRow}
+                                    key=${s.id}
+                                    season=${s}
+                                    users=${orderedUsers}
+                                    meId=${meId}
+                                    fullyWatched=${isFullyWatched(s, userCount)}
+                                    onToggle=${onToggle}
+                                />`,
+                        )}
+                    </tbody>
+                </table>
+            </div>
         </div>
     `;
 }
@@ -166,38 +221,45 @@ function App() {
 
     const meId = me?.id ?? null;
 
-    const toggle = useCallback(async (seasonId, checked) => {
-        // Optimistic: flip the cell, then reconcile with the server.
-        setSeasons(prev => prev.map(s => {
-            if (s.id !== seasonId) return s;
-            const watched_by = checked
-                ? [...s.watched_by, meId]
-                : s.watched_by.filter(id => id !== meId);
-            return { ...s, watched_by };
-        }));
-        try {
-            if (checked) {
-                await api('/api/watched', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ season_id: seasonId }),
-                });
-            } else {
-                await api(`/api/watched/${seasonId}`, { method: 'DELETE' });
+    const toggle = useCallback(
+        async (seasonId, checked) => {
+            // Optimistic: flip the cell, then reconcile with the server.
+            setSeasons((prev) =>
+                prev.map((s) => {
+                    if (s.id !== seasonId) return s;
+                    const watched_by = checked
+                        ? [...s.watched_by, meId]
+                        : s.watched_by.filter((id) => id !== meId);
+                    return { ...s, watched_by };
+                }),
+            );
+            try {
+                if (checked) {
+                    await api('/api/watched', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ season_id: seasonId }),
+                    });
+                } else {
+                    await api(`/api/watched/${seasonId}`, { method: 'DELETE' });
+                }
+                setError(null);
+            } catch (err) {
+                // Revert the optimistic change on failure.
+                setSeasons((prev) =>
+                    prev.map((s) => {
+                        if (s.id !== seasonId) return s;
+                        const watched_by = checked
+                            ? s.watched_by.filter((id) => id !== meId)
+                            : [...s.watched_by, meId];
+                        return { ...s, watched_by };
+                    }),
+                );
+                setError(err.message);
             }
-            setError(null);
-        } catch (err) {
-            // Revert the optimistic change on failure.
-            setSeasons(prev => prev.map(s => {
-                if (s.id !== seasonId) return s;
-                const watched_by = checked
-                    ? s.watched_by.filter(id => id !== meId)
-                    : [...s.watched_by, meId];
-                return { ...s, watched_by };
-            }));
-            setError(err.message);
-        }
-    }, [meId]);
+        },
+        [meId],
+    );
 
     return html`
         <div class="container">
@@ -205,13 +267,24 @@ function App() {
             <main class="app">
                 ${error && html`<div class="error">${error}</div>`}
                 ${loading && html`<div class="loading">Loading…</div>`}
-                ${!loading && !error && !me && html`
+                ${!loading &&
+                !error &&
+                !me &&
+                html`
                     <div class="notice">You're not on the watch list — the board is read-only.</div>
                 `}
-                ${!loading && !error && users.length === 0 && html`
-                    <div class="empty-state">No users yet. Add people to the board (see README).</div>
+                ${!loading &&
+                !error &&
+                users.length === 0 &&
+                html`
+                    <div class="empty-state">
+                        No users yet. Add people to the board (see README).
+                    </div>
                 `}
-                ${!loading && !error && users.length > 0 && html`
+                ${!loading &&
+                !error &&
+                users.length > 0 &&
+                html`
                     <${Board} users=${users} seasons=${seasons} meId=${meId} onToggle=${toggle} />
                 `}
             </main>

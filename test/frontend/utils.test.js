@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { seasonLabel, isFullyWatched, sortSeasons } from '../../frontend/utils.js';
+import { seasonLabel, isFullyWatched, sortSeasons, sortBySeenCount } from '../../frontend/utils.js';
 
 // ---------------------------------------------------------------------------
 // seasonLabel
@@ -7,7 +7,9 @@ import { seasonLabel, isFullyWatched, sortSeasons } from '../../frontend/utils.j
 
 describe('seasonLabel', () => {
     it('includes the subtitle when present', () => {
-        expect(seasonLabel({ id: 20, subtitle: 'Heroes vs. Villains' })).toBe('Season 20: Heroes vs. Villains');
+        expect(seasonLabel({ id: 20, subtitle: 'Heroes vs. Villains' })).toBe(
+            'Season 20: Heroes vs. Villains',
+        );
     });
 
     it('omits the colon when there is no subtitle', () => {
@@ -47,10 +49,10 @@ describe('isFullyWatched', () => {
 
 describe('sortSeasons', () => {
     const seasons = [
-        { id: 3, subtitle: 'Africa', watched_by: ['a', 'b'] },   // fully watched
-        { id: 1, subtitle: 'Borneo', watched_by: ['a'] },        // partial
-        { id: 2, subtitle: 'Outback', watched_by: [] },          // none
-        { id: 4, subtitle: 'Marquesas', watched_by: ['a', 'b'] },// fully watched
+        { id: 3, subtitle: 'Africa', watched_by: ['a', 'b'] }, // fully watched
+        { id: 1, subtitle: 'Borneo', watched_by: ['a'] }, // partial
+        { id: 2, subtitle: 'Outback', watched_by: [] }, // none
+        { id: 4, subtitle: 'Marquesas', watched_by: ['a', 'b'] }, // fully watched
     ];
 
     it('does not mutate the input', () => {
@@ -60,17 +62,56 @@ describe('sortSeasons', () => {
     });
 
     it('sinks fully-watched seasons to the bottom, keeping number order within groups', () => {
-        const out = sortSeasons(seasons, 2).map(s => s.id);
+        const out = sortSeasons(seasons, 2).map((s) => s.id);
         expect(out).toEqual([1, 2, 3, 4]);
     });
 
     it('orders purely by season number when none are fully watched', () => {
-        const out = sortSeasons(seasons, 3).map(s => s.id);
+        const out = sortSeasons(seasons, 3).map((s) => s.id);
         expect(out).toEqual([1, 2, 3, 4]);
     });
 
     it('keeps natural order when there are no users (nothing sinks)', () => {
-        const out = sortSeasons(seasons, 0).map(s => s.id);
+        const out = sortSeasons(seasons, 0).map((s) => s.id);
         expect(out).toEqual([1, 2, 3, 4]);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// sortBySeenCount
+// ---------------------------------------------------------------------------
+
+describe('sortBySeenCount', () => {
+    const seasons = [
+        { id: 3, subtitle: 'Africa', watched_by: ['a', 'b'] }, // fully watched (2/2)
+        { id: 1, subtitle: 'Borneo', watched_by: ['a'] }, // partial
+        { id: 2, subtitle: 'Outback', watched_by: [] }, // none
+        { id: 4, subtitle: 'Marquesas', watched_by: ['a', 'b'] }, // fully watched (2/2)
+    ];
+
+    it('does not mutate the input', () => {
+        const copy = [...seasons];
+        sortBySeenCount(seasons, 2);
+        expect(seasons).toEqual(copy);
+    });
+
+    it('sinks fully-watched seasons to the bottom, then sorts by watcher count ascending', () => {
+        const out = sortBySeenCount(seasons, 2).map((s) => s.id);
+        expect(out).toEqual([2, 1, 3, 4]);
+    });
+
+    it('seasons with equal watcher counts are ordered by season number', () => {
+        const tied = [
+            { id: 5, watched_by: ['a'] },
+            { id: 2, watched_by: ['a'] },
+            { id: 8, watched_by: [] },
+        ];
+        const out = sortBySeenCount(tied, 2).map((s) => s.id);
+        expect(out).toEqual([8, 2, 5]);
+    });
+
+    it('keeps natural order when there are no users (nothing sinks)', () => {
+        const out = sortBySeenCount(seasons, 0).map((s) => s.id);
+        expect(out).toEqual([2, 1, 3, 4]);
     });
 });

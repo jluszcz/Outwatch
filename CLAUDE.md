@@ -4,7 +4,7 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 ## Project Overview
 
-**Outwatch** is a shared tracker for which seasons of *Survivor* a small group
+**Outwatch** is a shared tracker for which seasons of _Survivor_ a small group
 (<5 people) has watched. Each season is a row ("Season X: Subtitle" linked to
 Wikipedia); each user is a checkbox column. Identity comes from Cloudflare Access,
 and a user can only toggle their own column. When every user has checked a season
@@ -16,21 +16,21 @@ It is a sibling of the **Seen** project and follows the same stack and structure
 ## Repository Structure
 
 - `frontend/` — Preact + htm frontend source
-  - `script.js` — `App` component + child components managing state and rendering
-  - `utils.js` — Pure helpers (`seasonLabel`, `isFullyWatched`, `sortSeasons`); shared with tests
+    - `script.js` — `App` component + child components managing state and rendering
+    - `utils.js` — Pure helpers (`seasonLabel`, `isFullyWatched`, `sortSeasons`, `sortBySeenCount`); shared with tests
 - `public/` — Served static assets
-  - `index.html` — App shell that loads the bundled script
-  - `styles.css` — Theme tokens + layout
-  - `script.js`, `script.js.map`, `styles.css` — build output (gitignored)
+    - `index.html` — App shell that loads the bundled script
+    - `styles.css` — Theme tokens + layout
+    - `script.js`, `script.js.map`, `styles.css` — build output (gitignored)
 - `src/` — Cloudflare Workers backend
-  - `index.js` — Hono app + API for the board and watched state
+    - `index.js` — Hono app + API for the board and watched state
 - `migrations/` — D1 SQL migrations (applied via wrangler)
-  - `0001_initial.sql` — `users`, `user_emails`, `seasons`, `watched` tables
-  - `0002_seed_seasons.sql` — all 50 seasons (reference data)
+    - `0001_initial.sql` — `users`, `user_emails`, `seasons`, `watched` tables
+    - `0002_seed_seasons.sql` — all 50 seasons (reference data)
 - `roster.sql` — real roster: `users` (names) + `user_emails` (emails), with generic `user-N` ids (gitignored; template in `roster.example.sql`)
 - `test/` — Tests
-  - `test/worker/` — Worker API tests (`@cloudflare/vitest-pool-workers`)
-  - `test/frontend/` — Frontend unit tests (logic only, no DOM)
+    - `test/worker/` — Worker API tests (`@cloudflare/vitest-pool-workers`)
+    - `test/frontend/` — Frontend unit tests (logic only, no DOM)
 - `build.js` — esbuild bundler for the frontend (one-shot + `--watch`)
 - `seed.sql` — sample watched rows for local dev (uses the generic `user-N` ids)
 - `wrangler.toml`, `package.json`
@@ -60,6 +60,7 @@ When editing the frontend, edit files under `frontend/`. Do not edit
 ## Architecture Notes
 
 ### Authentication & identity
+
 - Cloudflare Access protects the Worker at the edge and forwards the verified
   identity in the `Cf-Access-Authenticated-User-Email` header. The client cannot
   spoof it.
@@ -71,6 +72,7 @@ When editing the frontend, edit files under `frontend/`. Do not edit
   signed-in user.
 
 ### Database Schema
+
 - `users` — `id`, `name` (column header), `sort_order`; one row per board column
 - `user_emails` — `email` PK, `user_id`; maps each Access login email to a column (couples have two rows)
 - `seasons` — `id` (the season number), `subtitle` (may be empty), `wikipedia_url`
@@ -84,14 +86,18 @@ names and emails out of source control. `seed.sql` holds only optional sample
 `watched` rows for local dev.
 
 ### API Routes
+
 - `GET /api/board` — `{ me, users, seasons }`; each season carries `watched_by` (user ids). Emails are not exposed to the client.
 - `POST /api/watched` — `{ season_id }`; marks the caller watched (idempotent, `INSERT OR IGNORE`)
 - `DELETE /api/watched/:season_id` — unmarks the caller (no-op safe)
 
 ### Frontend
+
 - `App` fetches `/api/board` once and owns `users`, `seasons`, `me` state.
-- `sortSeasons` (in `utils.js`) sinks fully-watched seasons to the bottom while
-  keeping natural season-number order within each group.
+- The `Board` component supports two sort modes toggled by a button group:
+  - `sortSeasons` (default, "Season" mode) — sinks fully-watched seasons to the bottom, then sorts by season number.
+  - `sortBySeenCount` ("Seen Count" mode) — sinks fully-watched seasons to the bottom, then sorts by ascending watcher count (ties broken by season number).
+  Both functions live in `utils.js` and are shared with tests.
 - Checkbox toggles are optimistic: the cell flips immediately, then reconciles
   with the server and reverts on failure.
 - Only the current user's column checkboxes are enabled; others are read-only.
@@ -113,4 +119,5 @@ is safe to commit (consistent with the Seen project). Using the database still
 requires valid Cloudflare authentication.
 
 ## Cost
+
 Designed to be free for personal use (Workers, D1, and Access free tiers).
