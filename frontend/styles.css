@@ -286,6 +286,94 @@ th .you {
     color: var(--text-muted);
 }
 
+.now-watching {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-subtle);
+}
+
+.now-watching-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+}
+
+.now-watching-items {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.nw-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface);
+    font-size: 0.8rem;
+}
+
+.nw-chip.active {
+    border-color: var(--blue);
+}
+
+.nw-chip.mine {
+    background: var(--surface-accent);
+}
+
+.nw-marker {
+    font-size: 0.55rem;
+    color: var(--blue);
+}
+
+.nw-name {
+    font-weight: 600;
+    color: var(--text);
+}
+
+.nw-season {
+    color: var(--text-subtle);
+}
+
+.nw-select {
+    font-family: inherit;
+    font-size: 0.8rem;
+    font-weight: 500;
+    border: 0;
+    background: transparent;
+    color: var(--blue);
+    cursor: pointer;
+    max-width: 220px;
+}
+
+.nw-select:focus {
+    outline: 1px solid var(--blue);
+    border-radius: 3px;
+}
+
+.watching-indicator {
+    display: inline-block;
+    font-size: 0.6rem;
+    line-height: 1;
+    color: #fff;
+    background: var(--blue);
+    border-radius: 3px;
+    padding: 2px 4px;
+    vertical-align: middle;
+    margin-right: 4px;
+}
+
 td {
     border-bottom: 1px solid var(--border-subtle);
     vertical-align: middle;
@@ -322,6 +410,7 @@ tbody tr:hover td.check-cell.mine {
     height: 17px;
     cursor: pointer;
     accent-color: var(--blue);
+    vertical-align: middle;
 }
 
 .check-cell input:disabled {

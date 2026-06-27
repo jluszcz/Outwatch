@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { seasonLabel, isFullyWatched, sortSeasons, sortBySeenCount } from '../../frontend/utils.js';
+import {
+    seasonLabel,
+    isFullyWatched,
+    sortSeasons,
+    sortBySeenCount,
+    selectableSeasons,
+    clearsCurrentlyWatching,
+} from '../../frontend/utils.js';
 
 // ---------------------------------------------------------------------------
 // seasonLabel
@@ -113,5 +120,64 @@ describe('sortBySeenCount', () => {
     it('keeps natural order when there are no users (nothing sinks)', () => {
         const out = sortBySeenCount(seasons, 0).map((s) => s.id);
         expect(out).toEqual([2, 1, 3, 4]);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// selectableSeasons
+// ---------------------------------------------------------------------------
+
+describe('selectableSeasons', () => {
+    const seasons = [
+        { id: 1, watched_by: ['me'] }, // watched by me
+        { id: 2, watched_by: ['other'] }, // watched by someone else
+        { id: 3, watched_by: [] }, // unwatched
+        { id: 4, watched_by: ['me', 'other'] }, // watched by me (and others)
+    ];
+
+    it('excludes seasons the user has already watched', () => {
+        const out = selectableSeasons(seasons, 'me').map((s) => s.id);
+        expect(out).toEqual([2, 3]);
+    });
+
+    it('returns every season when the user has watched none', () => {
+        const out = selectableSeasons(seasons, 'nobody').map((s) => s.id);
+        expect(out).toEqual([1, 2, 3, 4]);
+    });
+
+    it('does not mutate the input', () => {
+        const copy = [...seasons];
+        selectableSeasons(seasons, 'me');
+        expect(seasons).toEqual(copy);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// clearsCurrentlyWatching
+// ---------------------------------------------------------------------------
+
+describe('clearsCurrentlyWatching', () => {
+    const me = { id: 'me', currently_watching_season_id: 7 };
+
+    it('is true when checking the season you are currently watching', () => {
+        expect(clearsCurrentlyWatching(me, 7, true)).toBe(true);
+    });
+
+    it('is false when unchecking that same season', () => {
+        expect(clearsCurrentlyWatching(me, 7, false)).toBe(false);
+    });
+
+    it('is false when checking a different season', () => {
+        expect(clearsCurrentlyWatching(me, 3, true)).toBe(false);
+    });
+
+    it('is false when you have no currently-watching season', () => {
+        expect(
+            clearsCurrentlyWatching({ id: 'me', currently_watching_season_id: null }, 7, true),
+        ).toBe(false);
+    });
+
+    it('is false when the user is missing', () => {
+        expect(clearsCurrentlyWatching(undefined, 7, true)).toBe(false);
     });
 });

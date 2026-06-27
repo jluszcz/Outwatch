@@ -34,3 +34,17 @@ export function sortBySeenCount(seasons, userCount) {
         return a.id - b.id;
     });
 }
+
+// The seasons you can pick as "currently watching": the ones you haven't watched
+// yet. This enforces the invariant that your currently-watching season is always
+// one of your unwatched seasons. Does not mutate the input.
+export function selectableSeasons(seasons, meId) {
+    return seasons.filter((s) => !s.watched_by.includes(meId));
+}
+
+// Whether checking a season would also clear it as your currently-watching
+// season: true only when you're marking it watched and it's the one you're on.
+// (You can't be mid-watch on a season you've just finished.)
+export function clearsCurrentlyWatching(me, seasonId, checked) {
+    return checked && me?.currently_watching_season_id === seasonId;
+}

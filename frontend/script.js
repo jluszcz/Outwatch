@@ -1,7 +1,14 @@
 import { h, render } from 'preact';
-import { useState, useEffect, useMemo, useCallback } from 'preact/hooks';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'preact/hooks';
 import htm from 'htm';
-import { seasonLabel, isFullyWatched, sortSeasons, sortBySeenCount } from './utils.js';
+import {
+    seasonLabel,
+    isFullyWatched,
+    sortSeasons,
+    sortBySeenCount,
+    selectableSeasons,
+    clearsCurrentlyWatching,
+} from './utils.js';
 
 const html = htm.bind(h);
 
@@ -107,8 +114,14 @@ function SeasonRow({ season, users, meId, fullyWatched, onToggle }) {
             ${users.map((u) => {
                 const checked = season.watched_by.includes(u.id);
                 const isMe = u.id === meId;
+                const isCurrentlyWatching = u.currently_watching_season_id === season.id;
                 return html`
                     <td key=${u.id} class=${'check-cell' + (isMe ? ' mine' : '')}>
+                        ${isCurrentlyWatching
+                            ? html`<span class="watching-indicator" aria-label="Currently watching"
+                                  >▶</span
+                              >`
+                            : null}
                         <input
                             type="checkbox"
                             checked=${checked}
@@ -125,7 +138,57 @@ function SeasonRow({ season, users, meId, fullyWatched, onToggle }) {
     `;
 }
 
-function Board({ users, seasons, meId, onToggle }) {
+// A summary strip above the board: one chip per person showing the season they're
+// currently on. Your own chip is editable (pick from your unwatched seasons);
+// everyone else's is read-only.
+function NowWatching({ users, seasons, meId, onSetCurrentlyWatching }) {
+    return html`
+        <div class="now-watching">
+            <span class="now-watching-label">Now Watching</span>
+            <div class="now-watching-items">
+                ${users.map((u) => {
+                    const isMe = u.id === meId;
+                    const cwId = u.currently_watching_season_id;
+                    const current = cwId != null ? seasons.find((s) => s.id === cwId) : null;
+                    return html`
+                        <div
+                            key=${u.id}
+                            class=${'nw-chip' +
+                            (isMe ? ' mine' : '') +
+                            (cwId != null ? ' active' : '')}
+                        >
+                            ${cwId != null ? html`<span class="nw-marker">▶</span>` : null}
+                            <span class="nw-name">${isMe ? 'You' : u.name}</span>
+                            ${isMe
+                                ? html`<select
+                                      class="nw-select"
+                                      value=${cwId ?? ''}
+                                      onChange=${(e) =>
+                                          onSetCurrentlyWatching(
+                                              e.target.value ? Number(e.target.value) : null,
+                                          )}
+                                  >
+                                      <option value="">Not watching</option>
+                                      ${selectableSeasons(seasons, meId).map(
+                                          (s) => html`
+                                              <option key=${s.id} value=${s.id}>
+                                                  ${seasonLabel(s)}
+                                              </option>
+                                          `,
+                                      )}
+                                  </select>`
+                                : html`<span class="nw-season"
+                                      >${current ? seasonLabel(current) : '—'}</span
+                                  >`}
+                        </div>
+                    `;
+                })}
+            </div>
+        </div>
+    `;
+}
+
+function Board({ users, seasons, meId, onToggle, onSetCurrentlyWatching }) {
     const [sortMode, setSortMode] = useState('season');
     const userCount = users.length;
     const sorted = useMemo(
@@ -143,6 +206,12 @@ function Board({ users, seasons, meId, onToggle }) {
 
     return html`
         <div>
+            <${NowWatching}
+                users=${orderedUsers}
+                seasons=${seasons}
+                meId=${meId}
+                onSetCurrentlyWatching=${onSetCurrentlyWatching}
+            />
             <div class="sort-controls">
                 <span class="sort-label">Sort by</span>
                 <button
@@ -221,8 +290,51 @@ function App() {
 
     const meId = me?.id ?? null;
 
+    // Keep the latest users in a ref so the optimistic callbacks can read the
+    // current state without listing `users` in their deps — that would recreate
+    // them on every board change and risk stale closures.
+    const usersRef = useRef(users);
+    usersRef.current = users;
+
+    const setCurrentlyWatching = useCallback(
+        async (seasonId) => {
+            const prevSeasonId =
+                usersRef.current.find((u) => u.id === meId)?.currently_watching_season_id ?? null;
+            setUsers((current) =>
+                current.map((u) =>
+                    u.id === meId ? { ...u, currently_watching_season_id: seasonId } : u,
+                ),
+            );
+            try {
+                await api('/api/currently-watching', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ season_id: seasonId }),
+                });
+                setError(null);
+            } catch (err) {
+                setUsers((current) =>
+                    current.map((u) =>
+                        u.id === meId ? { ...u, currently_watching_season_id: prevSeasonId } : u,
+                    ),
+                );
+                setError(err.message);
+            }
+        },
+        [meId],
+    );
+
     const toggle = useCallback(
         async (seasonId, checked) => {
+            // Marking a season seen also clears it as your currently-watching
+            // season (the server does this too) — you can't be mid-watch on
+            // something you've finished.
+            const clearsCurrent = clearsCurrentlyWatching(
+                usersRef.current.find((u) => u.id === meId),
+                seasonId,
+                checked,
+            );
+
             // Optimistic: flip the cell, then reconcile with the server.
             setSeasons((prev) =>
                 prev.map((s) => {
@@ -233,6 +345,13 @@ function App() {
                     return { ...s, watched_by };
                 }),
             );
+            if (clearsCurrent) {
+                setUsers((prev) =>
+                    prev.map((u) =>
+                        u.id === meId ? { ...u, currently_watching_season_id: null } : u,
+                    ),
+                );
+            }
             try {
                 if (checked) {
                     await api('/api/watched', {
@@ -255,6 +374,13 @@ function App() {
                         return { ...s, watched_by };
                     }),
                 );
+                if (clearsCurrent) {
+                    setUsers((prev) =>
+                        prev.map((u) =>
+                            u.id === meId ? { ...u, currently_watching_season_id: seasonId } : u,
+                        ),
+                    );
+                }
                 setError(err.message);
             }
         },
@@ -285,7 +411,13 @@ function App() {
                 !error &&
                 users.length > 0 &&
                 html`
-                    <${Board} users=${users} seasons=${seasons} meId=${meId} onToggle=${toggle} />
+                    <${Board}
+                        users=${users}
+                        seasons=${seasons}
+                        meId=${meId}
+                        onToggle=${toggle}
+                        onSetCurrentlyWatching=${setCurrentlyWatching}
+                    />
                 `}
             </main>
         </div>

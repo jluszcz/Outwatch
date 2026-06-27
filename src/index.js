@@ -16,6 +16,14 @@ const watchedCreate = z.object({
     season_id: z.number().int().positive({ message: 'season_id must be a positive integer' }),
 });
 
+const currentlyWatchingUpdate = z.object({
+    season_id: z
+        .number()
+        .int()
+        .positive({ message: 'season_id must be a positive integer' })
+        .nullable(),
+});
+
 app.onError((err, c) => {
     if (
         err instanceof HTTPException &&
@@ -53,7 +61,9 @@ app.get('/api/board', async (c) => {
     const me = await callerUser(c);
 
     const [{ results: users }, { results: seasons }, { results: watched }] = await Promise.all([
-        c.env.DB.prepare('SELECT id, name FROM users ORDER BY sort_order ASC, name ASC').all(),
+        c.env.DB.prepare(
+            'SELECT id, name, currently_watching_season_id FROM users ORDER BY sort_order ASC, name ASC',
+        ).all(),
         c.env.DB.prepare('SELECT id, subtitle, wikipedia_url FROM seasons ORDER BY id ASC').all(),
         c.env.DB.prepare('SELECT season_id, user_id FROM watched').all(),
     ]);
@@ -77,6 +87,30 @@ app.get('/api/board', async (c) => {
     });
 });
 
+app.put(
+    '/api/currently-watching',
+    zValidator('json', currentlyWatchingUpdate, onInvalid),
+    async (c) => {
+        const me = await callerUser(c);
+        if (!me) return c.json({ error: 'Your account is not on the watch list' }, 403);
+
+        const { season_id } = c.req.valid('json');
+
+        if (season_id !== null) {
+            const season = await c.env.DB.prepare('SELECT id FROM seasons WHERE id = ?')
+                .bind(season_id)
+                .first();
+            if (!season) return c.json({ error: `Unknown season: ${season_id}` }, 404);
+        }
+
+        await c.env.DB.prepare('UPDATE users SET currently_watching_season_id = ? WHERE id = ?')
+            .bind(season_id, me.id)
+            .run();
+
+        return c.json({ success: true, user_id: me.id, season_id });
+    },
+);
+
 app.post('/api/watched', zValidator('json', watchedCreate, onInvalid), async (c) => {
     const me = await callerUser(c);
     if (!me) return c.json({ error: 'Your account is not on the watch list' }, 403);
@@ -88,11 +122,16 @@ app.post('/api/watched', zValidator('json', watchedCreate, onInvalid), async (c)
     if (!season) return c.json({ error: `Unknown season: ${season_id}` }, 404);
 
     const now = new Date().toISOString();
-    await c.env.DB.prepare(
-        'INSERT OR IGNORE INTO watched (user_id, season_id, created_at) VALUES (?, ?, ?)',
-    )
-        .bind(me.id, season_id, now)
-        .run();
+    await c.env.DB.batch([
+        c.env.DB.prepare(
+            'INSERT OR IGNORE INTO watched (user_id, season_id, created_at) VALUES (?, ?, ?)',
+        ).bind(me.id, season_id, now),
+        // Finishing a season clears it as your currently-watching season — you
+        // can't be mid-watch on something you've marked seen. No-op otherwise.
+        c.env.DB.prepare(
+            'UPDATE users SET currently_watching_season_id = NULL WHERE id = ? AND currently_watching_season_id = ?',
+        ).bind(me.id, season_id),
+    ]);
 
     return c.json({ success: true, user_id: me.id, season_id }, 201);
 });
@@ -106,6 +145,11 @@ app.delete('/api/watched/:season_id', async (c) => {
         return c.json({ error: 'season_id must be a positive integer' }, 400);
     }
 
+    // Invariant: a user's currently_watching_season_id is always one of their
+    // *unwatched* seasons (the picker only offers those, and POST /api/watched
+    // clears it on finish). Unmarking a season leaves it unwatched — a valid
+    // currently-watching state — but we deliberately don't restore it here:
+    // there's no signal the user resumed it, so we leave their pick untouched.
     await c.env.DB.prepare('DELETE FROM watched WHERE user_id = ? AND season_id = ?')
         .bind(me.id, seasonId)
         .run();
