@@ -118,11 +118,12 @@ All routes derive the caller's identity from the
 `Cf-Access-Authenticated-User-Email` header that Cloudflare Access injects (or
 `DEV_USER_EMAIL` locally). Clients never send a user id.
 
-| Method   | Path                      | Description                                                  |
-| -------- | ------------------------- | ------------------------------------------------------------ |
-| `GET`    | `/api/board`              | Current user, all users, and all seasons with watched state  |
-| `POST`   | `/api/watched`            | Mark the caller as having watched a season (`{ season_id }`) |
-| `DELETE` | `/api/watched/:season_id` | Unmark the caller for a season                               |
+| Method   | Path                      | Description                                                                         |
+| -------- | ------------------------- | ----------------------------------------------------------------------------------- |
+| `GET`    | `/api/board`              | Current user, all users, and all seasons with watched state                         |
+| `POST`   | `/api/watched`            | Mark the caller as having watched a season (`{ season_id }`)                        |
+| `DELETE` | `/api/watched/:season_id` | Unmark the caller for a season                                                      |
+| `PUT`    | `/api/currently-watching` | Set the caller's currently-watching season, or clear it (`{ season_id }`, nullable) |
 
 ## Database Schema
 
