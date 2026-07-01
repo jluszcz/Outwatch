@@ -29,7 +29,6 @@
         "@cloudflare/vitest-pool-workers": "^0.16.19",
         "@cloudflare/workers-types": "^4.20260317.1",
         "concurrently": "^10.0.3",
-        "csso-cli": "^4.0.2",
         "esbuild": "^0.28.1",
         "husky": "^9.1.7",
         "lint-staged": "^17.0.8",
