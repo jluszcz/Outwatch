@@ -276,8 +276,17 @@ function App() {
     const [error, setError] = useState(null);
     const { theme, toggle: toggleTheme } = useTheme();
 
+    // Board fetches race with optimistic mutations: a /api/board response that
+    // was fetched before a click must not overwrite the optimistic state, and
+    // when focus + visibilitychange both fire, only the latest fetch may apply.
+    // Each fetch takes a generation number; mutations bump it, and any response
+    // that is no longer the latest generation is discarded.
+    const boardGen = useRef(0);
+
     const loadBoard = useCallback(async () => {
+        const gen = ++boardGen.current;
         const board = await api('/api/board');
+        if (gen !== boardGen.current) return;
         setUsers(board.users);
         setSeasons(board.seasons);
         setMe(board.me);
@@ -323,6 +332,7 @@ function App() {
 
     const setCurrentlyWatching = useCallback(
         async (seasonId) => {
+            boardGen.current++; // invalidate any in-flight board refresh
             const prevSeasonId =
                 usersRef.current.find((u) => u.id === meId)?.currently_watching_season_id ?? null;
             setUsers((current) =>
@@ -351,6 +361,7 @@ function App() {
 
     const toggle = useCallback(
         async (seasonId, checked) => {
+            boardGen.current++; // invalidate any in-flight board refresh
             // Marking a season seen also clears it as your currently-watching
             // season (the server does this too) — you can't be mid-watch on
             // something you've finished.
