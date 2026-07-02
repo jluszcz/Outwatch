@@ -25,12 +25,13 @@ const currentlyWatchingUpdate = z.object({
 });
 
 app.onError((err, c) => {
-    if (
-        err instanceof HTTPException &&
-        err.status === 400 &&
-        err.message === 'Malformed JSON in request body'
-    ) {
-        return c.json({ error: 'Invalid JSON body' }, 400);
+    // An HTTPException is an intentional HTTP error (e.g. Hono's 400 for a
+    // body that fails JSON.parse) — keep its status instead of collapsing it
+    // into a 500, just with a friendlier message for the malformed-JSON case.
+    if (err instanceof HTTPException) {
+        const message =
+            err.message === 'Malformed JSON in request body' ? 'Invalid JSON body' : err.message;
+        return c.json({ error: message || 'Request failed' }, err.status);
     }
     // Keep the API contract uniformly JSON — without this, an unexpected error
     // (e.g. a D1 hiccup) surfaces as the runtime's plain-text 500.
