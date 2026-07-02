@@ -279,17 +279,21 @@ function App() {
     // Board fetches race with optimistic mutations: a /api/board response that
     // was fetched before a click must not overwrite the optimistic state, and
     // when focus + visibilitychange both fire, only the latest fetch may apply.
-    // Each fetch takes a generation number; mutations bump it, and any response
-    // that is no longer the latest generation is discarded.
+    // Each fetch takes a generation number; mutations bump it both when they
+    // start and when they settle (a refresh begun mid-mutation may have read
+    // pre-mutation state), and any response that is no longer the latest
+    // generation is discarded.
     const boardGen = useRef(0);
 
+    // Resolves true when the response was applied, false when it was stale.
     const loadBoard = useCallback(async () => {
         const gen = ++boardGen.current;
         const board = await api('/api/board');
-        if (gen !== boardGen.current) return;
+        if (gen !== boardGen.current) return false;
         setUsers(board.users);
         setSeasons(board.seasons);
         setMe(board.me);
+        return true;
     }, []);
 
     useEffect(() => {
@@ -310,7 +314,9 @@ function App() {
         const refresh = () => {
             if (document.visibilityState !== 'visible') return;
             loadBoard().then(
-                () => setError(null),
+                // A discarded stale response says nothing about server health —
+                // only clear the error banner when the board actually applied.
+                (applied) => applied && setError(null),
                 (err) => setError(err.message),
             );
         };
@@ -354,6 +360,10 @@ function App() {
                     ),
                 );
                 setError(err.message);
+            } finally {
+                // A refresh begun while the PUT was in flight may hold
+                // pre-mutation state; make sure its response is discarded.
+                boardGen.current++;
             }
         },
         [meId],
@@ -418,6 +428,10 @@ function App() {
                     );
                 }
                 setError(err.message);
+            } finally {
+                // A refresh begun while the POST/DELETE was in flight may hold
+                // pre-mutation state; make sure its response is discarded.
+                boardGen.current++;
             }
         },
         [meId],
