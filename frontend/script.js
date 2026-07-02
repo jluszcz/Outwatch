@@ -126,6 +126,7 @@ function SeasonRow({ season, users, meId, fullyWatched, onToggle }) {
                             type="checkbox"
                             checked=${checked}
                             disabled=${!isMe}
+                            aria-label=${`${u.name} watched ${seasonLabel(season)}`}
                             title=${isMe ? '' : `Only ${u.name} can change this`}
                             onChange=${isMe
                                 ? (e) => onToggle(season.id, e.target.checked)
@@ -216,12 +217,14 @@ function Board({ users, seasons, meId, onToggle, onSetCurrentlyWatching }) {
                 <span class="sort-label">Sort by</span>
                 <button
                     class=${'sort-btn' + (sortMode === 'season' ? ' active' : '')}
+                    aria-pressed=${sortMode === 'season'}
                     onClick=${() => setSortMode('season')}
                 >
                     Season
                 </button>
                 <button
                     class=${'sort-btn' + (sortMode === 'seen' ? ' active' : '')}
+                    aria-pressed=${sortMode === 'seen'}
                     onClick=${() => setSortMode('seen')}
                 >
                     Seen Count
@@ -273,20 +276,42 @@ function App() {
     const [error, setError] = useState(null);
     const { theme, toggle: toggleTheme } = useTheme();
 
+    const loadBoard = useCallback(async () => {
+        const board = await api('/api/board');
+        setUsers(board.users);
+        setSeasons(board.seasons);
+        setMe(board.me);
+    }, []);
+
     useEffect(() => {
         (async () => {
             try {
-                const board = await api('/api/board');
-                setUsers(board.users);
-                setSeasons(board.seasons);
-                setMe(board.me);
+                await loadBoard();
             } catch (err) {
                 setError(err.message);
             } finally {
                 setLoading(false);
             }
         })();
-    }, []);
+    }, [loadBoard]);
+
+    // The board is shared: refetch when the tab regains focus so changes other
+    // people made while this tab was in the background show up without a reload.
+    useEffect(() => {
+        const refresh = () => {
+            if (document.visibilityState !== 'visible') return;
+            loadBoard().then(
+                () => setError(null),
+                (err) => setError(err.message),
+            );
+        };
+        document.addEventListener('visibilitychange', refresh);
+        window.addEventListener('focus', refresh);
+        return () => {
+            document.removeEventListener('visibilitychange', refresh);
+            window.removeEventListener('focus', refresh);
+        };
+    }, [loadBoard]);
 
     const meId = me?.id ?? null;
 
@@ -394,8 +419,8 @@ function App() {
                 ${error && html`<div class="error">${error}</div>`}
                 ${loading && html`<div class="loading">Loading…</div>`}
                 ${!loading &&
-                !error &&
                 !me &&
+                users.length > 0 &&
                 html`
                     <div class="notice">You're not on the watch list — the board is read-only.</div>
                 `}
@@ -408,7 +433,6 @@ function App() {
                     </div>
                 `}
                 ${!loading &&
-                !error &&
                 users.length > 0 &&
                 html`
                     <${Board}
