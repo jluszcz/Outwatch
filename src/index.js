@@ -99,24 +99,33 @@ app.put(
         const { season_id } = c.req.valid('json');
 
         if (season_id !== null) {
-            const [season, alreadyWatched] = await Promise.all([
-                c.env.DB.prepare('SELECT id FROM seasons WHERE id = ?').bind(season_id).first(),
-                c.env.DB.prepare('SELECT 1 AS x FROM watched WHERE user_id = ? AND season_id = ?')
-                    .bind(me.id, season_id)
-                    .first(),
-            ]);
+            const season = await c.env.DB.prepare('SELECT id FROM seasons WHERE id = ?')
+                .bind(season_id)
+                .first();
             if (!season) return c.json({ error: `Unknown season: ${season_id}` }, 404);
+
             // Invariant: your currently-watching season is always one of your
             // unwatched seasons. The picker only offers those; enforce it here
-            // too so a direct API call can't break it.
-            if (alreadyWatched) {
+            // too so a direct API call can't break it. The not-watched check and
+            // the write are a single statement so a concurrent POST /api/watched
+            // can't land between them and leave you "watching" a watched season.
+            const { meta } = await c.env.DB.prepare(
+                `UPDATE users SET currently_watching_season_id = ?1
+                 WHERE id = ?2
+                   AND NOT EXISTS (SELECT 1 FROM watched WHERE user_id = ?2 AND season_id = ?1)`,
+            )
+                .bind(season_id, me.id)
+                .run();
+            if (meta.changes === 0) {
                 return c.json({ error: `You have already watched season ${season_id}` }, 409);
             }
+        } else {
+            await c.env.DB.prepare(
+                'UPDATE users SET currently_watching_season_id = NULL WHERE id = ?',
+            )
+                .bind(me.id)
+                .run();
         }
-
-        await c.env.DB.prepare('UPDATE users SET currently_watching_season_id = ? WHERE id = ?')
-            .bind(season_id, me.id)
-            .run();
 
         return c.json({ success: true, user_id: me.id, season_id });
     },
