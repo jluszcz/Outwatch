@@ -32,7 +32,10 @@ app.onError((err, c) => {
     ) {
         return c.json({ error: 'Invalid JSON body' }, 400);
     }
-    throw err;
+    // Keep the API contract uniformly JSON — without this, an unexpected error
+    // (e.g. a D1 hiccup) surfaces as the runtime's plain-text 500.
+    console.error(err);
+    return c.json({ error: 'Internal error' }, 500);
 });
 
 // Cloudflare Access authenticates at the edge and forwards the verified identity
@@ -58,9 +61,8 @@ async function callerUser(c) {
 }
 
 app.get('/api/board', async (c) => {
-    const me = await callerUser(c);
-
-    const [{ results: users }, { results: seasons }, { results: watched }] = await Promise.all([
+    const [me, { results: users }, { results: seasons }, { results: watched }] = await Promise.all([
+        callerUser(c),
         c.env.DB.prepare(
             'SELECT id, name, currently_watching_season_id FROM users ORDER BY sort_order ASC, name ASC',
         ).all(),
@@ -97,10 +99,19 @@ app.put(
         const { season_id } = c.req.valid('json');
 
         if (season_id !== null) {
-            const season = await c.env.DB.prepare('SELECT id FROM seasons WHERE id = ?')
-                .bind(season_id)
-                .first();
+            const [season, alreadyWatched] = await Promise.all([
+                c.env.DB.prepare('SELECT id FROM seasons WHERE id = ?').bind(season_id).first(),
+                c.env.DB.prepare('SELECT 1 AS x FROM watched WHERE user_id = ? AND season_id = ?')
+                    .bind(me.id, season_id)
+                    .first(),
+            ]);
             if (!season) return c.json({ error: `Unknown season: ${season_id}` }, 404);
+            // Invariant: your currently-watching season is always one of your
+            // unwatched seasons. The picker only offers those; enforce it here
+            // too so a direct API call can't break it.
+            if (alreadyWatched) {
+                return c.json({ error: `You have already watched season ${season_id}` }, 409);
+            }
         }
 
         await c.env.DB.prepare('UPDATE users SET currently_watching_season_id = ? WHERE id = ?')
