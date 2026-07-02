@@ -9,6 +9,10 @@ CREATE TABLE user_emails_new (
     FOREIGN KEY (user_id) REFERENCES users (id)
 );
 
+-- OR IGNORE: if two rows differ only by case, the second is dropped. That is
+-- only lossy if a misconfigured roster mapped the two spellings to *different*
+-- users — under NOCASE they could never both match anyway, so dropping one is
+-- acceptable for a <5-person roster.
 INSERT OR IGNORE INTO user_emails_new (email, user_id)
 SELECT lower(email), user_id FROM user_emails;
 

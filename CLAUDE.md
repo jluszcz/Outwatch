@@ -27,6 +27,7 @@ It is a sibling of the **Seen** project and follows the same stack and structure
 - `migrations/` — D1 SQL migrations (applied via wrangler)
     - `0001_initial.sql` — `users`, `user_emails`, `seasons`, `watched` tables
     - `0002_seed_seasons.sql` — all 50 seasons (reference data)
+    - `0003_currently_watching.sql` — adds `users.currently_watching_season_id`
     - `0004_email_nocase.sql` — rebuilds `user_emails` with `COLLATE NOCASE` emails
 - `roster.sql` — real roster: `users` (names) + `user_emails` (emails), with generic `user-N` ids (gitignored; template in `roster.example.sql`)
 - `test/` — Tests
