@@ -104,6 +104,9 @@ names and emails out of source control. `seed.sql` holds only optional sample
 - Checkbox toggles are optimistic: the cell flips immediately, then reconciles
   with the server and reverts on failure.
 - Only the current user's column checkboxes are enabled; others are read-only.
+- `styles.css` themes via CSS `light-dark()`, which needs a mid-2024 browser
+  (Chrome 123+, Safari 17.5+, Firefox 120+); older browsers render with no
+  theme colors at all.
 
 ## Rules
 
