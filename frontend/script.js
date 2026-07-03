@@ -7,6 +7,7 @@ import {
     sortSeasons,
     sortBySeenCount,
     selectableSeasons,
+    setWatched,
     clearsCurrentlyWatching,
 } from './utils.js';
 
@@ -276,24 +277,34 @@ function App() {
     const [error, setError] = useState(null);
     const { theme, toggle: toggleTheme } = useTheme();
 
-    // Board fetches race with optimistic mutations: a /api/board response that
-    // was fetched before a click must not overwrite the optimistic state, and
-    // when focus + visibilitychange both fire, only the latest fetch may apply.
-    // Each fetch takes a generation number; mutations bump it both when they
-    // start and when they settle (a refresh begun mid-mutation may have read
-    // pre-mutation state), and any response that is no longer the latest
-    // generation is discarded.
+    // Board fetches race with optimistic mutations, guarded two ways:
+    // - Generations: each fetch takes a number and only the latest response
+    //   may apply (focus + visibilitychange often both fire). A mutation that
+    //   starts while a fetch is in flight invalidates it — its response may
+    //   hold pre-mutation state.
+    // - Deferral: a refresh requested while a mutation is in flight is queued
+    //   rather than started, because its response could be served from a read
+    //   taken before the mutation commits. When the last mutation settles, the
+    //   queued refetch runs — recovering whatever a discarded fetch carried.
     const boardGen = useRef(0);
+    const boardFetches = useRef(0);
+    const mutationsInFlight = useRef(0);
+    const refreshQueued = useRef(false);
 
     // Resolves true when the response was applied, false when it was stale.
     const loadBoard = useCallback(async () => {
         const gen = ++boardGen.current;
-        const board = await api('/api/board');
-        if (gen !== boardGen.current) return false;
-        setUsers(board.users);
-        setSeasons(board.seasons);
-        setMe(board.me);
-        return true;
+        boardFetches.current++;
+        try {
+            const board = await api('/api/board');
+            if (gen !== boardGen.current) return false;
+            setUsers(board.users);
+            setSeasons(board.seasons);
+            setMe(board.me);
+            return true;
+        } finally {
+            boardFetches.current--;
+        }
     }, []);
 
     useEffect(() => {
@@ -313,6 +324,10 @@ function App() {
     useEffect(() => {
         const refresh = () => {
             if (document.visibilityState !== 'visible') return;
+            if (mutationsInFlight.current > 0) {
+                refreshQueued.current = true;
+                return;
+            }
             loadBoard().then(
                 // A discarded stale response says nothing about server health —
                 // only clear the error banner when the board actually applied.
@@ -336,9 +351,30 @@ function App() {
     const usersRef = useRef(users);
     usersRef.current = users;
 
+    const beginMutation = useCallback(() => {
+        mutationsInFlight.current++;
+        // A board fetch already in flight may have read pre-mutation state:
+        // discard its response and queue a refetch so the other-user changes
+        // it was carrying still arrive.
+        if (boardFetches.current > 0) {
+            boardGen.current++;
+            refreshQueued.current = true;
+        }
+    }, []);
+
+    const endMutation = useCallback(() => {
+        if (--mutationsInFlight.current === 0 && refreshQueued.current) {
+            refreshQueued.current = false;
+            // Best-effort: the mutation's own outcome (including its error
+            // banner) already reflects reality; on failure the next focus
+            // refresh retries.
+            loadBoard().catch(() => {});
+        }
+    }, [loadBoard]);
+
     const setCurrentlyWatching = useCallback(
         async (seasonId) => {
-            boardGen.current++; // invalidate any in-flight board refresh
+            beginMutation();
             const prevSeasonId =
                 usersRef.current.find((u) => u.id === meId)?.currently_watching_season_id ?? null;
             setUsers((current) =>
@@ -361,17 +397,15 @@ function App() {
                 );
                 setError(err.message);
             } finally {
-                // A refresh begun while the PUT was in flight may hold
-                // pre-mutation state; make sure its response is discarded.
-                boardGen.current++;
+                endMutation();
             }
         },
-        [meId],
+        [meId, beginMutation, endMutation],
     );
 
     const toggle = useCallback(
         async (seasonId, checked) => {
-            boardGen.current++; // invalidate any in-flight board refresh
+            beginMutation();
             // Marking a season seen also clears it as your currently-watching
             // season (the server does this too) — you can't be mid-watch on
             // something you've finished.
@@ -383,13 +417,11 @@ function App() {
 
             // Optimistic: flip the cell, then reconcile with the server.
             setSeasons((prev) =>
-                prev.map((s) => {
-                    if (s.id !== seasonId) return s;
-                    const watched_by = checked
-                        ? [...s.watched_by, meId]
-                        : s.watched_by.filter((id) => id !== meId);
-                    return { ...s, watched_by };
-                }),
+                prev.map((s) =>
+                    s.id === seasonId
+                        ? { ...s, watched_by: setWatched(s.watched_by, meId, checked) }
+                        : s,
+                ),
             );
             if (clearsCurrent) {
                 setUsers((prev) =>
@@ -412,13 +444,11 @@ function App() {
             } catch (err) {
                 // Revert the optimistic change on failure.
                 setSeasons((prev) =>
-                    prev.map((s) => {
-                        if (s.id !== seasonId) return s;
-                        const watched_by = checked
-                            ? s.watched_by.filter((id) => id !== meId)
-                            : [...s.watched_by, meId];
-                        return { ...s, watched_by };
-                    }),
+                    prev.map((s) =>
+                        s.id === seasonId
+                            ? { ...s, watched_by: setWatched(s.watched_by, meId, !checked) }
+                            : s,
+                    ),
                 );
                 if (clearsCurrent) {
                     setUsers((prev) =>
@@ -429,12 +459,10 @@ function App() {
                 }
                 setError(err.message);
             } finally {
-                // A refresh begun while the POST/DELETE was in flight may hold
-                // pre-mutation state; make sure its response is discarded.
-                boardGen.current++;
+                endMutation();
             }
         },
-        [meId],
+        [meId, beginMutation, endMutation],
     );
 
     return html`
