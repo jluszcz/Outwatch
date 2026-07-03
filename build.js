@@ -1,4 +1,5 @@
 import { build, context } from 'esbuild';
+import { rm } from 'node:fs/promises';
 import { argv } from 'node:process';
 
 const watch = argv.includes('--watch');
@@ -23,4 +24,9 @@ if (watch) {
     console.log('esbuild watching frontend/');
 } else {
     await build(options);
+    // Watch mode emits sourcemaps into public/; production builds don't, so
+    // remove leftovers from a dev session or `wrangler deploy` uploads them.
+    await Promise.all(
+        ['public/script.js.map', 'public/styles.css.map'].map((f) => rm(f, { force: true })),
+    );
 }
