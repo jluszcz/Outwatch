@@ -18,15 +18,17 @@ It is a sibling of the **Seen** project and follows the same stack and structure
 - `frontend/` — Preact + htm frontend source
     - `script.js` — `App` component + child components managing state and rendering
     - `utils.js` — Pure helpers (`seasonLabel`, `isFullyWatched`, `sortSeasons`, `sortBySeenCount`, `selectableSeasons`, `clearsCurrentlyWatching`); shared with tests
+    - `styles.css` — Theme tokens + layout
 - `public/` — Served static assets
     - `index.html` — App shell that loads the bundled script
-    - `styles.css` — Theme tokens + layout
-    - `script.js`, `script.js.map`, `styles.css` — build output (gitignored)
+    - `script.js`, `script.js.map`, `styles.css`, `styles.css.map` — build output (gitignored)
 - `src/` — Cloudflare Workers backend
     - `index.js` — Hono app + API for the board and watched state
 - `migrations/` — D1 SQL migrations (applied via wrangler)
     - `0001_initial.sql` — `users`, `user_emails`, `seasons`, `watched` tables
     - `0002_seed_seasons.sql` — all 50 seasons (reference data)
+    - `0003_currently_watching.sql` — adds `users.currently_watching_season_id`
+    - `0004_email_nocase.sql` — rebuilds `user_emails` with `COLLATE NOCASE` emails
 - `roster.sql` — real roster: `users` (names) + `user_emails` (emails), with generic `user-N` ids (gitignored; template in `roster.example.sql`)
 - `test/` — Tests
     - `test/worker/` — Worker API tests (`@cloudflare/vitest-pool-workers`)
@@ -90,11 +92,11 @@ names and emails out of source control. `seed.sql` holds only optional sample
 - `GET /api/board` — `{ me, users, seasons }`; each season carries `watched_by` (user ids); each user carries `currently_watching_season_id`. Emails are not exposed to the client.
 - `POST /api/watched` — `{ season_id }`; marks the caller watched (idempotent, `INSERT OR IGNORE`); also clears the season as the caller's currently-watching, atomically via `DB.batch`
 - `DELETE /api/watched/:season_id` — unmarks the caller (no-op safe)
-- `PUT /api/currently-watching` — `{ season_id }` (nullable); sets the caller's currently-watching season, or clears it with `null`. Invariant: it's always one of the caller's unwatched seasons.
+- `PUT /api/currently-watching` — `{ season_id }` (nullable); sets the caller's currently-watching season, or clears it with `null`. Invariant: it's always one of the caller's unwatched seasons — a season the caller has already watched is rejected with 409.
 
 ### Frontend
 
-- `App` fetches `/api/board` once and owns `users`, `seasons`, `me` state.
+- `App` fetches `/api/board` on load and owns `users`, `seasons`, `me` state; it refetches when the tab regains focus/visibility so other people's changes show up without a reload.
 - The `Board` component supports two sort modes toggled by a button group:
     - `sortSeasons` (default, "Season" mode) — sinks fully-watched seasons to the bottom, then sorts by season number.
     - `sortBySeenCount` ("Seen Count" mode) — sinks fully-watched seasons to the bottom, then sorts by ascending watcher count (ties broken by season number).
@@ -102,6 +104,9 @@ names and emails out of source control. `seed.sql` holds only optional sample
 - Checkbox toggles are optimistic: the cell flips immediately, then reconciles
   with the server and reverts on failure.
 - Only the current user's column checkboxes are enabled; others are read-only.
+- `styles.css` themes via CSS `light-dark()`, which needs a mid-2024 browser
+  (Chrome 123+, Safari 17.5+, Firefox 120+); older browsers render with no
+  theme colors at all.
 
 ## Rules
 

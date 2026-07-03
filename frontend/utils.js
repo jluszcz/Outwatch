@@ -42,6 +42,14 @@ export function selectableSeasons(seasons, meId) {
     return seasons.filter((s) => !s.watched_by.includes(meId));
 }
 
+// watched_by with the user present (watched) or absent — never duplicated:
+// overlapping optimistic updates and their reverts could otherwise append the
+// same user twice and inflate seen counts. Does not mutate the input.
+export function setWatched(watchedBy, userId, watched) {
+    const without = watchedBy.filter((id) => id !== userId);
+    return watched ? [...without, userId] : without;
+}
+
 // Whether checking a season would also clear it as your currently-watching
 // season: true only when you're marking it watched and it's the one you're on.
 // (You can't be mid-watch on a season you've just finished.)

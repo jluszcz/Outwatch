@@ -1,24 +1,22 @@
 import { build, context } from 'esbuild';
-import { mkdir } from 'node:fs/promises';
-import { exec } from 'node:child_process';
-import { promisify } from 'node:util';
+import { rm } from 'node:fs/promises';
 import { argv } from 'node:process';
 
-const execAsync = promisify(exec);
 const watch = argv.includes('--watch');
 
+// styles.css is an entry point too: esbuild minifies it in prod and rebuilds it
+// in watch mode, so `npm run dev` serves styles on a fresh clone and picks up
+// CSS edits without a manual build.
 const options = {
-    entryPoints: ['frontend/script.js'],
+    entryPoints: ['frontend/script.js', 'frontend/styles.css'],
     bundle: true,
     format: 'esm',
     minify: !watch,
     sourcemap: watch,
-    outfile: 'public/script.js',
+    outdir: 'public',
     target: ['es2022'],
     logLevel: 'info',
 };
-
-await mkdir('public', { recursive: true });
 
 if (watch) {
     const ctx = await context(options);
@@ -26,5 +24,9 @@ if (watch) {
     console.log('esbuild watching frontend/');
 } else {
     await build(options);
-    await execAsync('csso frontend/styles.css --output public/styles.css');
+    // Watch mode emits sourcemaps into public/; production builds don't, so
+    // remove leftovers from a dev session or `wrangler deploy` uploads them.
+    await Promise.all(
+        ['public/script.js.map', 'public/styles.css.map'].map((f) => rm(f, { force: true })),
+    );
 }

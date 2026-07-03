@@ -25,14 +25,21 @@ const currentlyWatchingUpdate = z.object({
 });
 
 app.onError((err, c) => {
-    if (
-        err instanceof HTTPException &&
-        err.status === 400 &&
-        err.message === 'Malformed JSON in request body'
-    ) {
-        return c.json({ error: 'Invalid JSON body' }, 400);
+    // An HTTPException is an intentional HTTP error (e.g. Hono's 400 for a
+    // body that fails JSON.parse) — keep its status instead of collapsing it
+    // into a 500, just with a friendlier message for the malformed-JSON case.
+    if (err instanceof HTTPException) {
+        // A custom Response attached to the exception wins — nothing in this
+        // app constructs one today, but middleware may.
+        if (err.res) return err.getResponse();
+        const message =
+            err.message === 'Malformed JSON in request body' ? 'Invalid JSON body' : err.message;
+        return c.json({ error: message || 'Request failed' }, err.status);
     }
-    throw err;
+    // Keep the API contract uniformly JSON — without this, an unexpected error
+    // (e.g. a D1 hiccup) surfaces as the runtime's plain-text 500.
+    console.error(err);
+    return c.json({ error: 'Internal error' }, 500);
 });
 
 // Cloudflare Access authenticates at the edge and forwards the verified identity
@@ -58,9 +65,8 @@ async function callerUser(c) {
 }
 
 app.get('/api/board', async (c) => {
-    const me = await callerUser(c);
-
-    const [{ results: users }, { results: seasons }, { results: watched }] = await Promise.all([
+    const [me, { results: users }, { results: seasons }, { results: watched }] = await Promise.all([
+        callerUser(c),
         c.env.DB.prepare(
             'SELECT id, name, currently_watching_season_id FROM users ORDER BY sort_order ASC, name ASC',
         ).all(),
@@ -101,11 +107,29 @@ app.put(
                 .bind(season_id)
                 .first();
             if (!season) return c.json({ error: `Unknown season: ${season_id}` }, 404);
-        }
 
-        await c.env.DB.prepare('UPDATE users SET currently_watching_season_id = ? WHERE id = ?')
-            .bind(season_id, me.id)
-            .run();
+            // Invariant: your currently-watching season is always one of your
+            // unwatched seasons. The picker only offers those; enforce it here
+            // too so a direct API call can't break it. The not-watched check and
+            // the write are a single statement so a concurrent POST /api/watched
+            // can't land between them and leave you "watching" a watched season.
+            const { meta } = await c.env.DB.prepare(
+                `UPDATE users SET currently_watching_season_id = ?1
+                 WHERE id = ?2
+                   AND NOT EXISTS (SELECT 1 FROM watched WHERE user_id = ?2 AND season_id = ?1)`,
+            )
+                .bind(season_id, me.id)
+                .run();
+            if (meta.changes === 0) {
+                return c.json({ error: `You have already watched season ${season_id}` }, 409);
+            }
+        } else {
+            await c.env.DB.prepare(
+                'UPDATE users SET currently_watching_season_id = NULL WHERE id = ?',
+            )
+                .bind(me.id)
+                .run();
+        }
 
         return c.json({ success: true, user_id: me.id, season_id });
     },

@@ -5,108 +5,41 @@
 }
 
 /*
- * Theme cascade — four blocks work together:
- *   1. :root          — light tokens (default, no OS/manual signal)
- *   2. @media dark    — dark tokens when OS prefers dark AND no data-theme override
- *   3. [data-theme=light] — forces light tokens when user manually picks light
- *   4. [data-theme=dark]  — forces dark tokens when user manually picks dark
- *
- * Do not collapse #1 and #3 or #2 and #4: the @media block is only active when
- * data-theme is absent, so all four blocks are needed for correct override logic.
+ * Theme tokens — each light-dark() pair resolves via the active color scheme.
+ * With no data-theme set, `color-scheme: light dark` lets the OS preference
+ * decide; a manual toggle sets data-theme, which forces one scheme and
+ * overrides the OS.
  */
 
 :root {
-    color-scheme: light;
-    --bg: #f5f5f5;
-    --surface: #fff;
-    --surface-subtle: #f9f9f9;
-    --surface-hover: #fafafa;
-    --surface-accent: #f0f7ff;
-    --text: #1a1a1a;
-    --text-subtle: #666;
-    --text-muted: #888;
-    --text-faint: #bbb;
-    --border: #e8e8e8;
-    --border-subtle: #f0f0f0;
-    --shadow: rgba(0, 0, 0, 0.08);
-    --blue: #4a90e2;
-    --red: #c0392b;
-    --red-bg: #fdf0ef;
-    --red-border: #f5c6c2;
-    --amber-bg: #fdf6e3;
-    --amber-border: #f0e2b8;
-    --amber-text: #8a6d3b;
-}
-
-@media (prefers-color-scheme: dark) {
-    :root {
-        color-scheme: dark;
-        --bg: #111;
-        --surface: #1c1c1e;
-        --surface-subtle: #252525;
-        --surface-hover: #242424;
-        --surface-accent: #1a2535;
-        --text: #e8e8e8;
-        --text-subtle: #999;
-        --text-muted: #7a7a7a;
-        --text-faint: #5a5a5a;
-        --border: #333;
-        --border-subtle: #2a2a2a;
-        --shadow: rgba(0, 0, 0, 0.4);
-        --blue: #5a9fe8;
-        --red: #e05c4a;
-        --red-bg: #2a1515;
-        --red-border: #5a2525;
-        --amber-bg: #2a2515;
-        --amber-border: #4a4025;
-        --amber-text: #c9a96a;
-    }
+    color-scheme: light dark;
+    --bg: light-dark(#f5f5f5, #111);
+    --surface: light-dark(#fff, #1c1c1e);
+    --surface-subtle: light-dark(#f9f9f9, #252525);
+    --surface-hover: light-dark(#fafafa, #242424);
+    --surface-accent: light-dark(#f0f7ff, #1a2535);
+    --text: light-dark(#1a1a1a, #e8e8e8);
+    --text-subtle: light-dark(#666, #999);
+    --text-muted: light-dark(#888, #7a7a7a);
+    --text-faint: light-dark(#bbb, #5a5a5a);
+    --border: light-dark(#e8e8e8, #333);
+    --border-subtle: light-dark(#f0f0f0, #2a2a2a);
+    --shadow: light-dark(rgba(0, 0, 0, 0.08), rgba(0, 0, 0, 0.4));
+    --blue: light-dark(#4a90e2, #5a9fe8);
+    --red: light-dark(#c0392b, #e05c4a);
+    --red-bg: light-dark(#fdf0ef, #2a1515);
+    --red-border: light-dark(#f5c6c2, #5a2525);
+    --amber-bg: light-dark(#fdf6e3, #2a2515);
+    --amber-border: light-dark(#f0e2b8, #4a4025);
+    --amber-text: light-dark(#8a6d3b, #c9a96a);
 }
 
 html[data-theme='light'] {
     color-scheme: light;
-    --bg: #f5f5f5;
-    --surface: #fff;
-    --surface-subtle: #f9f9f9;
-    --surface-hover: #fafafa;
-    --surface-accent: #f0f7ff;
-    --text: #1a1a1a;
-    --text-subtle: #666;
-    --text-muted: #888;
-    --text-faint: #bbb;
-    --border: #e8e8e8;
-    --border-subtle: #f0f0f0;
-    --shadow: rgba(0, 0, 0, 0.08);
-    --blue: #4a90e2;
-    --red: #c0392b;
-    --red-bg: #fdf0ef;
-    --red-border: #f5c6c2;
-    --amber-bg: #fdf6e3;
-    --amber-border: #f0e2b8;
-    --amber-text: #8a6d3b;
 }
 
 html[data-theme='dark'] {
     color-scheme: dark;
-    --bg: #111;
-    --surface: #1c1c1e;
-    --surface-subtle: #252525;
-    --surface-hover: #242424;
-    --surface-accent: #1a2535;
-    --text: #e8e8e8;
-    --text-subtle: #999;
-    --text-muted: #7a7a7a;
-    --text-faint: #5a5a5a;
-    --border: #333;
-    --border-subtle: #2a2a2a;
-    --shadow: rgba(0, 0, 0, 0.4);
-    --blue: #5a9fe8;
-    --red: #e05c4a;
-    --red-bg: #2a1515;
-    --red-border: #5a2525;
-    --amber-bg: #2a2515;
-    --amber-border: #4a4025;
-    --amber-text: #c9a96a;
 }
 
 body {

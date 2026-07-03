@@ -5,6 +5,7 @@ import {
     sortSeasons,
     sortBySeenCount,
     selectableSeasons,
+    setWatched,
     clearsCurrentlyWatching,
 } from '../../frontend/utils.js';
 
@@ -149,6 +150,34 @@ describe('selectableSeasons', () => {
         const copy = [...seasons];
         selectableSeasons(seasons, 'me');
         expect(seasons).toEqual(copy);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// setWatched
+// ---------------------------------------------------------------------------
+
+describe('setWatched', () => {
+    it('adds the user when marking watched', () => {
+        expect(setWatched(['other'], 'me', true)).toEqual(['other', 'me']);
+    });
+
+    it('does not duplicate a user who is already present', () => {
+        expect(setWatched(['me', 'other'], 'me', true)).toEqual(['other', 'me']);
+    });
+
+    it('removes the user when unmarking', () => {
+        expect(setWatched(['me', 'other'], 'me', false)).toEqual(['other']);
+    });
+
+    it('is a no-op removal when the user is absent', () => {
+        expect(setWatched(['other'], 'me', false)).toEqual(['other']);
+    });
+
+    it('does not mutate the input', () => {
+        const watchedBy = ['me', 'other'];
+        setWatched(watchedBy, 'me', false);
+        expect(watchedBy).toEqual(['me', 'other']);
     });
 });
 

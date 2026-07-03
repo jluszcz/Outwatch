@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { env } from 'cloudflare:test';
+import { HTTPException } from 'hono/http-exception';
 import worker from '../../src/index.js';
 
 const mockAssetsFetch = vi.fn().mockResolvedValue(new Response('index.html'));
@@ -77,6 +78,49 @@ describe('static assets', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Error handling
+// ---------------------------------------------------------------------------
+
+describe('error handling', () => {
+    it('returns JSON 500 when an unexpected error is thrown', async () => {
+        const r = await req('GET', '/api/board', {
+            envOverrides: {
+                DB: {
+                    prepare() {
+                        throw new Error('boom');
+                    },
+                },
+            },
+        });
+        expect(r.status).toBe(500);
+        expect((await r.json()).error).toBe('Internal error');
+    });
+
+    it('honors a custom Response attached to an HTTPException', async () => {
+        const r = await req('GET', '/api/board', {
+            envOverrides: {
+                DB: {
+                    prepare() {
+                        throw new HTTPException(503, {
+                            res: new Response(JSON.stringify({ error: 'Down for maintenance' }), {
+                                status: 503,
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'Retry-After': '30',
+                                },
+                            }),
+                        });
+                    },
+                },
+            },
+        });
+        expect(r.status).toBe(503);
+        expect(r.headers.get('Retry-After')).toBe('30');
+        expect((await r.json()).error).toBe('Down for maintenance');
+    });
+});
+
+// ---------------------------------------------------------------------------
 // GET /api/board
 // ---------------------------------------------------------------------------
 
@@ -109,6 +153,16 @@ describe('GET /api/board', () => {
     it('matches the Access email case-insensitively', async () => {
         const { me } = await (await req('GET', '/api/board', { email: 'BOB@EXAMPLE.COM' })).json();
         expect(me.id).toBe('user-bob');
+    });
+
+    it('matches a mixed-case email stored in the roster (COLLATE NOCASE)', async () => {
+        await env.DB.prepare(
+            "INSERT INTO user_emails (email, user_id) VALUES ('Alice.Second@Example.COM', 'user-alice')",
+        ).run();
+        const { me } = await (
+            await req('GET', '/api/board', { email: 'alice.second@example.com' })
+        ).json();
+        expect(me.id).toBe('user-alice');
     });
 
     it('returns me: null when there is no identity', async () => {
@@ -218,6 +272,24 @@ describe('PUT /api/currently-watching', () => {
         expect(bob.currently_watching_season_id).toBe(1);
     });
 
+    it('is idempotent — setting the same season twice returns 200', async () => {
+        // Works because SQLite counts same-value updates in meta.changes; this
+        // pins that subtlety so the atomic not-watched UPDATE can't regress it
+        // into a spurious 409.
+        await req('PUT', '/api/currently-watching', {
+            body: { season_id: 1 },
+            email: 'alice@example.com',
+        });
+        const r = await req('PUT', '/api/currently-watching', {
+            body: { season_id: 1 },
+            email: 'alice@example.com',
+        });
+        expect(r.status).toBe(200);
+        const { users } = await (await req('GET', '/api/board')).json();
+        const alice = users.find((u) => u.id === 'user-alice');
+        expect(alice.currently_watching_season_id).toBe(1);
+    });
+
     it('returns 403 when there is no identity', async () => {
         const r = await req('PUT', '/api/currently-watching', { body: { season_id: 1 } });
         expect(r.status).toBe(403);
@@ -237,6 +309,27 @@ describe('PUT /api/currently-watching', () => {
             email: 'alice@example.com',
         });
         expect(r.status).toBe(404);
+    });
+
+    it('returns 409 for a season the caller has already watched', async () => {
+        await req('POST', '/api/watched', { body: { season_id: 1 }, email: 'alice@example.com' });
+        const r = await req('PUT', '/api/currently-watching', {
+            body: { season_id: 1 },
+            email: 'alice@example.com',
+        });
+        expect(r.status).toBe(409);
+        const { users } = await (await req('GET', '/api/board')).json();
+        const alice = users.find((u) => u.id === 'user-alice');
+        expect(alice.currently_watching_season_id).toBeNull();
+    });
+
+    it('allows a season someone else (but not the caller) has watched', async () => {
+        await req('POST', '/api/watched', { body: { season_id: 1 }, email: 'bob@example.com' });
+        const r = await req('PUT', '/api/currently-watching', {
+            body: { season_id: 1 },
+            email: 'alice@example.com',
+        });
+        expect(r.status).toBe(200);
     });
 
     it('returns 400 when season_id is missing', async () => {
