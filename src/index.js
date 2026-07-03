@@ -29,6 +29,9 @@ app.onError((err, c) => {
     // body that fails JSON.parse) — keep its status instead of collapsing it
     // into a 500, just with a friendlier message for the malformed-JSON case.
     if (err instanceof HTTPException) {
+        // A custom Response attached to the exception wins — nothing in this
+        // app constructs one today, but middleware may.
+        if (err.res) return err.getResponse();
         const message =
             err.message === 'Malformed JSON in request body' ? 'Invalid JSON body' : err.message;
         return c.json({ error: message || 'Request failed' }, err.status);

@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { env } from 'cloudflare:test';
+import { HTTPException } from 'hono/http-exception';
 import worker from '../../src/index.js';
 
 const mockAssetsFetch = vi.fn().mockResolvedValue(new Response('index.html'));
@@ -93,6 +94,29 @@ describe('error handling', () => {
         });
         expect(r.status).toBe(500);
         expect((await r.json()).error).toBe('Internal error');
+    });
+
+    it('honors a custom Response attached to an HTTPException', async () => {
+        const r = await req('GET', '/api/board', {
+            envOverrides: {
+                DB: {
+                    prepare() {
+                        throw new HTTPException(503, {
+                            res: new Response(JSON.stringify({ error: 'Down for maintenance' }), {
+                                status: 503,
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'Retry-After': '30',
+                                },
+                            }),
+                        });
+                    },
+                },
+            },
+        });
+        expect(r.status).toBe(503);
+        expect(r.headers.get('Retry-After')).toBe('30');
+        expect((await r.json()).error).toBe('Down for maintenance');
     });
 });
 
