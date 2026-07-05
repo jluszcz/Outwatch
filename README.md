@@ -90,10 +90,17 @@ npx wrangler d1 execute outwatch --local  --file=roster.sql
 npx wrangler d1 execute outwatch --remote --file=roster.sql
 ```
 
-### Running tests
+### Validation
+
+CI runs these checks on every push and pull request to `main`
+([`.github/workflows/test.yml`](.github/workflows/test.yml)). Run them locally
+before committing — any failure fails the build:
 
 ```bash
-npm test
+npm ci                   # install from the lockfile
+npx prettier --check .   # formatting (run `npm run format` to fix)
+npm run build            # frontend bundle must build
+npm test                 # all tests must pass
 ```
 
 ### Build

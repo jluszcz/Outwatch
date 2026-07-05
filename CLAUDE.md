@@ -59,6 +59,17 @@ are gitignored.
 When editing the frontend, edit files under `frontend/`. Do not edit
 `public/script.js` — it is build output.
 
+## Validation
+
+CI (`.github/workflows/test.yml`) gates every push and PR to `main` on these
+steps, in order. Run them locally before committing — a failure in any one fails
+the build:
+
+1. `npm ci` — install dependencies from the lockfile
+2. `npx prettier --check .` — formatting must be clean (run `npm run format` to fix)
+3. `npm run build` — the frontend bundle must build
+4. `npm test` — all Vitest suites must pass
+
 ## Architecture Notes
 
 ### Authentication & identity
