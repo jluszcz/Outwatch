@@ -118,20 +118,24 @@ function SeasonRow({ season, users, meId, fullyWatched, onToggle }) {
                 const isCurrentlyWatching = u.currently_watching_season_id === season.id;
                 return html`
                     <td key=${u.id} class=${'check-cell' + (isMe ? ' mine' : '')}>
-                        ${isCurrentlyWatching
-                            ? html`<span class="watching-indicator" aria-label="Currently watching"
-                                  >▶</span
-                              >`
-                            : null}
+                        ${
+                            isCurrentlyWatching
+                                ? html`<span
+                                      class="watching-indicator"
+                                      aria-label="Currently watching"
+                                      >▶</span
+                                  >`
+                                : null
+                        }
                         <input
                             type="checkbox"
                             checked=${checked}
                             disabled=${!isMe}
                             aria-label=${`${u.name} watched ${seasonLabel(season)}`}
                             title=${isMe ? '' : `Only ${u.name} can change this`}
-                            onChange=${isMe
-                                ? (e) => onToggle(season.id, e.target.checked)
-                                : undefined}
+                            onChange=${
+                                isMe ? (e) => onToggle(season.id, e.target.checked) : undefined
+                            }
                         />
                     </td>
                 `;
@@ -155,33 +159,35 @@ function NowWatching({ users, seasons, meId, onSetCurrentlyWatching }) {
                     return html`
                         <div
                             key=${u.id}
-                            class=${'nw-chip' +
-                            (isMe ? ' mine' : '') +
-                            (cwId != null ? ' active' : '')}
+                            class=${
+                                'nw-chip' + (isMe ? ' mine' : '') + (cwId != null ? ' active' : '')
+                            }
                         >
                             ${cwId != null ? html`<span class="nw-marker">▶</span>` : null}
                             <span class="nw-name">${isMe ? 'You' : u.name}</span>
-                            ${isMe
-                                ? html`<select
-                                      class="nw-select"
-                                      value=${cwId ?? ''}
-                                      onChange=${(e) =>
-                                          onSetCurrentlyWatching(
-                                              e.target.value ? Number(e.target.value) : null,
+                            ${
+                                isMe
+                                    ? html`<select
+                                          class="nw-select"
+                                          value=${cwId ?? ''}
+                                          onChange=${(e) =>
+                                              onSetCurrentlyWatching(
+                                                  e.target.value ? Number(e.target.value) : null,
+                                              )}
+                                      >
+                                          <option value="">Not watching</option>
+                                          ${selectableSeasons(seasons, meId).map(
+                                              (s) => html`
+                                                  <option key=${s.id} value=${s.id}>
+                                                      ${seasonLabel(s)}
+                                                  </option>
+                                              `,
                                           )}
-                                  >
-                                      <option value="">Not watching</option>
-                                      ${selectableSeasons(seasons, meId).map(
-                                          (s) => html`
-                                              <option key=${s.id} value=${s.id}>
-                                                  ${seasonLabel(s)}
-                                              </option>
-                                          `,
-                                      )}
-                                  </select>`
-                                : html`<span class="nw-season"
-                                      >${current ? seasonLabel(current) : '—'}</span
-                                  >`}
+                                      </select>`
+                                    : html`<span class="nw-season"
+                                          >${current ? seasonLabel(current) : '—'}</span
+                                      >`
+                            }
                         </div>
                     `;
                 })}
@@ -242,9 +248,11 @@ function Board({ users, seasons, meId, onToggle, onSetCurrentlyWatching }) {
                                         key=${u.id}
                                         class=${'check-head' + (u.id === meId ? ' mine' : '')}
                                     >
-                                        ${u.name}${u.id === meId
-                                            ? html`<span class="you"> (you)</span>`
-                                            : null}
+                                        ${u.name}${
+                                            u.id === meId
+                                                ? html`<span class="you"> (you)</span>`
+                                                : null
+                                        }
                                     </th>
                                 `,
                             )}
@@ -471,31 +479,39 @@ function App() {
             <main class="app">
                 ${error && html`<div class="error">${error}</div>`}
                 ${loading && html`<div class="loading">Loading…</div>`}
-                ${!loading &&
-                !me &&
-                users.length > 0 &&
-                html`
-                    <div class="notice">You're not on the watch list — the board is read-only.</div>
-                `}
-                ${!loading &&
-                !error &&
-                users.length === 0 &&
-                html`
-                    <div class="empty-state">
-                        No users yet. Add people to the board (see README).
-                    </div>
-                `}
-                ${!loading &&
-                users.length > 0 &&
-                html`
-                    <${Board}
-                        users=${users}
-                        seasons=${seasons}
-                        meId=${meId}
-                        onToggle=${toggle}
-                        onSetCurrentlyWatching=${setCurrentlyWatching}
-                    />
-                `}
+                ${
+                    !loading &&
+                    !me &&
+                    users.length > 0 &&
+                    html`
+                        <div class="notice">
+                            You're not on the watch list — the board is read-only.
+                        </div>
+                    `
+                }
+                ${
+                    !loading &&
+                    !error &&
+                    users.length === 0 &&
+                    html`
+                        <div class="empty-state">
+                            No users yet. Add people to the board (see README).
+                        </div>
+                    `
+                }
+                ${
+                    !loading &&
+                    users.length > 0 &&
+                    html`
+                        <${Board}
+                            users=${users}
+                            seasons=${seasons}
+                            meId=${meId}
+                            onToggle=${toggle}
+                            onSetCurrentlyWatching=${setCurrentlyWatching}
+                        />
+                    `
+                }
             </main>
         </div>
     `;
