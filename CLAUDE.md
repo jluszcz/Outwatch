@@ -70,6 +70,9 @@ the build:
 3. `npm run build` — the frontend bundle must build
 4. `npm test` — all Vitest suites must pass
 
+**All four steps must pass locally before committing any change.** Do not commit
+code that fails formatting, build, or tests and rely on CI to catch it.
+
 ## Architecture Notes
 
 ### Authentication & identity
