@@ -61,14 +61,14 @@ When editing the frontend, edit files under `frontend/`. Do not edit
 
 ## Validation
 
-CI (`.github/workflows/test.yml`) gates every push and PR to `main` on these
+CI (`.github/workflows/ci.yml`) gates every push and PR to `main` on these
 steps, in order. Run them locally before committing — a failure in any one fails
 the build:
 
 1. `npm ci` — install dependencies from the lockfile
-2. `npx prettier --check .` — formatting must be clean (run `npm run format` to fix)
-3. `npm run build` — the frontend bundle must build
-4. `npm test` — all Vitest suites must pass
+2. `npm run build` — the frontend bundle must build
+3. `npm test` — all Vitest suites must pass
+4. `npx prettier --check .` — formatting must be clean (run `npm run format` to fix)
 
 **All four steps must pass locally before committing any change.** Do not commit
 code that fails formatting, build, or tests and rely on CI to catch it.
