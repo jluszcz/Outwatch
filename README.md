@@ -93,7 +93,7 @@ npx wrangler d1 execute outwatch --remote --file=roster.sql
 ### Validation
 
 CI runs these checks on every push and pull request to `main`
-([`.github/workflows/test.yml`](.github/workflows/test.yml)). Run them locally
+([`.github/workflows/ci.yml`](.github/workflows/ci.yml)). Run them locally
 before committing — any failure fails the build:
 
 ```bash
