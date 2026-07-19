@@ -8,9 +8,11 @@
         "build": "node build.js",
         "dev": "concurrently -k -n bundle,worker -c cyan,magenta \"node build.js --watch\" \"wrangler dev\"",
         "deploy": "npm run build && wrangler deploy",
+        "lint": "eslint .",
         "test": "vitest run",
         "test:watch": "vitest",
         "format": "prettier --write .",
+        "format:check": "prettier --check .",
         "prepare": "husky"
     },
     "lint-staged": {
@@ -28,8 +30,11 @@
     "devDependencies": {
         "@cloudflare/vitest-pool-workers": "^0.16.20",
         "@cloudflare/workers-types": "^4.20260317.1",
+        "@eslint/js": "^10.0.1",
         "concurrently": "^10.0.3",
         "esbuild": "^0.28.1",
+        "eslint": "^10.6.0",
+        "globals": "^17.7.0",
         "husky": "^9.1.7",
         "lint-staged": "^17.0.8",
         "prettier": "^3.9.3",
