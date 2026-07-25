@@ -272,6 +272,112 @@ app.post(
     },
 );
 
+// The spoiler gate. An episode is readable when the caller has watched the whole
+// season or has explicitly opened that episode. Everything else about the
+// feature follows from this one predicate — and it is evaluated here, on the
+// server, so a hidden body is never serialized at all.
+app.get('/api/seasons/:season_id/discussion', async (c) => {
+    const seasonId = Number(c.req.param('season_id'));
+    if (!Number.isInteger(seasonId) || seasonId <= 0) {
+        return c.json({ error: 'season_id must be a positive integer' }, 400);
+    }
+
+    const season = await c.env.DB.prepare(
+        'SELECT id, subtitle, wikipedia_url, episode_count FROM seasons WHERE id = ?',
+    )
+        .bind(seasonId)
+        .first();
+    if (!season) return c.json({ error: `Unknown season: ${seasonId}` }, 404);
+
+    const me = await callerUser(c);
+
+    const [{ results: posts }, watchedRow, { results: reveals }, { results: sessions }] =
+        await Promise.all([
+            c.env.DB.prepare(
+                `SELECT id, episode, user_id, body, created_at, offset_secs
+                 FROM posts WHERE season_id = ? ORDER BY episode ASC, id ASC`,
+            )
+                .bind(seasonId)
+                .all(),
+            me
+                ? c.env.DB.prepare('SELECT 1 FROM watched WHERE user_id = ? AND season_id = ?')
+                      .bind(me.id, seasonId)
+                      .first()
+                : null,
+            me
+                ? c.env.DB.prepare(
+                      'SELECT episode FROM reveals WHERE user_id = ? AND season_id = ?',
+                  )
+                      .bind(me.id, seasonId)
+                      .all()
+                : { results: [] },
+            me
+                ? c.env.DB.prepare(
+                      `SELECT episode, elapsed_secs, running_since, last_activity_at
+                       FROM watch_sessions WHERE user_id = ? AND season_id = ?`,
+                  )
+                      .bind(me.id, seasonId)
+                      .all()
+                : { results: [] },
+        ]);
+
+    const watchedSeason = watchedRow != null;
+    const revealed = new Set(reveals.map((r) => r.episode));
+    const sessionByEpisode = new Map(sessions.map((s) => [s.episode, s]));
+
+    const byEpisode = new Map();
+    for (const p of posts) {
+        if (!byEpisode.has(p.episode)) byEpisode.set(p.episode, []);
+        byEpisode.get(p.episode).push(p);
+    }
+
+    const episodes = [];
+    for (let episode = 1; episode <= season.episode_count; episode++) {
+        const all = byEpisode.get(episode) ?? [];
+        const readable = watchedSeason || revealed.has(episode);
+
+        // Authors are named even on a locked board: the main board already shows
+        // who has watched which season, so this reveals nothing new — and it
+        // tells you whether opening the board is worth it.
+        const authors = [...new Set(all.map((p) => p.user_id))];
+
+        // The one line that matters. On a locked board only the caller's own
+        // posts survive; nobody else's body reaches the response.
+        const visible = readable ? all : all.filter((p) => me && p.user_id === me.id);
+
+        const session = sessionByEpisode.get(episode) ?? null;
+        episodes.push({
+            episode,
+            readable,
+            count: all.length,
+            authors,
+            posts: visible.map((p) => ({
+                id: p.id,
+                user_id: p.user_id,
+                body: p.body,
+                created_at: p.created_at,
+                offset_secs: p.offset_secs,
+            })),
+            session: session
+                ? {
+                      elapsed_secs: session.elapsed_secs,
+                      running_since: session.running_since,
+                      last_activity_at: session.last_activity_at,
+                  }
+                : null,
+        });
+    }
+
+    return c.json({
+        season,
+        me: me ? { id: me.id, name: me.name } : null,
+        // The server clock, so a device with a skewed one still renders a
+        // correct ticking timer.
+        now: new Date().toISOString(),
+        episodes,
+    });
+});
+
 app.all('/api/*', (c) => c.json({ error: 'Unknown API endpoint' }, 404));
 
 app.all('*', (c) => c.env.ASSETS.fetch(c.req.raw));

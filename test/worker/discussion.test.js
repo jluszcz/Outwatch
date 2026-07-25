@@ -150,3 +150,66 @@ describe('POST /api/seasons/:season_id/episodes/:episode/posts', () => {
         expect(stranger.status).toBe(403);
     });
 });
+
+const post = (email, episode, body) =>
+    req('POST', `/api/seasons/45/episodes/${episode}/posts`, { body: { body }, email });
+
+const discussion = (email) => req('GET', '/api/seasons/45/discussion', { email });
+
+describe('GET /api/seasons/:season_id/discussion', () => {
+    it('returns one entry per episode, in order', async () => {
+        const { season, episodes } = await (await discussion('alice@example.com')).json();
+        expect(season).toMatchObject({ id: 45, episode_count: 13 });
+        expect(episodes).toHaveLength(13);
+        expect(episodes.map((e) => e.episode)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
+    });
+
+    it('hides other people’s bodies on a locked board but reports count and authors', async () => {
+        await post('bob@example.com', 7, 'no way she flips');
+        await post('bob@example.com', 7, 'told you');
+        await post('alice@example.com', 7, 'called it');
+
+        const { episodes } = await (await discussion('alice@example.com')).json();
+        const ep7 = episodes.find((e) => e.episode === 7);
+
+        expect(ep7.readable).toBe(false);
+        expect(ep7.count).toBe(3);
+        expect(ep7.authors.sort()).toEqual(['user-alice', 'user-bob']);
+        expect(ep7.posts).toHaveLength(1);
+        expect(ep7.posts[0].body).toBe('called it');
+    });
+
+    it('leaks no hidden body anywhere in the serialized response', async () => {
+        await post('bob@example.com', 7, 'SECRET-BLINDSIDE');
+        const r = await discussion('alice@example.com');
+        expect(await r.text()).not.toContain('SECRET-BLINDSIDE');
+    });
+
+    it('shows everything once the caller has watched the season', async () => {
+        await post('bob@example.com', 7, 'no way she flips');
+        await req('POST', '/api/watched', { body: { season_id: 45 }, email: 'alice@example.com' });
+
+        const { episodes } = await (await discussion('alice@example.com')).json();
+        expect(episodes.every((e) => e.readable)).toBe(true);
+        const ep7 = episodes.find((e) => e.episode === 7);
+        expect(ep7.posts.map((p) => p.body)).toEqual(['no way she flips']);
+    });
+
+    it('returns empty locked boards for a caller who is not on the roster', async () => {
+        await post('alice@example.com', 7, 'called it');
+        const { me, episodes } = await (await discussion('stranger@example.com')).json();
+        expect(me).toBeNull();
+        const ep7 = episodes.find((e) => e.episode === 7);
+        expect(ep7.readable).toBe(false);
+        expect(ep7.count).toBe(1);
+        expect(ep7.posts).toEqual([]);
+    });
+
+    it('returns 404 for an unknown season', async () => {
+        expect((await req('GET', '/api/seasons/999/discussion')).status).toBe(404);
+    });
+
+    it('returns 400 for a non-numeric season id', async () => {
+        expect((await req('GET', '/api/seasons/abc/discussion')).status).toBe(400);
+    });
+});
