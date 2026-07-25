@@ -3,6 +3,8 @@ import { HTTPException } from 'hono/http-exception';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 
+import { sessionOffsetSecs } from '../shared/session.js';
+
 const app = new Hono();
 
 const onInvalid = (result, c) => {
@@ -22,6 +24,14 @@ const currentlyWatchingUpdate = z.object({
         .int()
         .positive({ message: 'season_id must be a positive integer' })
         .nullable(),
+});
+
+const postCreate = z.object({
+    body: z
+        .string()
+        .trim()
+        .min(1, { message: 'body must not be empty' })
+        .max(2000, { message: 'body must be at most 2000 characters' }),
 });
 
 app.onError((err, c) => {
@@ -180,6 +190,87 @@ app.delete('/api/watched/:season_id', async (c) => {
 
     return c.json({ success: true, user_id: me.id, season_id: seasonId });
 });
+
+// Resolves and validates the :season_id / :episode path pair. Returns either
+// { season, episode } or { error, status } for the caller to return directly.
+// An episode number is meaningless without its season, so the two are checked
+// together rather than by a route-level validator.
+async function resolveEpisode(c) {
+    const seasonId = Number(c.req.param('season_id'));
+    if (!Number.isInteger(seasonId) || seasonId <= 0) {
+        return { error: 'season_id must be a positive integer', status: 400 };
+    }
+
+    // Non-numeric is a malformed request (400); an episode number that just
+    // doesn't exist for this season — including 0 or negative — is a 404,
+    // decided below once we know the season's episode_count.
+    const episode = Number(c.req.param('episode'));
+    if (!Number.isInteger(episode)) {
+        return { error: 'episode must be a positive integer', status: 400 };
+    }
+
+    const season = await c.env.DB.prepare(
+        'SELECT id, subtitle, wikipedia_url, episode_count FROM seasons WHERE id = ?',
+    )
+        .bind(seasonId)
+        .first();
+    if (!season) return { error: `Unknown season: ${seasonId}`, status: 404 };
+
+    if (episode <= 0 || episode > season.episode_count) {
+        return { error: `Season ${seasonId} has no episode ${episode}`, status: 404 };
+    }
+
+    return { season, episode };
+}
+
+// The caller's accumulated watch time for this episode, or null when no live
+// timer is running. Read fresh on every post so the stamp reflects the session
+// as it stands at write time.
+async function currentOffsetSecs(c, userId, seasonId, episode, nowMs) {
+    const session = await c.env.DB.prepare(
+        `SELECT elapsed_secs, running_since, last_activity_at
+         FROM watch_sessions
+         WHERE user_id = ? AND season_id = ? AND episode = ?`,
+    )
+        .bind(userId, seasonId, episode)
+        .first();
+    return sessionOffsetSecs(session, nowMs);
+}
+
+app.post(
+    '/api/seasons/:season_id/episodes/:episode/posts',
+    zValidator('json', postCreate, onInvalid),
+    async (c) => {
+        const me = await callerUser(c);
+        if (!me) return c.json({ error: 'Your account is not on the watch list' }, 403);
+
+        const resolved = await resolveEpisode(c);
+        if (resolved.error) return c.json({ error: resolved.error }, resolved.status);
+        const { season, episode } = resolved;
+
+        const { body } = c.req.valid('json');
+        const nowMs = Date.now();
+        const now = new Date(nowMs).toISOString();
+        const offsetSecs = await currentOffsetSecs(c, me.id, season.id, episode, nowMs);
+
+        // Writing a note is activity: it keeps a live session from going stale
+        // mid-episode just because you were typing. The touch is a no-op when
+        // there is no session row.
+        const [inserted] = await c.env.DB.batch([
+            c.env.DB.prepare(
+                `INSERT INTO posts (season_id, episode, user_id, body, created_at, offset_secs)
+                 VALUES (?, ?, ?, ?, ?, ?)
+                 RETURNING id, season_id, episode, user_id, body, created_at, offset_secs`,
+            ).bind(season.id, episode, me.id, body, now, offsetSecs),
+            c.env.DB.prepare(
+                `UPDATE watch_sessions SET last_activity_at = ?
+                 WHERE user_id = ? AND season_id = ? AND episode = ?`,
+            ).bind(now, me.id, season.id, episode),
+        ]);
+
+        return c.json({ success: true, post: inserted.results[0] }, 201);
+    },
+);
 
 app.all('/api/*', (c) => c.json({ error: 'Unknown API endpoint' }, 404));
 
