@@ -18,6 +18,10 @@ export default [
         languageOptions: { globals: globals.serviceworker },
     },
     {
+        files: ['shared/**/*.js'],
+        languageOptions: { globals: {} },
+    },
+    {
         files: ['build.js', 'eslint.config.js', 'vitest.config.mjs'],
         languageOptions: { globals: globals.node },
     },
