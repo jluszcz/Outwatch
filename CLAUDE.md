@@ -61,17 +61,20 @@ When editing the frontend, edit files under `frontend/`. Do not edit
 
 ## Validation
 
-CI (`.github/workflows/ci.yml`) gates every push and PR to `main` on these
-steps, in order. Run them locally before committing — a failure in any one fails
-the build:
+`.github/workflows/ci.yml` is a thin caller of
+`jluszcz/github-utils/.github/workflows/node-ci.yml@v1` — the steps live in that
+shared workflow, not in this repo. On every push and PR to `main` it runs, in
+order, on Node 22:
 
 1. `npm ci` — install dependencies from the lockfile
 2. `npm run build` — the frontend bundle must build
 3. `npm test` — all Vitest suites must pass
-4. `npx prettier --check .` — formatting must be clean (run `npm run format` to fix)
+4. `npm run lint` — ESLint (flat config in `eslint.config.js`)
+5. `npm run format:check` — Prettier formatting must be clean (run `npm run format` to fix)
 
-**All four steps must pass locally before committing any change.** Do not commit
-code that fails formatting, build, or tests and rely on CI to catch it.
+**Before committing any change, run `npm run build`, `npm test`, `npm run lint`,
+and `npm run format:check` locally and confirm they all pass.** These are exactly
+the checks CI runs, and a commit that fails any of them should not be made.
 
 ## Architecture Notes
 

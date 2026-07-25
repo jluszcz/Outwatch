@@ -92,15 +92,17 @@ npx wrangler d1 execute outwatch --remote --file=roster.sql
 
 ### Validation
 
-CI runs these checks on every push and pull request to `main`
-([`.github/workflows/ci.yml`](.github/workflows/ci.yml)). Run them locally
-before committing — any failure fails the build:
+CI runs these checks on every push and pull request to `main`.
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) is a thin caller of the
+shared `jluszcz/github-utils` `node-ci` workflow, which runs them on Node 22.
+Run them locally before committing — any failure fails the build:
 
 ```bash
-npm ci                   # install from the lockfile
-npx prettier --check .   # formatting (run `npm run format` to fix)
-npm run build            # frontend bundle must build
-npm test                 # all tests must pass
+npm ci                  # install from the lockfile
+npm run build           # frontend bundle must build
+npm test                # all tests must pass
+npm run lint            # ESLint
+npm run format:check    # Prettier (run `npm run format` to fix)
 ```
 
 ### Build
