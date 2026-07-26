@@ -378,6 +378,28 @@ app.get('/api/seasons/:season_id/discussion', async (c) => {
     });
 });
 
+// Opening an episode for reading is one-way and idempotent — there is no
+// re-lock, because you cannot unsee it. Reveals are stored independently of
+// `watched`, so un-marking a season (usually a mis-click correction) does not
+// take back an episode you have already read.
+app.post('/api/seasons/:season_id/episodes/:episode/reveal', async (c) => {
+    const me = await callerUser(c);
+    if (!me) return c.json({ error: 'Your account is not on the watch list' }, 403);
+
+    const resolved = await resolveEpisode(c);
+    if (resolved.error) return c.json({ error: resolved.error }, resolved.status);
+    const { season, episode } = resolved;
+
+    await c.env.DB.prepare(
+        `INSERT OR IGNORE INTO reveals (user_id, season_id, episode, created_at)
+         VALUES (?, ?, ?, ?)`,
+    )
+        .bind(me.id, season.id, episode, new Date().toISOString())
+        .run();
+
+    return c.json({ success: true, season_id: season.id, episode });
+});
+
 app.all('/api/*', (c) => c.json({ error: 'Unknown API endpoint' }, 404));
 
 app.all('*', (c) => c.env.ASSETS.fetch(c.req.raw));

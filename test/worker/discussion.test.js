@@ -213,3 +213,53 @@ describe('GET /api/seasons/:season_id/discussion', () => {
         expect((await req('GET', '/api/seasons/abc/discussion')).status).toBe(400);
     });
 });
+
+const reveal = (email, episode) =>
+    req('POST', `/api/seasons/45/episodes/${episode}/reveal`, { email });
+
+describe('POST /api/seasons/:season_id/episodes/:episode/reveal', () => {
+    it('opens that episode and leaves the others locked', async () => {
+        await post('bob@example.com', 7, 'no way she flips');
+        await post('bob@example.com', 8, 'still reeling');
+
+        expect((await reveal('alice@example.com', 7)).status).toBe(200);
+
+        const { episodes } = await (await discussion('alice@example.com')).json();
+        const ep7 = episodes.find((e) => e.episode === 7);
+        const ep8 = episodes.find((e) => e.episode === 8);
+        expect(ep7.readable).toBe(true);
+        expect(ep7.posts.map((p) => p.body)).toEqual(['no way she flips']);
+        expect(ep8.readable).toBe(false);
+        expect(ep8.posts).toEqual([]);
+    });
+
+    it('is idempotent', async () => {
+        await reveal('alice@example.com', 7);
+        expect((await reveal('alice@example.com', 7)).status).toBe(200);
+        const row = await env.DB.prepare('SELECT COUNT(*) AS count FROM reveals').first();
+        expect(row.count).toBe(1);
+    });
+
+    it('reveals only for the caller', async () => {
+        await post('bob@example.com', 7, 'no way she flips');
+        await reveal('alice@example.com', 7);
+        const { episodes } = await (await discussion('bob@example.com')).json();
+        expect(episodes.find((e) => e.episode === 7).readable).toBe(false);
+    });
+
+    it('survives un-marking the season as watched', async () => {
+        await post('bob@example.com', 7, 'no way she flips');
+        await reveal('alice@example.com', 7);
+        await req('POST', '/api/watched', { body: { season_id: 45 }, email: 'alice@example.com' });
+        await req('DELETE', '/api/watched/45', { email: 'alice@example.com' });
+
+        const { episodes } = await (await discussion('alice@example.com')).json();
+        expect(episodes.find((e) => e.episode === 7).readable).toBe(true);
+        expect(episodes.find((e) => e.episode === 8).readable).toBe(false);
+    });
+
+    it('returns 404 for an episode past episode_count and 403 for a stranger', async () => {
+        expect((await reveal('alice@example.com', 14)).status).toBe(404);
+        expect((await reveal('stranger@example.com', 7)).status).toBe(403);
+    });
+});
