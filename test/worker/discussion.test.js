@@ -343,6 +343,21 @@ describe('POST /api/seasons/:season_id/episodes/:episode/timer', () => {
         expect(session.elapsed_secs).toBeLessThan(610);
     });
 
+    it('does not bank the same stretch twice on a double pause', async () => {
+        const since = new Date(Date.now() - 600_000).toISOString();
+        await env.DB.exec(
+            'INSERT INTO watch_sessions (user_id, season_id, episode, elapsed_secs, running_since, last_activity_at) ' +
+                `VALUES ('user-alice', 45, 7, 0, '${since}', '${since}')`,
+        );
+
+        const first = await (await timer('alice@example.com', 7, 'pause')).json();
+        const second = await (await timer('alice@example.com', 7, 'pause')).json();
+
+        expect(first.session.elapsed_secs).toBeGreaterThanOrEqual(600);
+        expect(second.session.elapsed_secs).toBe(first.session.elapsed_secs);
+        expect(second.session.running_since).toBeNull();
+    });
+
     it('carries the frozen offset onto a note written while paused', async () => {
         await timer('alice@example.com', 7, 'start');
         await env.DB.prepare(
@@ -382,6 +397,51 @@ describe('POST /api/seasons/:season_id/episodes/:episode/timer', () => {
 
         const { post: note } = await (await post('alice@example.com', 7, 'next morning')).json();
         expect(note.offset_secs).toBeNull();
+    });
+
+    it('refuses to pause a stale session and leaves it untouched', async () => {
+        await timer('alice@example.com', 7, 'start');
+        const stale = new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString();
+        await env.DB.prepare('UPDATE watch_sessions SET running_since = ?, last_activity_at = ?')
+            .bind(stale, stale)
+            .run();
+
+        const r = await timer('alice@example.com', 7, 'pause');
+        expect(r.status).toBe(409);
+        const { error } = await r.json();
+        expect(error).toMatch(/expired/i);
+
+        const row = await env.DB.prepare(
+            'SELECT elapsed_secs, running_since, last_activity_at FROM watch_sessions WHERE user_id = ?',
+        )
+            .bind('user-alice')
+            .first();
+        expect(row.elapsed_secs).toBe(0);
+        expect(row.running_since).toBe(stale);
+        expect(row.last_activity_at).toBe(stale);
+    });
+
+    it('refuses to resume a stale session and leaves it untouched', async () => {
+        await timer('alice@example.com', 7, 'start');
+        await env.DB.prepare(
+            'UPDATE watch_sessions SET elapsed_secs = 900, running_since = NULL',
+        ).run();
+        const stale = new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString();
+        await env.DB.prepare('UPDATE watch_sessions SET last_activity_at = ?').bind(stale).run();
+
+        const r = await timer('alice@example.com', 7, 'resume');
+        expect(r.status).toBe(409);
+        const { error } = await r.json();
+        expect(error).toMatch(/expired/i);
+
+        const row = await env.DB.prepare(
+            'SELECT elapsed_secs, running_since, last_activity_at FROM watch_sessions WHERE user_id = ?',
+        )
+            .bind('user-alice')
+            .first();
+        expect(row.elapsed_secs).toBe(900);
+        expect(row.running_since).toBeNull();
+        expect(row.last_activity_at).toBe(stale);
     });
 
     it('keeps a session live across a post', async () => {

@@ -461,27 +461,61 @@ app.post(
             )
                 .bind(...key, now, now)
                 .run();
-        } else if (action === 'pause') {
-            // Bank the running segment. Guarded on running_since so a double
-            // pause cannot bank the same stretch twice.
-            await c.env.DB.prepare(
-                `UPDATE watch_sessions
-                 SET elapsed_secs = elapsed_secs
-                         + CAST((julianday(?) - julianday(running_since)) * 86400 AS INTEGER),
-                     running_since = NULL,
-                     last_activity_at = ?
-                 WHERE user_id = ? AND season_id = ? AND episode = ? AND running_since IS NOT NULL`,
-            )
-                .bind(now, now, ...key)
-                .run();
         } else {
-            // Resume only restarts the clock; the banked total is untouched.
-            await c.env.DB.prepare(
-                `UPDATE watch_sessions SET running_since = ?, last_activity_at = ?
-                 WHERE user_id = ? AND season_id = ? AND episode = ? AND running_since IS NULL`,
+            // Pause and resume both act on an existing session, and neither may
+            // revive one that has already gone stale — that is precisely the
+            // failure sessionOffsetSecs exists to prevent, and computing the
+            // banked total in SQL (via julianday) bypassed it entirely: a pause
+            // clicked the morning after would bank the whole overnight gap and
+            // stamp last_activity_at as if the session had been live all along.
+            // Read the row and ask the shared helper first, in JS, so pause and
+            // resume see exactly the same staleness rule a read does.
+            const existing = await c.env.DB.prepare(
+                `SELECT elapsed_secs, running_since, last_activity_at
+                 FROM watch_sessions WHERE user_id = ? AND season_id = ? AND episode = ?`,
             )
-                .bind(now, now, ...key)
-                .run();
+                .bind(...key)
+                .first();
+            if (!existing) return c.json({ error: 'No timer to update' }, 409);
+
+            const banked = sessionOffsetSecs(existing, nowMs);
+            if (banked === null) {
+                // Dead session: write nothing. The caller sees an expired timer
+                // and should start over rather than resume a session that no
+                // longer represents anything real.
+                return c.json(
+                    { error: 'Timer expired after 3 hours of inactivity — start a new session' },
+                    409,
+                );
+            }
+
+            if (action === 'pause') {
+                // Bank the running segment using the same total a read would
+                // report. Guarded on running_since so a double pause cannot
+                // bank the same stretch twice — a session already paused is
+                // left untouched.
+                if (existing.running_since !== null) {
+                    await c.env.DB.prepare(
+                        `UPDATE watch_sessions
+                         SET elapsed_secs = ?, running_since = NULL, last_activity_at = ?
+                         WHERE user_id = ? AND season_id = ? AND episode = ?
+                           AND running_since IS NOT NULL`,
+                    )
+                        .bind(banked, now, ...key)
+                        .run();
+                }
+            } else {
+                // Resume only restarts the clock; the banked total is
+                // untouched. A session already running is left untouched.
+                if (existing.running_since === null) {
+                    await c.env.DB.prepare(
+                        `UPDATE watch_sessions SET running_since = ?, last_activity_at = ?
+                         WHERE user_id = ? AND season_id = ? AND episode = ? AND running_since IS NULL`,
+                    )
+                        .bind(now, now, ...key)
+                        .run();
+                }
+            }
         }
 
         const session = await c.env.DB.prepare(
