@@ -14,8 +14,29 @@ Built on Cloudflare Workers with a D1 SQLite database, behind Cloudflare Access.
 - One checkbox column per person/couple; you can only change your own (Access-derived identity)
 - Couples share a column — either partner's login can toggle it
 - Fully-watched seasons gray out and sink to the bottom
+- Per-episode discussion boards, write-only until you open them
 - Light/dark theme toggle
 - Zero-code authentication via Cloudflare Access
+
+## Discussion Boards
+
+Every episode of every season has its own discussion board, so friends
+watching at different paces don't spoil each other.
+
+- **Write-only until revealed.** You can always post your own notes and see
+  them, but everyone else's notes on an episode stay hidden until you
+  deliberately open that episode's board for reading.
+- **Revealing is per-episode and permanent.** There's no re-locking — once
+  you've opened a board, it stays open.
+- **Watching a season opens all of its episodes.** Marking a season fully
+  watched has the same effect as revealing every episode in it, so you don't
+  have to open each one by hand.
+- **An optional watch timer.** Start it when you press play, and your notes
+  are stamped with how far into the episode you were, so once a board is
+  opened everyone's notes sort into one synced timeline by that offset
+  instead of by when they happened to be typed. A timer left idle for three
+  hours is considered stale — pausing or resuming it fails, and you start a
+  new one.
 
 ## Stack
 
