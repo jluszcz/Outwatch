@@ -39,6 +39,19 @@ function App() {
         })();
     }, [refresh]);
 
+    // A season's post-count badge goes stale the moment you post from inside it,
+    // since the season view fetches its own discussion data rather than /api/board.
+    // Refetch the board on the way back out. Seeded with the initial route (rather
+    // than null) so mounting straight into a season view — or never opening one at
+    // all — doesn't trigger a redundant fetch on top of the mount effect above.
+    const prevRouteSeasonId = useRef(routeSeasonId);
+    useEffect(() => {
+        if (prevRouteSeasonId.current != null && routeSeasonId == null) {
+            refresh().catch((err) => setError(err.message));
+        }
+        prevRouteSeasonId.current = routeSeasonId;
+    }, [routeSeasonId, refresh]);
+
     const meId = me?.id ?? null;
 
     // Keep the latest users in a ref so the optimistic callbacks can read the
