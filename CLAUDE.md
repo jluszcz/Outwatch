@@ -69,6 +69,14 @@ are gitignored.
 When editing the frontend, edit files under `frontend/`. Do not edit
 `public/script.js` — it is build output.
 
+`wrangler.toml` deliberately has no `[build]` hook. The npm scripts are the only
+thing that bundles: `npm run deploy` builds before deploying, and `npm run dev`
+runs the watch-mode bundler alongside `wrangler dev`. A `[build]` hook would
+double-build on deploy and, worse, fire the one-shot minified build at `wrangler
+dev` startup — clobbering the watcher's unminified, sourcemapped bundle until the
+next file edit. The tradeoff: a bare `wrangler dev` or `wrangler deploy` serves
+whatever is already in `public/`, so always go through the npm scripts.
+
 ## Validation
 
 `.github/workflows/ci.yml` is a thin caller of
