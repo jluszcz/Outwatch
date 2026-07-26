@@ -148,12 +148,17 @@ All routes derive the caller's identity from the
 `Cf-Access-Authenticated-User-Email` header that Cloudflare Access injects (or
 `DEV_USER_EMAIL` locally). Clients never send a user id.
 
-| Method   | Path                      | Description                                                                         |
-| -------- | ------------------------- | ----------------------------------------------------------------------------------- |
-| `GET`    | `/api/board`              | Current user, all users, and all seasons with watched state                         |
-| `POST`   | `/api/watched`            | Mark the caller as having watched a season (`{ season_id }`)                        |
-| `DELETE` | `/api/watched/:season_id` | Unmark the caller for a season                                                      |
-| `PUT`    | `/api/currently-watching` | Set the caller's currently-watching season, or clear it (`{ season_id }`, nullable) |
+| Method   | Path                                               | Description                                                                                  |
+| -------- | -------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `GET`    | `/api/board`                                       | Current user, all users, and all seasons with watched state, episode counts, and post counts |
+| `POST`   | `/api/watched`                                     | Mark the caller as having watched a season (`{ season_id }`)                                 |
+| `DELETE` | `/api/watched/:season_id`                          | Unmark the caller for a season                                                               |
+| `PUT`    | `/api/currently-watching`                          | Set the caller's currently-watching season, or clear it (`{ season_id }`, nullable)          |
+| `POST`   | `/api/seasons/:season_id/episodes/:episode/posts`  | Add a discussion note, stamped with the caller's live watch-timer offset (`{ body }`)        |
+| `GET`    | `/api/seasons/:season_id/discussion`               | Per-episode discussion state for a season, gated by the spoiler rule                         |
+| `POST`   | `/api/seasons/:season_id/episodes/:episode/reveal` | Open one episode's discussion board for reading (permanent)                                  |
+| `DELETE` | `/api/posts/:post_id`                              | Delete one of the caller's own discussion notes                                              |
+| `POST`   | `/api/seasons/:season_id/episodes/:episode/timer`  | Start, pause, or resume the caller's watch timer for an episode (`{ action }`)               |
 
 ## Database Schema
 
@@ -177,11 +182,12 @@ see [The roster](#the-roster).
 
 **`seasons`** — _Survivor_ seasons (reference data, seeded in migration `0002`)
 
-| Column          | Type       | Notes                                                              |
-| --------------- | ---------- | ------------------------------------------------------------------ |
-| `id`            | INTEGER PK | The season number                                                  |
-| `subtitle`      | TEXT       | Official subtitle without the `Survivor: ` prefix; empty for 41–49 |
-| `wikipedia_url` | TEXT       | Link to the season's Wikipedia article                             |
+| Column          | Type       | Notes                                                                   |
+| --------------- | ---------- | ----------------------------------------------------------------------- |
+| `id`            | INTEGER PK | The season number                                                       |
+| `subtitle`      | TEXT       | Official subtitle without the `Survivor: ` prefix; empty for 41–49      |
+| `wikipedia_url` | TEXT       | Link to the season's Wikipedia article                                  |
+| `episode_count` | INTEGER    | Episode count from Wikipedia's episode table; added in migration `0005` |
 
 **`watched`** — one row per (user, season) watched; presence means watched
 
@@ -192,6 +198,42 @@ see [The roster](#the-roster).
 | `created_at` | TEXT    | ISO timestamp           |
 
 Primary key is `(user_id, season_id)`.
+
+**`posts`** — one row per discussion note
+
+| Column        | Type       | Notes                                                                    |
+| ------------- | ---------- | ------------------------------------------------------------------------ |
+| `id`          | INTEGER PK | Autoincrement                                                            |
+| `season_id`   | INTEGER    | References `seasons.id`                                                  |
+| `episode`     | INTEGER    | Episode number within the season                                         |
+| `user_id`     | TEXT       | References `users.id`; the note's author                                 |
+| `body`        | TEXT       | Note text                                                                |
+| `created_at`  | TEXT       | ISO timestamp                                                            |
+| `offset_secs` | INTEGER    | Author's watch-timer offset at post time; `NULL` if no timer was running |
+
+**`reveals`** — presence means that user opened that episode's board for reading (one-way)
+
+| Column       | Type    | Notes                   |
+| ------------ | ------- | ----------------------- |
+| `user_id`    | TEXT    | References `users.id`   |
+| `season_id`  | INTEGER | References `seasons.id` |
+| `episode`    | INTEGER | Episode number          |
+| `created_at` | TEXT    | ISO timestamp           |
+
+Primary key is `(user_id, season_id, episode)`.
+
+**`watch_sessions`** — a running or paused watch timer, stale after three hours idle
+
+| Column             | Type    | Notes                                                          |
+| ------------------ | ------- | -------------------------------------------------------------- |
+| `user_id`          | TEXT    | References `users.id`                                          |
+| `season_id`        | INTEGER | References `seasons.id`                                        |
+| `episode`          | INTEGER | Episode number                                                 |
+| `elapsed_secs`     | INTEGER | Banked time from completed segments                            |
+| `running_since`    | TEXT    | Start of the current segment; `NULL` while paused              |
+| `last_activity_at` | TEXT    | Touched by start/pause/resume/post; drives the staleness clock |
+
+Primary key is `(user_id, season_id, episode)`.
 
 ## Authentication
 
