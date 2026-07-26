@@ -56,3 +56,61 @@ export function setWatched(watchedBy, userId, watched) {
 export function clearsCurrentlyWatching(me, seasonId, checked) {
     return checked && me?.currently_watching_season_id === seasonId;
 }
+
+// The episode numbers of a season, 1..count.
+export function episodeNumbers(count) {
+    return Array.from({ length: count || 0 }, (_, i) => i + 1);
+}
+
+// A watch offset as "+5:00", or "+1:05:00" once it passes an hour. Minutes are
+// padded only when there is an hour part, so short offsets stay easy to scan.
+export function formatOffset(secs) {
+    const total = Math.max(0, Math.round(secs));
+    const hours = Math.floor(total / 3600);
+    const minutes = Math.floor((total % 3600) / 60);
+    const seconds = total % 60;
+    const mm = hours > 0 ? String(minutes).padStart(2, '0') : String(minutes);
+    return `+${hours > 0 ? `${hours}:` : ''}${mm}:${String(seconds).padStart(2, '0')}`;
+}
+
+// Places every note on one timeline so a conversation written days apart reads
+// in episode order. Returns { post, offset, inferred, tail, created } — `created`
+// is the parsed created_at used as the sort key (and tiebreaker within a tail),
+// returned alongside the rest so callers don't have to re-parse it. Does not
+// mutate the input.
+//
+// An author who ran a timer has real offsets. An author who never did gets an
+// inferred zero — their own earliest note on the episode — so their notes still
+// interleave instead of piling up at one end. An author with both (their session
+// went stale and they came back later) keeps the real offsets, and the strays
+// drop to the tail: giving that note a computed "+51:10:00" would be a lie
+// dressed as data.
+export function orderPosts(posts) {
+    const timedAuthors = new Set(posts.filter((p) => p.offset_secs != null).map((p) => p.user_id));
+
+    const zeroByAuthor = new Map();
+    for (const p of posts) {
+        if (timedAuthors.has(p.user_id)) continue;
+        const at = Date.parse(p.created_at);
+        const zero = zeroByAuthor.get(p.user_id);
+        if (zero === undefined || at < zero) zeroByAuthor.set(p.user_id, at);
+    }
+
+    const placed = posts.map((post) => {
+        const created = Date.parse(post.created_at);
+        if (post.offset_secs != null) {
+            return { post, offset: post.offset_secs, inferred: false, tail: false, created };
+        }
+        if (timedAuthors.has(post.user_id)) {
+            return { post, offset: null, inferred: false, tail: true, created };
+        }
+        const offset = Math.round((created - zeroByAuthor.get(post.user_id)) / 1000);
+        return { post, offset, inferred: true, tail: false, created };
+    });
+
+    return placed.sort((a, b) => {
+        if (a.tail !== b.tail) return a.tail ? 1 : -1;
+        if (!a.tail && a.offset !== b.offset) return a.offset - b.offset;
+        return a.created - b.created;
+    });
+}

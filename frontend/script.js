@@ -1,281 +1,13 @@
 import { h, render } from 'preact';
-import { useState, useEffect, useMemo, useCallback, useRef } from 'preact/hooks';
+import { useState, useEffect, useCallback, useRef } from 'preact/hooks';
 import htm from 'htm';
-import {
-    seasonLabel,
-    isFullyWatched,
-    sortSeasons,
-    sortBySeenCount,
-    selectableSeasons,
-    setWatched,
-    clearsCurrentlyWatching,
-} from './utils.js';
+import { setWatched, clearsCurrentlyWatching } from './utils.js';
+import { api } from './api.js';
+import { useTheme, useRefreshGuard, useRefreshOnFocus, useHashRoute } from './hooks.js';
+import { Header, Board } from './board.js';
+import { SeasonView } from './discussion.js';
 
 const html = htm.bind(h);
-
-async function api(path, options = {}) {
-    const r = await fetch(path, options);
-    if (!r.ok) {
-        let msg = `${options.method || 'GET'} ${path} failed: ${r.status}`;
-        try {
-            msg = (await r.json()).error || msg;
-        } catch {}
-        throw new Error(msg);
-    }
-    return r.json();
-}
-
-function useTheme() {
-    const [theme, setTheme] = useState(() => {
-        const stored = localStorage.getItem('theme');
-        if (stored === 'light' || stored === 'dark') return stored;
-        return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-    });
-
-    useEffect(() => {
-        document.documentElement.dataset.theme = theme;
-        localStorage.setItem('theme', theme);
-    }, [theme]);
-
-    useEffect(() => {
-        const mq = window.matchMedia('(prefers-color-scheme: dark)');
-        const handler = (e) => {
-            // Manual override in localStorage takes priority; only follow OS if none set.
-            const stored = localStorage.getItem('theme');
-            if (stored === 'light' || stored === 'dark') return;
-            setTheme(e.matches ? 'dark' : 'light');
-        };
-        mq.addEventListener('change', handler);
-        return () => mq.removeEventListener('change', handler);
-    }, []);
-
-    const toggle = useCallback(() => setTheme((t) => (t === 'dark' ? 'light' : 'dark')), []);
-
-    return { theme, toggle };
-}
-
-// Lucide icons (MIT) — currentColor inherits button color from CSS
-const SunIcon = () => html`
-    <svg
-        xmlns="http://www.w3.org/2000/svg"
-        width="16"
-        height="16"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        aria-hidden="true"
-    >
-        <circle cx="12" cy="12" r="4" />
-        <path
-            d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"
-        />
-    </svg>
-`;
-
-const MoonIcon = () => html`
-    <svg
-        xmlns="http://www.w3.org/2000/svg"
-        width="16"
-        height="16"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        aria-hidden="true"
-    >
-        <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
-    </svg>
-`;
-
-function Header({ theme, onToggleTheme }) {
-    const title = theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
-    return html`
-        <header class="header">
-            <h1 class="title">Outwit, Outplay, Outlast, Outwatch</h1>
-            <button class="theme-btn" title=${title} onClick=${onToggleTheme}>
-                ${theme === 'dark' ? html`<${SunIcon} />` : html`<${MoonIcon} />`}
-            </button>
-        </header>
-    `;
-}
-
-function SeasonRow({ season, users, meId, fullyWatched, onToggle }) {
-    return html`
-        <tr class=${fullyWatched ? 'watched-all' : ''}>
-            <td class="season-cell">
-                <a href=${season.wikipedia_url} target="_blank" rel="noopener noreferrer">
-                    ${seasonLabel(season)}
-                </a>
-            </td>
-            ${users.map((u) => {
-                const checked = season.watched_by.includes(u.id);
-                const isMe = u.id === meId;
-                const isCurrentlyWatching = u.currently_watching_season_id === season.id;
-                return html`
-                    <td key=${u.id} class=${'check-cell' + (isMe ? ' mine' : '')}>
-                        ${
-                            isCurrentlyWatching
-                                ? html`<span
-                                      class="watching-indicator"
-                                      aria-label="Currently watching"
-                                      >▶</span
-                                  >`
-                                : null
-                        }
-                        <input
-                            type="checkbox"
-                            checked=${checked}
-                            disabled=${!isMe}
-                            aria-label=${`${u.name} watched ${seasonLabel(season)}`}
-                            title=${isMe ? '' : `Only ${u.name} can change this`}
-                            onChange=${
-                                isMe ? (e) => onToggle(season.id, e.target.checked) : undefined
-                            }
-                        />
-                    </td>
-                `;
-            })}
-        </tr>
-    `;
-}
-
-// A summary strip above the board: one chip per person showing the season they're
-// currently on. Your own chip is editable (pick from your unwatched seasons);
-// everyone else's is read-only.
-function NowWatching({ users, seasons, meId, onSetCurrentlyWatching }) {
-    return html`
-        <div class="now-watching">
-            <span class="now-watching-label">Now Watching</span>
-            <div class="now-watching-items">
-                ${users.map((u) => {
-                    const isMe = u.id === meId;
-                    const cwId = u.currently_watching_season_id;
-                    const current = cwId != null ? seasons.find((s) => s.id === cwId) : null;
-                    return html`
-                        <div
-                            key=${u.id}
-                            class=${
-                                'nw-chip' + (isMe ? ' mine' : '') + (cwId != null ? ' active' : '')
-                            }
-                        >
-                            ${cwId != null ? html`<span class="nw-marker">▶</span>` : null}
-                            <span class="nw-name">${isMe ? 'You' : u.name}</span>
-                            ${
-                                isMe
-                                    ? html`<select
-                                          class="nw-select"
-                                          value=${cwId ?? ''}
-                                          onChange=${(e) =>
-                                              onSetCurrentlyWatching(
-                                                  e.target.value ? Number(e.target.value) : null,
-                                              )}
-                                      >
-                                          <option value="">Not watching</option>
-                                          ${selectableSeasons(seasons, meId).map(
-                                              (s) => html`
-                                                  <option key=${s.id} value=${s.id}>
-                                                      ${seasonLabel(s)}
-                                                  </option>
-                                              `,
-                                          )}
-                                      </select>`
-                                    : html`<span class="nw-season"
-                                          >${current ? seasonLabel(current) : '—'}</span
-                                      >`
-                            }
-                        </div>
-                    `;
-                })}
-            </div>
-        </div>
-    `;
-}
-
-function Board({ users, seasons, meId, onToggle, onSetCurrentlyWatching }) {
-    const [sortMode, setSortMode] = useState('season');
-    const userCount = users.length;
-    const sorted = useMemo(
-        () =>
-            sortMode === 'seen'
-                ? sortBySeenCount(seasons, userCount)
-                : sortSeasons(seasons, userCount),
-        [seasons, userCount, sortMode],
-    );
-    // Show the current user's column left-most.
-    const orderedUsers = useMemo(
-        () => [...users].sort((a, b) => (b.id === meId) - (a.id === meId)),
-        [users, meId],
-    );
-
-    return html`
-        <div>
-            <${NowWatching}
-                users=${orderedUsers}
-                seasons=${seasons}
-                meId=${meId}
-                onSetCurrentlyWatching=${onSetCurrentlyWatching}
-            />
-            <div class="sort-controls">
-                <span class="sort-label">Sort by</span>
-                <button
-                    class=${'sort-btn' + (sortMode === 'season' ? ' active' : '')}
-                    aria-pressed=${sortMode === 'season'}
-                    onClick=${() => setSortMode('season')}
-                >
-                    Season
-                </button>
-                <button
-                    class=${'sort-btn' + (sortMode === 'seen' ? ' active' : '')}
-                    aria-pressed=${sortMode === 'seen'}
-                    onClick=${() => setSortMode('seen')}
-                >
-                    Seen Count
-                </button>
-            </div>
-            <div class="table-wrapper">
-                <table id="board">
-                    <thead>
-                        <tr>
-                            <th class="season-head">Season</th>
-                            ${orderedUsers.map(
-                                (u) => html`
-                                    <th
-                                        key=${u.id}
-                                        class=${'check-head' + (u.id === meId ? ' mine' : '')}
-                                    >
-                                        ${u.name}${
-                                            u.id === meId
-                                                ? html`<span class="you"> (you)</span>`
-                                                : null
-                                        }
-                                    </th>
-                                `,
-                            )}
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${sorted.map(
-                            (s) =>
-                                html`<${SeasonRow}
-                                    key=${s.id}
-                                    season=${s}
-                                    users=${orderedUsers}
-                                    meId=${meId}
-                                    fullyWatched=${isFullyWatched(s, userCount)}
-                                    onToggle=${onToggle}
-                                />`,
-                        )}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    `;
-}
 
 function App() {
     const [users, setUsers] = useState([]);
@@ -284,72 +16,41 @@ function App() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const { theme, toggle: toggleTheme } = useTheme();
+    const routeSeasonId = useHashRoute();
 
-    // Board fetches race with optimistic mutations, guarded two ways:
-    // - Generations: each fetch takes a number and only the latest response
-    //   may apply (focus + visibilitychange often both fire). A mutation that
-    //   starts while a fetch is in flight invalidates it — its response may
-    //   hold pre-mutation state.
-    // - Deferral: a refresh requested while a mutation is in flight is queued
-    //   rather than started, because its response could be served from a read
-    //   taken before the mutation commits. When the last mutation settles, the
-    //   queued refetch runs — recovering whatever a discarded fetch carried.
-    const boardGen = useRef(0);
-    const boardFetches = useRef(0);
-    const mutationsInFlight = useRef(0);
-    const refreshQueued = useRef(false);
-
-    // Resolves true when the response was applied, false when it was stale.
-    const loadBoard = useCallback(async () => {
-        const gen = ++boardGen.current;
-        boardFetches.current++;
-        try {
-            const board = await api('/api/board');
-            if (gen !== boardGen.current) return false;
-            setUsers(board.users);
-            setSeasons(board.seasons);
-            setMe(board.me);
-            return true;
-        } finally {
-            boardFetches.current--;
-        }
+    const fetchBoard = useCallback(() => api('/api/board'), []);
+    const applyBoard = useCallback((board) => {
+        setUsers(board.users);
+        setSeasons(board.seasons);
+        setMe(board.me);
     }, []);
+    const { refresh, beginMutation, endMutation } = useRefreshGuard(fetchBoard, applyBoard);
+    useRefreshOnFocus(refresh, setError);
 
     useEffect(() => {
         (async () => {
             try {
-                await loadBoard();
+                await refresh();
             } catch (err) {
                 setError(err.message);
             } finally {
                 setLoading(false);
             }
         })();
-    }, [loadBoard]);
+    }, [refresh]);
 
-    // The board is shared: refetch when the tab regains focus so changes other
-    // people made while this tab was in the background show up without a reload.
+    // A season's post-count badge goes stale the moment you post from inside it,
+    // since the season view fetches its own discussion data rather than /api/board.
+    // Refetch the board on the way back out. Seeded with the initial route (rather
+    // than null) so mounting straight into a season view — or never opening one at
+    // all — doesn't trigger a redundant fetch on top of the mount effect above.
+    const prevRouteSeasonId = useRef(routeSeasonId);
     useEffect(() => {
-        const refresh = () => {
-            if (document.visibilityState !== 'visible') return;
-            if (mutationsInFlight.current > 0) {
-                refreshQueued.current = true;
-                return;
-            }
-            loadBoard().then(
-                // A discarded stale response says nothing about server health —
-                // only clear the error banner when the board actually applied.
-                (applied) => applied && setError(null),
-                (err) => setError(err.message),
-            );
-        };
-        document.addEventListener('visibilitychange', refresh);
-        window.addEventListener('focus', refresh);
-        return () => {
-            document.removeEventListener('visibilitychange', refresh);
-            window.removeEventListener('focus', refresh);
-        };
-    }, [loadBoard]);
+        if (prevRouteSeasonId.current != null && routeSeasonId == null) {
+            refresh().catch((err) => setError(err.message));
+        }
+        prevRouteSeasonId.current = routeSeasonId;
+    }, [routeSeasonId, refresh]);
 
     const meId = me?.id ?? null;
 
@@ -358,27 +59,6 @@ function App() {
     // them on every board change and risk stale closures.
     const usersRef = useRef(users);
     usersRef.current = users;
-
-    const beginMutation = useCallback(() => {
-        mutationsInFlight.current++;
-        // A board fetch already in flight may have read pre-mutation state:
-        // discard its response and queue a refetch so the other-user changes
-        // it was carrying still arrive.
-        if (boardFetches.current > 0) {
-            boardGen.current++;
-            refreshQueued.current = true;
-        }
-    }, []);
-
-    const endMutation = useCallback(() => {
-        if (--mutationsInFlight.current === 0 && refreshQueued.current) {
-            refreshQueued.current = false;
-            // Best-effort: the mutation's own outcome (including its error
-            // banner) already reflects reality; on failure the next focus
-            // refresh retries.
-            loadBoard().catch(() => {});
-        }
-    }, [loadBoard]);
 
     const setCurrentlyWatching = useCallback(
         async (seasonId) => {
@@ -483,6 +163,7 @@ function App() {
                     !loading &&
                     !me &&
                     users.length > 0 &&
+                    routeSeasonId == null &&
                     html`
                         <div class="notice">
                             You're not on the watch list — the board is read-only.
@@ -493,6 +174,7 @@ function App() {
                     !loading &&
                     !error &&
                     users.length === 0 &&
+                    routeSeasonId == null &&
                     html`
                         <div class="empty-state">
                             No users yet. Add people to the board (see README).
@@ -501,6 +183,12 @@ function App() {
                 }
                 ${
                     !loading &&
+                    routeSeasonId != null &&
+                    html`<${SeasonView} key=${routeSeasonId} seasonId=${routeSeasonId} />`
+                }
+                ${
+                    !loading &&
+                    routeSeasonId == null &&
                     users.length > 0 &&
                     html`
                         <${Board}
