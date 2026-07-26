@@ -38,9 +38,12 @@ export function SeasonView({ seasonId }) {
             beginMutation();
             try {
                 await run();
-                await api(`/api/seasons/${seasonId}/discussion`).then((fresh) =>
-                    setData((prev) => ({ ...fresh, users: prev.users })),
-                );
+                // Goes through the guard rather than fetching inline: called while
+                // the mutation is still in flight, this defers (mutationsInFlight
+                // > 0) and queues a refresh; endMutation() below then runs it once
+                // the last mutation settles. fetchDiscussion() re-merges `users`,
+                // so no separate preservation of `prev.users` is needed here.
+                await refresh();
                 setError(null);
             } catch (err) {
                 setError(err.message);
@@ -48,7 +51,7 @@ export function SeasonView({ seasonId }) {
                 endMutation();
             }
         },
-        [seasonId, beginMutation, endMutation],
+        [refresh, beginMutation, endMutation],
     );
 
     const reveal = (episode) =>

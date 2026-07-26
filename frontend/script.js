@@ -171,7 +171,7 @@ function App() {
                 ${
                     !loading &&
                     routeSeasonId != null &&
-                    html`<${SeasonView} seasonId=${routeSeasonId} />`
+                    html`<${SeasonView} key=${routeSeasonId} seasonId=${routeSeasonId} />`
                 }
                 ${
                     !loading &&
