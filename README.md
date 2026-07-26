@@ -104,7 +104,7 @@ template with fake placeholders.
 
 ```bash
 cp roster.example.sql roster.sql
-# edit roster.sql — real names + lowercase emails, keeping the generic user-N ids
+# edit roster.sql — real names + emails, keeping the generic user-N ids
 
 # apply to local and production (separate from `migrations apply`)
 npx wrangler d1 execute outwatch --local  --file=roster.sql
@@ -175,7 +175,7 @@ All routes derive the caller's identity from the
 
 | Column    | Type    | Notes                                                 |
 | --------- | ------- | ----------------------------------------------------- |
-| `email`   | TEXT PK | Cloudflare Access email (lowercase)                   |
+| `email`   | TEXT PK | Cloudflare Access email; `COLLATE NOCASE`             |
 | `user_id` | TEXT    | References `users.id`; a couple's column has two rows |
 
 Both tables are populated from the gitignored `roster.sql`, not a migration —
