@@ -520,6 +520,48 @@ tr.watched-all .check-cell input {
     font-size: 0.85rem;
 }
 
+.timer {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+}
+
+.timer-chip {
+    font-variant-numeric: tabular-nums;
+    padding: 0.2rem 0.5rem;
+    border-radius: 999px;
+    background: var(--surface-subtle);
+    border: 1px solid var(--border);
+    font-size: 0.85rem;
+    color: var(--text-subtle);
+}
+
+.timer-chip.running {
+    background: var(--surface-accent);
+    color: var(--text);
+}
+
+.timer-expired {
+    font-size: 0.8rem;
+    color: var(--amber-text);
+}
+
+.timer-btn {
+    padding: 0.25rem 0.6rem;
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-subtle);
+    cursor: pointer;
+    font-size: 0.8rem;
+}
+
+.timer-btn.subtle {
+    border-color: transparent;
+    color: var(--text-muted);
+}
+
 .post-form {
     display: flex;
     gap: 0.5rem;

@@ -4,6 +4,7 @@ import htm from 'htm';
 import { api } from './api.js';
 import { useRefreshGuard, useRefreshOnFocus } from './hooks.js';
 import { seasonLabel, orderPosts, formatOffset } from './utils.js';
+import { sessionOffsetSecs } from '../shared/session.js';
 
 const html = htm.bind(h);
 
@@ -34,7 +35,7 @@ export function SeasonView({ seasonId }) {
     }, [refresh]);
 
     const mutate = useCallback(
-        async (run) => {
+        async (run, { suppressError } = {}) => {
             beginMutation();
             try {
                 await run();
@@ -46,7 +47,15 @@ export function SeasonView({ seasonId }) {
                 await refresh();
                 setError(null);
             } catch (err) {
-                setError(err.message);
+                // Some failures are expected and already self-explanatory in the
+                // UI (a stale timer session 409s and the chip falls back to its
+                // expired state on refetch) — those skip the error banner but
+                // still refresh, best-effort, so the UI reflects the rejection.
+                if (suppressError?.(err)) {
+                    await refresh().catch(() => {});
+                } else {
+                    setError(err.message);
+                }
             } finally {
                 endMutation();
             }
@@ -70,9 +79,31 @@ export function SeasonView({ seasonId }) {
 
     const removePost = (postId) => mutate(() => api(`/api/posts/${postId}`, { method: 'DELETE' }));
 
+    // pause/resume 409 once the session has gone stale server-side (see
+    // shared/session.js) — that's not an app error, it's the expected outcome
+    // of waiting too long, so it's suppressed here rather than surfaced as a
+    // banner. The refetch that follows shows the session as gone and the chip
+    // falls back to its expired / "Start watching" state on its own.
+    const setTimer = (episode, action) =>
+        mutate(
+            () =>
+                api(`/api/seasons/${seasonId}/episodes/${episode}/timer`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action }),
+                }),
+            { suppressError: (err) => err.status === 409 },
+        );
+
     if (loading) return html`<div class="loading">Loading…</div>`;
     if (error) return html`<div class="error">${error}</div>`;
     if (!data) return null;
+
+    // Anchors the ticking chip to the server's clock rather than a possibly-
+    // wrong local one. Recomputed each render from the last response, so it
+    // drifts by at most the age of that response — fine for a display that
+    // only needs to be right to the second.
+    const serverSkewMs = data.now ? Date.parse(data.now) - Date.now() : 0;
 
     const nameOf = (id) => data.users.find((u) => u.id === id)?.name ?? 'Someone';
 
@@ -103,9 +134,11 @@ export function SeasonView({ seasonId }) {
                             ep=${ep}
                             meId=${data.me?.id ?? null}
                             nameOf=${nameOf}
+                            serverSkewMs=${serverSkewMs}
                             onReveal=${reveal}
                             onPost=${addPost}
                             onDelete=${removePost}
+                            onTimer=${setTimer}
                         />`,
                 )}
             </div>
@@ -115,7 +148,7 @@ export function SeasonView({ seasonId }) {
 
 // One episode's board. Locked boards are the default: you see the count and who
 // wrote, plus your own notes, and nothing else until you choose to open it.
-function EpisodeBoard({ ep, meId, nameOf, onReveal, onPost, onDelete }) {
+function EpisodeBoard({ ep, meId, nameOf, serverSkewMs, onReveal, onPost, onDelete, onTimer }) {
     const [open, setOpen] = useState(false);
     const placed = useMemo(() => orderPosts(ep.posts), [ep.posts]);
 
@@ -157,10 +190,59 @@ function EpisodeBoard({ ep, meId, nameOf, onReveal, onPost, onDelete }) {
                                 </button>
                             `
                         }
+                        ${
+                            meId &&
+                            html`<${WatchTimer}
+                                session=${ep.session}
+                                serverSkewMs=${serverSkewMs}
+                                onAction=${(action) => onTimer(ep.episode, action)}
+                            />`
+                        }
                         ${meId && html`<${PostForm} onPost=${(body) => onPost(ep.episode, body)} />`}
                     </div>
                 `
             }
+        </div>
+    `;
+}
+
+// The ticking chip. It re-derives the offset from the server's session every
+// second rather than counting locally, so a pause, a reload, or a second device
+// all land on the same number. It stops at the same three-hour staleness point
+// the server uses (shared/session.js), because showing a number the server would
+// refuse to stamp would be a promise the post cannot keep.
+function WatchTimer({ session, serverSkewMs, onAction }) {
+    const [tick, setTick] = useState(0);
+
+    useEffect(() => {
+        if (!session?.running_since) return;
+        const id = setInterval(() => setTick((t) => t + 1), 1000);
+        return () => clearInterval(id);
+    }, [session?.running_since]);
+
+    const offset = sessionOffsetSecs(session, Date.now() + serverSkewMs);
+    // `tick` only exists to force this re-render each second.
+    void tick;
+
+    if (offset === null) {
+        return html`
+            <div class="timer">
+                ${session && html`<span class="timer-expired">timer expired</span>`}
+                <button class="timer-btn" onClick=${() => onAction('start')}>Start watching</button>
+            </div>
+        `;
+    }
+
+    const running = session.running_since != null;
+    return html`
+        <div class="timer">
+            <span class=${'timer-chip' + (running ? ' running' : '')}>
+                ${running ? '▶' : '⏸'} ${formatOffset(offset)}
+            </span>
+            <button class="timer-btn" onClick=${() => onAction(running ? 'pause' : 'resume')}>
+                ${running ? 'Pause' : 'Resume'}
+            </button>
+            <button class="timer-btn subtle" onClick=${() => onAction('start')}>Restart</button>
         </div>
     `;
 }
