@@ -4,6 +4,7 @@ import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 
 import { sessionOffsetSecs } from '../shared/session.js';
+import { accessTokenEmail } from './access.js';
 
 const app = new Hono();
 
@@ -58,18 +59,25 @@ app.onError((err, c) => {
     return c.json({ error: 'Internal error' }, 500);
 });
 
-// Cloudflare Access authenticates at the edge and forwards the verified identity
-// in the Cf-Access-Authenticated-User-Email header — the client cannot spoof it
-// because Access overwrites the header. Local dev bypasses Access, so fall back
-// to DEV_USER_EMAIL (set in .dev.vars) to simulate a signed-in user.
-function callerEmail(c) {
-    const header = c.req.header('Cf-Access-Authenticated-User-Email');
-    const email = header || c.env.DEV_USER_EMAIL || '';
-    return email.trim().toLowerCase() || null;
+// Cloudflare Access authenticates at the edge and forwards the identity two ways:
+// a plaintext Cf-Access-Authenticated-User-Email header and a signed JWT in
+// Cf-Access-Jwt-Assertion. We use only the signed one. The header is trustworthy
+// solely because Access overwrites it, which holds only on hostnames the Access
+// application actually covers — and a Worker keeps answering on every hostname
+// bound to it, workers.dev included. On one Access doesn't front, anybody could
+// send that header and act as any member of the roster; a signature can't be
+// forged that way, whatever hostname the request arrives on.
+//
+// Local dev has no Access in front of it and so no token: DEV_USER_EMAIL (set in
+// .dev.vars) stands in for a signed-in user there.
+async function callerEmail(c) {
+    const token = c.req.header('Cf-Access-Jwt-Assertion');
+    if (token) return accessTokenEmail(token, c.env);
+    return (c.env.DEV_USER_EMAIL || '').trim().toLowerCase() || null;
 }
 
 async function callerUser(c) {
-    const email = callerEmail(c);
+    const email = await callerEmail(c);
     if (!email) return null;
     return c.env.DB.prepare(
         `SELECT users.id, users.name
