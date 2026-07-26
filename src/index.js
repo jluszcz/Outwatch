@@ -81,13 +81,26 @@ async function callerUser(c) {
 }
 
 app.get('/api/board', async (c) => {
-    const [me, { results: users }, { results: seasons }, { results: watched }] = await Promise.all([
+    const [
+        me,
+        { results: users },
+        { results: seasons },
+        { results: watched },
+        { results: counts },
+    ] = await Promise.all([
         callerUser(c),
         c.env.DB.prepare(
             'SELECT id, name, currently_watching_season_id FROM users ORDER BY sort_order ASC, name ASC',
         ).all(),
-        c.env.DB.prepare('SELECT id, subtitle, wikipedia_url FROM seasons ORDER BY id ASC').all(),
+        c.env.DB.prepare(
+            'SELECT id, subtitle, wikipedia_url, episode_count FROM seasons ORDER BY id ASC',
+        ).all(),
         c.env.DB.prepare('SELECT season_id, user_id FROM watched').all(),
+        // Post counts let the board show which seasons have any discussion at
+        // all — without it there is nothing to click towards.
+        c.env.DB.prepare(
+            'SELECT season_id, COUNT(*) AS post_count FROM posts GROUP BY season_id',
+        ).all(),
     ]);
 
     const watchedBySeason = new Map(seasons.map((s) => [s.id, []]));
@@ -95,10 +108,14 @@ app.get('/api/board', async (c) => {
         watchedBySeason.get(row.season_id)?.push(row.user_id);
     }
 
+    const postCounts = new Map(counts.map((c) => [c.season_id, c.post_count]));
+
     const board = seasons.map((s) => ({
         id: s.id,
         subtitle: s.subtitle,
         wikipedia_url: s.wikipedia_url,
+        episode_count: s.episode_count,
+        post_count: postCounts.get(s.id) ?? 0,
         watched_by: watchedBySeason.get(s.id),
     }));
 

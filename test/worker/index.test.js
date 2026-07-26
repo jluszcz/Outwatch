@@ -34,6 +34,10 @@ async function req(method, path, { body, email, envOverrides } = {}) {
 
 // Schema comes from the real migrations/*.sql, applied in test/apply-migrations.js.
 beforeEach(async () => {
+    // Children before parents: posts carries a foreign key into users, and the
+    // post_count test below leaves a row behind that would otherwise make the
+    // next test's DELETE FROM users fail.
+    await env.DB.exec('DELETE FROM posts');
     await env.DB.exec('DELETE FROM watched');
     await env.DB.exec('DELETE FROM user_emails');
     await env.DB.exec('DELETE FROM users');
@@ -52,10 +56,10 @@ beforeEach(async () => {
             "('carol@example.com', 'user-bob')",
     );
     await env.DB.prepare(
-        "INSERT INTO seasons (id, subtitle, wikipedia_url) VALUES (1, 'Borneo', 'https://en.wikipedia.org/wiki/Survivor:_Borneo')",
+        "INSERT INTO seasons (id, subtitle, wikipedia_url, episode_count) VALUES (1, 'Borneo', 'https://en.wikipedia.org/wiki/Survivor:_Borneo', 13)",
     ).run();
     await env.DB.prepare(
-        "INSERT INTO seasons (id, subtitle, wikipedia_url) VALUES (41, '', 'https://en.wikipedia.org/wiki/Survivor_41')",
+        "INSERT INTO seasons (id, subtitle, wikipedia_url, episode_count) VALUES (41, '', 'https://en.wikipedia.org/wiki/Survivor_41', 13)",
     ).run();
 });
 
@@ -210,6 +214,25 @@ describe('GET /api/board', () => {
         expect(s1.watched_by.sort()).toEqual(['user-alice', 'user-bob']);
         const s41 = seasons.find((s) => s.id === 41);
         expect(s41.watched_by).toEqual([]);
+    });
+
+    it('includes episode_count per season', async () => {
+        const { seasons } = await (await req('GET', '/api/board')).json();
+        expect(seasons.find((s) => s.id === 1).episode_count).toBe(13);
+    });
+
+    it('reports post_count across every episode of a season', async () => {
+        await req('POST', '/api/seasons/1/episodes/1/posts', {
+            body: { body: 'first' },
+            email: 'alice@example.com',
+        });
+        await req('POST', '/api/seasons/1/episodes/5/posts', {
+            body: { body: 'second' },
+            email: 'bob@example.com',
+        });
+        const { seasons } = await (await req('GET', '/api/board')).json();
+        expect(seasons.find((s) => s.id === 1).post_count).toBe(2);
+        expect(seasons.find((s) => s.id === 41).post_count).toBe(0);
     });
 });
 
