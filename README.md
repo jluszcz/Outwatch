@@ -164,11 +164,12 @@ All routes derive the caller's identity from the
 
 **`users`** — board columns (a person or a couple)
 
-| Column       | Type    | Notes                              |
-| ------------ | ------- | ---------------------------------- |
-| `id`         | TEXT PK | Generic id, e.g. `user-1`          |
-| `name`       | TEXT    | Column header (e.g. `Bob & Carol`) |
-| `sort_order` | INTEGER | Column order                       |
+| Column                         | Type    | Notes                                                      |
+| ------------------------------ | ------- | ---------------------------------------------------------- |
+| `id`                           | TEXT PK | Generic id, e.g. `user-1`                                  |
+| `name`                         | TEXT    | Column header (e.g. `Bob & Carol`)                         |
+| `sort_order`                   | INTEGER | Column order                                               |
+| `currently_watching_season_id` | INTEGER | References `seasons.id`; `NULL` when not watching a season |
 
 **`user_emails`** — maps each Access login email to a column
 

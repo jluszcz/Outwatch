@@ -21,7 +21,7 @@ It is a sibling of the **Seen** project and follows the same stack and structure
     - `hooks.js` — `useTheme`, `useRefreshGuard`, `useHashRoute`, `useRefreshOnFocus`
     - `board.js` — `Header`, `Board` and its child components (the season × user grid)
     - `discussion.js` — `SeasonView` and the per-episode discussion board + watch timer UI
-    - `utils.js` — Pure helpers (`seasonLabel`, `isFullyWatched`, `sortSeasons`, `sortBySeenCount`, `selectableSeasons`, `clearsCurrentlyWatching`, `episodeNumbers`, `formatOffset`, `orderPosts`); shared with tests
+    - `utils.js` — Pure helpers (`seasonLabel`, `isFullyWatched`, `sortSeasons`, `sortBySeenCount`, `selectableSeasons`, `setWatched`, `clearsCurrentlyWatching`, `episodeNumbers`, `formatOffset`, `orderPosts`); shared with tests
     - `styles.css` — Theme tokens + layout
 - `shared/` — Code the Worker and the browser bundle both import, so the two never disagree
     - `session.js` — `sessionOffsetSecs`, the one watch-timer rule both sides must compute identically
@@ -42,7 +42,7 @@ It is a sibling of the **Seen** project and follows the same stack and structure
     - `test/frontend/` — Frontend unit tests (logic only, no DOM)
 - `build.js` — esbuild bundler for the frontend (one-shot + `--watch`)
 - `seed.sql` — sample watched rows for local dev (uses the generic `user-N` ids)
-- `wrangler.toml`, `package.json`
+- `wrangler.toml`, `package.json`, `eslint.config.js`
 
 ## Technology Stack
 
@@ -61,7 +61,10 @@ are gitignored.
 - `npm run build` — one-shot production bundle (minified)
 - `npm run dev` — `node build.js --watch` + `wrangler dev` concurrently
 - `npm run deploy` — builds, then `wrangler deploy`
-- `npm test` — Vitest only; tests import from `frontend/utils.js` directly
+- `npm test` — Vitest once; frontend tests import from `frontend/utils.js` and `shared/session.js` directly, so no bundle is needed
+- `npm run test:watch` — Vitest in watch mode
+- `npm run lint` — ESLint
+- `npm run format` / `npm run format:check` — Prettier, write or check
 
 When editing the frontend, edit files under `frontend/`. Do not edit
 `public/script.js` — it is build output.
@@ -83,6 +86,17 @@ order, on Node 22:
 and `npm run format:check` locally and confirm they all pass.** These are exactly
 the checks CI runs, and a commit that fails any of them should not be made.
 
+Two pre-commit hooks also run locally, and neither is a substitute for the checks
+above — they format and sanity-check, they do not build, test, or lint:
+
+- `.husky/pre-commit` runs `npx lint-staged`, which Prettier-formats staged
+  `.js`/`.css` files in place (`lint-staged` config in `package.json`)
+- `.pre-commit-config.yaml` runs the `pre-commit` framework's generic hooks
+  (merge-conflict markers, TOML/YAML/JSON syntax, AWS credentials, trailing
+  whitespace, end-of-file newline, sorted `.gitignore`)
+
+Never bypass either with `--no-verify`.
+
 ## Architecture Notes
 
 ### Authentication & identity
@@ -99,7 +113,7 @@ the checks CI runs, and a commit that fails any of them should not be made.
 
 ### Database Schema
 
-- `users` — `id`, `name` (column header), `sort_order`; one row per board column
+- `users` — `id`, `name` (column header), `sort_order`, `currently_watching_season_id` (added in `0003`, `NULL` when not watching anything); one row per board column
 - `user_emails` — `email` PK, `user_id`; maps each Access login email to a column (couples have two rows)
 - `seasons` — `id` (the season number), `subtitle` (may be empty), `wikipedia_url`, `episode_count` (added in `0005`, from Wikipedia's episode table, excluding the reunion special)
 - `watched` — `(user_id, season_id)` PK + `created_at`; presence = watched
