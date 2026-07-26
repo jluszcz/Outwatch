@@ -74,7 +74,10 @@ export function formatOffset(secs) {
 }
 
 // Places every note on one timeline so a conversation written days apart reads
-// in episode order. Does not mutate the input.
+// in episode order. Returns { post, offset, inferred, tail, created } — `created`
+// is the parsed created_at used as the sort key (and tiebreaker within a tail),
+// returned alongside the rest so callers don't have to re-parse it. Does not
+// mutate the input.
 //
 // An author who ran a timer has real offsets. An author who never did gets an
 // inferred zero — their own earliest note on the episode — so their notes still

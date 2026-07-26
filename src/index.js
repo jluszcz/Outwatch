@@ -108,7 +108,7 @@ app.get('/api/board', async (c) => {
         watchedBySeason.get(row.season_id)?.push(row.user_id);
     }
 
-    const postCounts = new Map(counts.map((c) => [c.season_id, c.post_count]));
+    const postCounts = new Map(counts.map((row) => [row.season_id, row.post_count]));
 
     const board = seasons.map((s) => ({
         id: s.id,

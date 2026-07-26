@@ -92,7 +92,11 @@ export function useRefreshGuard(fetcher, apply) {
 // your place, and a season is a link you can paste into chat.
 export function useHashRoute() {
     const read = () => {
-        const match = /^#\/season\/(\d+)$/.exec(window.location.hash);
+        // No leading zero and no bare "0" — season ids are positive integers, and
+        // "0" would otherwise match, mount SeasonView, and surface the API's raw
+        // "season_id must be a positive integer" error instead of falling back
+        // to the board.
+        const match = /^#\/season\/([1-9]\d*)$/.exec(window.location.hash);
         return match ? Number(match[1]) : null;
     };
     const [seasonId, setSeasonId] = useState(read);

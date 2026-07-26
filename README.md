@@ -34,9 +34,9 @@ watching at different paces don't spoil each other.
 - **An optional watch timer.** Start it when you press play, and your notes
   are stamped with how far into the episode you were, so once a board is
   opened everyone's notes sort into one synced timeline by that offset
-  instead of by when they happened to be typed. A timer left idle for three
-  hours is considered stale — pausing or resuming it fails, and you start a
-  new one.
+  instead of by when they happened to be typed. Pausing or resuming fails
+  (409) if the timer was never started, or if it was but has gone three
+  hours idle and is now considered stale — either way you start a new one.
 
 ## Stack
 

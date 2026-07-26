@@ -85,7 +85,7 @@ untouched session expires on its own.
 
 `episode_count` is the number of episodes listed in each season's Wikipedia
 episode table, **excluding the reunion special**. A two-hour premiere counts as
-the single episode Wikipedia lists. Counts range 13–16.
+the single episode Wikipedia lists. Counts range 12–16.
 
 This is the only hand-transcribed data in the feature and therefore the most
 likely place for a quiet error. Spot-check a few well-known seasons after it
@@ -210,7 +210,7 @@ uses Zod with the existing `onInvalid` handler, so failures return
                     "offset_secs": 600
                 }
             ],
-            "session": { "elapsed_secs": 0, "running_since": "…", "live": true }
+            "session": { "elapsed_secs": 0, "running_since": "…", "last_activity_at": "…" }
         }
     ]
 }

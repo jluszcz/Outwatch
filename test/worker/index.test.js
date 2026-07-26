@@ -34,9 +34,12 @@ async function req(method, path, { body, email, envOverrides } = {}) {
 
 // Schema comes from the real migrations/*.sql, applied in test/apply-migrations.js.
 beforeEach(async () => {
-    // Children before parents: posts carries a foreign key into users, and the
-    // post_count test below leaves a row behind that would otherwise make the
-    // next test's DELETE FROM users fail.
+    // Children before parents: watch_sessions, reveals, and posts all carry
+    // foreign keys into users and seasons, and leftover rows from any of the
+    // discussion-adjacent tests below would otherwise make the DELETE FROM
+    // users / seasons further down fail.
+    await env.DB.exec('DELETE FROM watch_sessions');
+    await env.DB.exec('DELETE FROM reveals');
     await env.DB.exec('DELETE FROM posts');
     await env.DB.exec('DELETE FROM watched');
     await env.DB.exec('DELETE FROM user_emails');
