@@ -34,6 +34,9 @@ export function SeasonView({ seasonId }) {
             .finally(() => setLoading(false));
     }, [refresh]);
 
+    // Resolves true on success and false on failure so callers that need to know
+    // (PostForm keeps the user's typed text on failure rather than clearing a box
+    // it never actually posted) can gate on it; the other callers just ignore it.
     const mutate = useCallback(
         async (run, { suppressError } = {}) => {
             beginMutation();
@@ -46,6 +49,7 @@ export function SeasonView({ seasonId }) {
                 // so no separate preservation of `prev.users` is needed here.
                 await refresh();
                 setError(null);
+                return true;
             } catch (err) {
                 // Some failures are expected and already self-explanatory in the
                 // UI (a stale timer session 409s and the chip falls back to its
@@ -56,6 +60,7 @@ export function SeasonView({ seasonId }) {
                 } else {
                     setError(err.message);
                 }
+                return false;
             } finally {
                 endMutation();
             }
@@ -294,8 +299,11 @@ function PostForm({ onPost }) {
         if (!trimmed || busy) return;
         setBusy(true);
         try {
-            await onPost(trimmed);
-            setBody('');
+            // Only clear the box on success — a failed post already shows the
+            // error banner, and wiping what the user just typed on top of that
+            // would silently discard it.
+            const posted = await onPost(trimmed);
+            if (posted) setBody('');
         } finally {
             setBusy(false);
         }
