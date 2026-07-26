@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { env } from 'cloudflare:test';
 import { HTTPException } from 'hono/http-exception';
 import worker from '../../src/index.js';
+import { accessEnv, signAccessToken, stubJwksEndpoint } from './access-token.js';
 
 const mockAssetsFetch = vi.fn().mockResolvedValue(new Response('index.html'));
 
@@ -13,6 +14,7 @@ function makeEnv(overrides = {}) {
     // dev-fallback behavior re-add it via envOverrides.
     return {
         ...env,
+        ...accessEnv,
         DEV_USER_EMAIL: undefined,
         ASSETS: { fetch: mockAssetsFetch },
         DB: env.DB,
@@ -20,20 +22,25 @@ function makeEnv(overrides = {}) {
     };
 }
 
-// `email` simulates the Cloudflare Access identity header. Omit it to act as an
-// unauthenticated request (as in production before Access, or an unknown user).
+// `email` signs a Cloudflare Access token for that address, the way Access would.
+// Omit it to act as an unauthenticated request (an unknown user, or a request that
+// never went through Access at all). test/worker/access.test.js covers what
+// happens to a token that doesn't verify.
 async function req(method, path, { body, email, envOverrides } = {}) {
     const init = { method, headers: {} };
     if (body !== undefined) {
         init.body = JSON.stringify(body);
         init.headers['Content-Type'] = 'application/json';
     }
-    if (email) init.headers['Cf-Access-Authenticated-User-Email'] = email;
+    if (email) init.headers['Cf-Access-Jwt-Assertion'] = await signAccessToken({ email });
     return worker.fetch(new Request(`https://example.com${path}`, init), makeEnv(envOverrides));
 }
 
 // Schema comes from the real migrations/*.sql, applied in test/apply-migrations.js.
 beforeEach(async () => {
+    // Access tokens are verified against the team's published keys, so the test
+    // signing key has to be served the way Cloudflare serves the real one.
+    await stubJwksEndpoint();
     // Children before parents: watch_sessions, reveals, and posts all carry
     // foreign keys into users and seasons, and leftover rows from any of the
     // discussion-adjacent tests below would otherwise make the DELETE FROM
@@ -145,7 +152,7 @@ describe('GET /api/board', () => {
         expect(users[0]).not.toHaveProperty('email');
     });
 
-    it('resolves "me" from the Access email header', async () => {
+    it('resolves "me" from the Access token', async () => {
         const { me } = await (await req('GET', '/api/board', { email: 'bob@example.com' })).json();
         expect(me).toEqual({ id: 'user-bob', name: 'Bob & Carol' });
     });
@@ -157,7 +164,7 @@ describe('GET /api/board', () => {
         expect(carol.me.id).toBe('user-bob');
     });
 
-    it('matches the Access email case-insensitively', async () => {
+    it('matches the token email case-insensitively', async () => {
         const { me } = await (await req('GET', '/api/board', { email: 'BOB@EXAMPLE.COM' })).json();
         expect(me.id).toBe('user-bob');
     });
@@ -184,7 +191,7 @@ describe('GET /api/board', () => {
         expect(me).toBeNull();
     });
 
-    it('falls back to DEV_USER_EMAIL when no Access header is present', async () => {
+    it('falls back to DEV_USER_EMAIL when no Access token is present', async () => {
         const { me } = await (
             await req('GET', '/api/board', {
                 envOverrides: { DEV_USER_EMAIL: 'alice@example.com' },
@@ -501,7 +508,9 @@ describe('POST /api/watched', () => {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Cf-Access-Authenticated-User-Email': 'alice@example.com',
+                    'Cf-Access-Jwt-Assertion': await signAccessToken({
+                        email: 'alice@example.com',
+                    }),
                 },
                 body: 'not-json',
             }),

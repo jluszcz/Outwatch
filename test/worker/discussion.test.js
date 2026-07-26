@@ -1,12 +1,14 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { env } from 'cloudflare:test';
 import worker from '../../src/index.js';
+import { accessEnv, signAccessToken, stubJwksEndpoint } from './access-token.js';
 
 const mockAssetsFetch = vi.fn().mockResolvedValue(new Response('index.html'));
 
 function makeEnv(overrides = {}) {
     return {
         ...env,
+        ...accessEnv,
         DEV_USER_EMAIL: undefined,
         ASSETS: { fetch: mockAssetsFetch },
         DB: env.DB,
@@ -20,12 +22,14 @@ async function req(method, path, { body, email, envOverrides } = {}) {
         init.body = JSON.stringify(body);
         init.headers['Content-Type'] = 'application/json';
     }
-    if (email) init.headers['Cf-Access-Authenticated-User-Email'] = email;
+    if (email) init.headers['Cf-Access-Jwt-Assertion'] = await signAccessToken({ email });
     return worker.fetch(new Request(`https://example.com${path}`, init), makeEnv(envOverrides));
 }
 
 // Children before parents — the new tables carry foreign keys into seasons and users.
 beforeEach(async () => {
+    // Serve the test signing key the way Cloudflare serves the team's real one.
+    await stubJwksEndpoint();
     await env.DB.exec('DELETE FROM watch_sessions');
     await env.DB.exec('DELETE FROM reveals');
     await env.DB.exec('DELETE FROM posts');

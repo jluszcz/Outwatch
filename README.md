@@ -40,13 +40,13 @@ watching at different paces don't spoil each other.
 
 ## Stack
 
-| Layer    | Technology                                 |
-| -------- | ------------------------------------------ |
-| Backend  | Cloudflare Workers + Hono + Zod            |
-| Database | Cloudflare D1 (SQLite)                     |
-| Frontend | Preact + htm, bundled with esbuild         |
-| Auth     | Cloudflare Access                          |
-| Testing  | Vitest + `@cloudflare/vitest-pool-workers` |
+| Layer    | Technology                                  |
+| -------- | ------------------------------------------- |
+| Backend  | Cloudflare Workers + Hono + Zod             |
+| Database | Cloudflare D1 (SQLite)                      |
+| Frontend | Preact + htm, bundled with esbuild          |
+| Auth     | Cloudflare Access, JWT verified with `jose` |
+| Testing  | Vitest + `@cloudflare/vitest-pool-workers`  |
 
 ## Getting Started
 
@@ -78,6 +78,10 @@ npx wrangler d1 execute outwatch --remote --file=roster.sql
 # Seed sample watched state for local dev (optional)
 npx wrangler d1 execute outwatch --local --file=seed.sql
 
+# Tell the Worker how to verify Access tokens (production only; see "Authentication")
+npx wrangler secret put ACCESS_TEAM_DOMAIN   # e.g. https://your-team.cloudflareaccess.com
+npx wrangler secret put ACCESS_AUD           # the application's AUD tag
+
 # Start dev server
 npm run dev
 ```
@@ -86,7 +90,9 @@ npm run dev
 
 `wrangler dev` bypasses Cloudflare Access, so there's no signed-in user by
 default. Copy `.dev.vars.example` to `.dev.vars` and set `DEV_USER_EMAIL` to one
-of the login emails from your `roster.sql` to act as that person locally.
+of the login emails from your `roster.sql` to act as that person locally. There
+is no Access token to verify locally, so `ACCESS_TEAM_DOMAIN` and `ACCESS_AUD`
+are not needed for local dev.
 
 ### The roster
 
@@ -145,11 +151,17 @@ npm run build    # one-shot production bundle
 npm run deploy
 ```
 
+`ACCESS_TEAM_DOMAIN` and `ACCESS_AUD` must both be set as secrets before anyone
+can sign in: without them the Worker cannot verify an Access token and refuses
+every request that carries one (500, "Access verification is not configured")
+rather than trusting it unchecked.
+
 ## API
 
-All routes derive the caller's identity from the
-`Cf-Access-Authenticated-User-Email` header that Cloudflare Access injects (or
-`DEV_USER_EMAIL` locally). Clients never send a user id.
+All routes derive the caller's identity from the signed Cloudflare Access token in
+the `Cf-Access-Jwt-Assertion` header (or `DEV_USER_EMAIL` locally). Clients never
+send a user id, and the plaintext `Cf-Access-Authenticated-User-Email` header is
+never trusted — see [Authentication](#authentication).
 
 | Method   | Path                                               | Description                                                                                  |
 | -------- | -------------------------------------------------- | -------------------------------------------------------------------------------------------- |
@@ -241,11 +253,36 @@ Primary key is `(user_id, season_id, episode)`.
 
 ## Authentication
 
-Authentication is handled entirely by Cloudflare Access at the edge — no
-application code. Access forwards each request with a verified
-`Cf-Access-Authenticated-User-Email` header, which the Worker maps through
-`user_emails` to a board column. Local development bypasses Access (see "Local
-dev identity").
+Sign-in is handled entirely by Cloudflare Access at the edge — no application
+code, no password to store. Access forwards each authenticated request with a
+signed JWT in the `Cf-Access-Jwt-Assertion` header; the Worker verifies that
+token and maps its `email` claim through `user_emails` to a board column. Local
+development bypasses Access (see "Local dev identity").
+
+### Why the token and not the header
+
+Access also sets a plaintext `Cf-Access-Authenticated-User-Email` header, and
+reading it is the shorter path. This app ignores it, because that header is only
+trustworthy on a hostname the Access application actually fronts — Access
+overwrites whatever the client sent, but only where Access is in the request path.
+A Worker answers on _every_ hostname bound to it, `*.workers.dev` included, and on
+one Access does not cover anybody could send that header and act as any member of
+the roster. So the Worker verifies the token instead:
+
+- the RS256 signature, against the team's published keys at
+  `<team domain>/cdn-cgi/access/certs` (fetched and cached by `jose`, which
+  refetches on key rotation),
+- the `iss` claim, against `ACCESS_TEAM_DOMAIN`,
+- the `aud` claim, against `ACCESS_AUD` — the AUD tag is per-application, so
+  without this a valid token for any _other_ Access application in the same Zero
+  Trust account would be accepted here,
+- and `exp`, so an expired token is not reusable.
+
+A token that fails any of these is a 403; identity never falls back to the
+plaintext header. That holds no matter which hostname the request arrived on, so
+Access misconfiguration is no longer an impersonation risk. (Access is still what
+keeps strangers off the site — a request with no token at all is treated as signed
+out, and can read the board but change nothing.)
 
 ### Setting up accounts in Cloudflare Access
 
@@ -264,12 +301,30 @@ verifies ownership with a one-time emailed code. This works for any email
    with action **Allow** and a rule: Selector **Emails**, listing every address
    from your `roster.sql` (e.g. `alice@example.com`, `bob@example.com`,
    `carol@example.com`, …). Save.
-4. **Share the link.** Each person visits the site, enters their email, gets a
+4. **Point the Worker at the application.** In the application's **Additional
+   settings**, copy the **Application Audience (AUD) Tag** — it never changes
+   unless the application is recreated — and set both secrets:
+
+    ```bash
+    npx wrangler secret put ACCESS_TEAM_DOMAIN   # https://your-team.cloudflareaccess.com
+    npx wrangler secret put ACCESS_AUD           # the AUD tag from above
+    ```
+
+    These are what the Worker verifies each token against. Until they're set,
+    every signed-in request fails with a 500 (see "Why the token and not the
+    header").
+
+5. **Share the link.** Each person visits the site, enters their email, gets a
    code, and they're in. Their email must also exist in `user_emails` (loaded
    from `roster.sql`) for the board to know which column is theirs.
 
 The allow-list in step 3 and the `user_emails` table must agree: Access decides
 _who can get in_; `user_emails` decides _which column they are_.
+
+If you later move the Worker to a custom domain, create or extend the Access
+application to cover that hostname too. Token verification means an uncovered
+hostname is no longer an impersonation risk, but a hostname Access doesn't front
+sends no token at all, so nobody signed in can do anything there.
 
 ## Cost
 

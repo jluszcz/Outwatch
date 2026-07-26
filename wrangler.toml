@@ -3,6 +3,10 @@ main = "src/index.js"
 compatibility_date = "2026-06-01"
 compatibility_flags = ["nodejs_compat"]
 
+# Access token verification needs the team domain and the application AUD tag at
+# runtime. They are secrets (`wrangler secret put ACCESS_TEAM_DOMAIN` /
+# `ACCESS_AUD`) rather than committed [vars] — see README → Authentication.
+
 [assets]
 directory = "public"
 binding = "ASSETS"

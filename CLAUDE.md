@@ -31,6 +31,7 @@ It is a sibling of the **Seen** project and follows the same stack and structure
     - `script.js`, `script.js.map`, `styles.css`, `styles.css.map` — build output (gitignored)
 - `src/` — Cloudflare Workers backend
     - `index.js` — Hono app + API for the board, watched state, and per-episode discussions
+    - `access.js` — `accessTokenEmail`, Cloudflare Access JWT verification (signature, issuer, audience, expiry); the only source of caller identity in production
 - `migrations/` — D1 SQL migrations (applied via wrangler)
     - `0001_initial.sql` — `users`, `user_emails`, `seasons`, `watched` tables
     - `0002_seed_seasons.sql` — all 50 seasons (reference data)
@@ -50,7 +51,7 @@ It is a sibling of the **Seen** project and follows the same stack and structure
 - **Backend**: Cloudflare Workers + [Hono](https://hono.dev/) router with [Zod](https://zod.dev/) validation
 - **Database**: Cloudflare D1 (SQLite)
 - **Frontend**: [Preact](https://preactjs.com/) + [htm](https://github.com/developit/htm), bundled with esbuild
-- **Authentication**: Cloudflare Access (zero-code, dashboard-configured)
+- **Authentication**: Cloudflare Access (zero-code, dashboard-configured), with its JWT verified in the Worker using [jose](https://github.com/panva/jose)
 - **Testing**: Vitest + `@cloudflare/vitest-pool-workers`
 
 ## Build & Bundling
@@ -110,15 +111,32 @@ Never bypass either with `--no-verify`.
 
 ### Authentication & identity
 
-- Cloudflare Access protects the Worker at the edge and forwards the verified
-  identity in the `Cf-Access-Authenticated-User-Email` header. The client cannot
-  spoof it.
-- `src/index.js` maps that email (lowercased) through `user_emails` to a `users`
-  column. A couple's column has two emails pointing at it, so either partner acts
-  as the same column. All mutations attribute to the caller's own `users.id` —
-  there is no client-supplied user id, so you can only toggle your own column.
-- Local dev bypasses Access; `DEV_USER_EMAIL` (in `.dev.vars`) simulates a
-  signed-in user.
+- Cloudflare Access protects the Worker at the edge and forwards the identity two
+  ways: a plaintext `Cf-Access-Authenticated-User-Email` header and a signed JWT in
+  `Cf-Access-Jwt-Assertion`. **Only the token is trusted, and `src/access.js`
+  verifies it** — RS256 signature against `<team domain>/cdn-cgi/access/certs`,
+  `iss` against `ACCESS_TEAM_DOMAIN`, `aud` against `ACCESS_AUD` (the AUD tag is
+  per-application, so this is what keeps a token minted for a different Access
+  application out), and `exp`. Do not reintroduce reads of the plaintext header:
+  it is only trustworthy on a hostname the Access application fronts, and a Worker
+  answers on every hostname bound to it (`*.workers.dev` included), so on an
+  uncovered one that header is client-controlled and would let anyone act as any
+  roster member. A signature holds regardless of hostname.
+- `ACCESS_TEAM_DOMAIN` and `ACCESS_AUD` are runtime secrets set with
+  `wrangler secret put`, deliberately not committed `[vars]`. If either is missing
+  while a token is present, the Worker fails closed with a 500; a
+  token that fails verification is a 403. Neither ever falls back to the header or
+  to `DEV_USER_EMAIL`.
+- `src/index.js` maps the verified email (lowercased) through `user_emails` to a
+  `users` column. A couple's column has two emails pointing at it, so either
+  partner acts as the same column. All mutations attribute to the caller's own
+  `users.id` — there is no client-supplied user id, so you can only toggle your own
+  column.
+- Local dev bypasses Access, so there is no token to verify; `DEV_USER_EMAIL` (in
+  `.dev.vars`) simulates a signed-in user, and the `ACCESS_*` settings are unused.
+- Worker tests authenticate with real signed tokens: `test/worker/access-token.js`
+  mints them with a throwaway key pair and stubs the JWKS endpoint, so
+  `req(..., { email })` in the suites exercises the production verification path.
 
 ### Database Schema
 

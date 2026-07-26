@@ -1,5 +1,11 @@
 # Local dev only. Copy to .dev.vars (gitignored) and set to one of the login
 # emails from your roster.sql to simulate being signed in — Cloudflare Access is
-# bypassed in `wrangler dev`, so without this every request is treated as "not
-# signed in".
+# bypassed in `wrangler dev`, so there is no token to verify and without this
+# every request is treated as "not signed in".
 DEV_USER_EMAIL=alice@example.com
+
+# Not needed locally. In production the Worker verifies each Cloudflare Access
+# token against these two, set with `wrangler secret put` (see README →
+# Authentication). Set them here only to check verification against a real token.
+# ACCESS_TEAM_DOMAIN=https://your-team.cloudflareaccess.com
+# ACCESS_AUD=your-access-application-aud-tag
