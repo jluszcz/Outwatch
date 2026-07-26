@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'preact/hooks';
+import { createRefreshGuard } from './refresh-guard.js';
 
 export function useTheme() {
     const [theme, setTheme] = useState(() => {
@@ -30,59 +31,39 @@ export function useTheme() {
 }
 
 // Guards a shared-resource refetch against races with optimistic mutations.
-//
-// Two mechanisms, both carried over from the board:
-//   - Generations: only the newest fetch may apply its response. Focus and
-//     visibilitychange often both fire, and a mutation starting mid-flight
-//     invalidates whatever a fetch was already carrying.
-//   - Deferral: a refresh asked for while a mutation is in flight is queued
-//     rather than started, because its response could come from a read taken
-//     before the mutation commits. The last mutation to settle runs it.
+// The rules live in `createRefreshGuard` (refresh-guard.js), which is where they
+// are tested; this hook is the wiring that gives them a fetcher and somewhere to
+// put the data.
 //
 // `fetcher` returns the data; `apply` writes it to state. refresh() resolves
 // true when the response was applied and false when it was stale or deferred.
 export function useRefreshGuard(fetcher, apply) {
-    const generation = useRef(0);
-    const fetchesInFlight = useRef(0);
-    const mutationsInFlight = useRef(0);
-    const queued = useRef(false);
+    // One guard per mounted component, created on first render and kept for the
+    // component's life — its counters are the state being guarded.
+    const guardRef = useRef(null);
+    if (guardRef.current === null) guardRef.current = createRefreshGuard();
+    const guard = guardRef.current;
 
     const refresh = useCallback(async () => {
-        if (mutationsInFlight.current > 0) {
-            queued.current = true;
-            return false;
-        }
-        const mine = ++generation.current;
-        fetchesInFlight.current++;
+        const token = guard.startFetch();
+        if (token === null) return false;
         try {
             const data = await fetcher();
-            if (mine !== generation.current) return false;
+            if (!guard.isCurrent(token)) return false;
             apply(data);
             return true;
         } finally {
-            fetchesInFlight.current--;
+            guard.endFetch();
         }
-    }, [fetcher, apply]);
+    }, [guard, fetcher, apply]);
 
-    const beginMutation = useCallback(() => {
-        mutationsInFlight.current++;
-        // A fetch already in flight may have read pre-mutation state: discard
-        // its response and queue a refetch so the other-user changes it was
-        // carrying still arrive.
-        if (fetchesInFlight.current > 0) {
-            generation.current++;
-            queued.current = true;
-        }
-    }, []);
+    const beginMutation = useCallback(() => guard.beginMutation(), [guard]);
 
     const endMutation = useCallback(() => {
-        if (--mutationsInFlight.current === 0 && queued.current) {
-            queued.current = false;
-            // Best-effort: the mutation's own error banner already reflects
-            // reality, and the next focus refresh retries.
-            refresh().catch(() => {});
-        }
-    }, [refresh]);
+        // Best-effort: the mutation's own error banner already reflects
+        // reality, and the next focus refresh retries.
+        if (guard.endMutation()) refresh().catch(() => {});
+    }, [guard, refresh]);
 
     return { refresh, beginMutation, endMutation };
 }

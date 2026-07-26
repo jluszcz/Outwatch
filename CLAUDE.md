@@ -19,6 +19,7 @@ It is a sibling of the **Seen** project and follows the same stack and structure
     - `script.js` — `App` component: board/season state, hash routing, optimistic mutations
     - `api.js` — `api()`, the shared fetch helper (throws with `.status` on a non-2xx response)
     - `hooks.js` — `useTheme`, `useRefreshGuard`, `useHashRoute`, `useRefreshOnFocus`
+    - `refresh-guard.js` — `createRefreshGuard`, the refetch-vs-mutation race rules as a plain state machine; `useRefreshGuard` is the wiring around it
     - `board.js` — `Header`, `Board` and its child components (the season × user grid)
     - `discussion.js` — `SeasonView` and the per-episode discussion board + watch timer UI
     - `utils.js` — Pure helpers (`seasonLabel`, `isFullyWatched`, `sortSeasons`, `sortBySeenCount`, `selectableSeasons`, `setWatched`, `clearsCurrentlyWatching`, `episodeNumbers`, `formatOffset`, `orderPosts`); shared with tests
@@ -157,6 +158,13 @@ names and emails out of source control. `seed.sql` holds only optional sample
       Both functions live in `utils.js` and are shared with tests.
 - Checkbox toggles are optimistic: the cell flips immediately, then reconciles
   with the server and reverts on failure.
+- Optimistic mutations race the focus refetch, so both `App` and `SeasonView`
+  route every fetch through `useRefreshGuard` (`hooks.js`), whose rules live in
+  `createRefreshGuard` (`refresh-guard.js`): only the newest fetch may apply its
+  response, and a refresh asked for while a mutation is in flight is queued for
+  the last mutation to settle rather than started against pre-mutation state.
+  The state machine is a plain factory so `test/frontend/refresh-guard.test.js`
+  can drive it directly — keep the rules there, not in the hook.
 - Only the current user's column checkboxes are enabled; others are read-only.
 - `styles.css` themes via CSS `light-dark()`, which needs a mid-2024 browser
   (Chrome 123+, Safari 17.5+, Firefox 120+); older browsers render with no
