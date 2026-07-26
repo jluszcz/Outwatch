@@ -84,7 +84,8 @@ function SeasonRow({ season, users, meId, fullyWatched, onToggle }) {
                             isCurrentlyWatching
                                 ? html`<span
                                       class="watching-indicator"
-                                      aria-label="Currently watching"
+                                      role="img"
+                                      aria-label=${`${u.name} is currently watching this season`}
                                       >▶</span
                                   >`
                                 : null
@@ -125,12 +126,17 @@ function NowWatching({ users, seasons, meId, onSetCurrentlyWatching }) {
                                 'nw-chip' + (isMe ? ' mine' : '') + (cwId != null ? ' active' : '')
                             }
                         >
-                            ${cwId != null ? html`<span class="nw-marker">▶</span>` : null}
+                            ${
+                                cwId != null
+                                    ? html`<span class="nw-marker" aria-hidden="true">▶</span>`
+                                    : null
+                            }
                             <span class="nw-name">${isMe ? 'You' : u.name}</span>
                             ${
                                 isMe
                                     ? html`<select
                                           class="nw-select"
+                                          aria-label="Your currently watching season"
                                           value=${cwId ?? ''}
                                           onChange=${(e) =>
                                               onSetCurrentlyWatching(
