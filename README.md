@@ -104,7 +104,7 @@ template with fake placeholders.
 
 ```bash
 cp roster.example.sql roster.sql
-# edit roster.sql — real names + lowercase emails, keeping the generic user-N ids
+# edit roster.sql — real names + emails, keeping the generic user-N ids
 
 # apply to local and production (separate from `migrations apply`)
 npx wrangler d1 execute outwatch --local  --file=roster.sql
@@ -130,7 +130,10 @@ npm run format:check    # Prettier (run `npm run format` to fix)
 
 The frontend is bundled from `frontend/` to `public/script.js` by `build.js`
 (esbuild). The bundle is gitignored. `npm run dev` runs the bundler in watch mode
-alongside `wrangler dev`; `npm run deploy` builds before deploying.
+alongside `wrangler dev`; `npm run deploy` builds before deploying. Bundling
+happens only through these npm scripts — `wrangler.toml` has no `[build]` hook —
+so a bare `wrangler dev` or `wrangler deploy` serves whatever is already in
+`public/`.
 
 ```bash
 npm run build    # one-shot production bundle
@@ -175,7 +178,7 @@ All routes derive the caller's identity from the
 
 | Column    | Type    | Notes                                                 |
 | --------- | ------- | ----------------------------------------------------- |
-| `email`   | TEXT PK | Cloudflare Access email (lowercase)                   |
+| `email`   | TEXT PK | Cloudflare Access email; `COLLATE NOCASE`             |
 | `user_id` | TEXT    | References `users.id`; a couple's column has two rows |
 
 Both tables are populated from the gitignored `roster.sql`, not a migration —

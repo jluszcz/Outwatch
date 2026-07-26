@@ -13,7 +13,8 @@
 --     reveal nothing about who the real people are.
 --   * `name` is the column header shown on the board.
 --   * a couple shares one column (one users row, two user_emails rows).
---   * emails MUST be lowercase.
+--   * email case is not significant — user_emails.email is COLLATE NOCASE, and
+--     the Worker lowercases the Access identity before looking it up.
 
 INSERT OR IGNORE INTO users (id, name, sort_order) VALUES
     ('user-1', 'Alice',        1),
