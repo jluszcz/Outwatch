@@ -373,3 +373,63 @@ tr.watched-all .check-cell input {
         padding: 10px 10px;
     }
 }
+
+.back-link {
+    display: inline-block;
+    margin-bottom: 1rem;
+    color: var(--text-subtle);
+    text-decoration: none;
+    font-size: 0.9rem;
+}
+
+.back-link:hover {
+    color: var(--text);
+}
+
+.season-view-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.season-view-title {
+    font-size: 1.25rem;
+}
+
+.wiki-link {
+    color: var(--blue);
+    text-decoration: none;
+    font-size: 0.85rem;
+    white-space: nowrap;
+}
+
+.season-link {
+    color: var(--text);
+    text-decoration: none;
+}
+
+.season-link:hover {
+    color: var(--blue);
+}
+
+.post-badge {
+    margin-left: 0.5rem;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+.episodes {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.episode-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+}

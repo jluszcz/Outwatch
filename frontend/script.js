@@ -3,8 +3,9 @@ import { useState, useEffect, useCallback, useRef } from 'preact/hooks';
 import htm from 'htm';
 import { setWatched, clearsCurrentlyWatching } from './utils.js';
 import { api } from './api.js';
-import { useTheme, useRefreshGuard, useRefreshOnFocus } from './hooks.js';
+import { useTheme, useRefreshGuard, useRefreshOnFocus, useHashRoute } from './hooks.js';
 import { Header, Board } from './board.js';
+import { SeasonView } from './discussion.js';
 
 const html = htm.bind(h);
 
@@ -15,6 +16,7 @@ function App() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const { theme, toggle: toggleTheme } = useTheme();
+    const routeSeasonId = useHashRoute();
 
     const fetchBoard = useCallback(() => api('/api/board'), []);
     const applyBoard = useCallback((board) => {
@@ -148,6 +150,7 @@ function App() {
                     !loading &&
                     !me &&
                     users.length > 0 &&
+                    routeSeasonId == null &&
                     html`
                         <div class="notice">
                             You're not on the watch list — the board is read-only.
@@ -158,6 +161,7 @@ function App() {
                     !loading &&
                     !error &&
                     users.length === 0 &&
+                    routeSeasonId == null &&
                     html`
                         <div class="empty-state">
                             No users yet. Add people to the board (see README).
@@ -166,6 +170,12 @@ function App() {
                 }
                 ${
                     !loading &&
+                    routeSeasonId != null &&
+                    html`<${SeasonView} seasonId=${routeSeasonId} />`
+                }
+                ${
+                    !loading &&
+                    routeSeasonId == null &&
                     users.length > 0 &&
                     html`
                         <${Board}

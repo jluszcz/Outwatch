@@ -87,6 +87,25 @@ export function useRefreshGuard(fetcher, apply) {
     return { refresh, beginMutation, endMutation };
 }
 
+// The app has exactly one route beyond the board, so a hash and a listener beat
+// a router library. A hash also means Back returns to the board, a reload keeps
+// your place, and a season is a link you can paste into chat.
+export function useHashRoute() {
+    const read = () => {
+        const match = /^#\/season\/(\d+)$/.exec(window.location.hash);
+        return match ? Number(match[1]) : null;
+    };
+    const [seasonId, setSeasonId] = useState(read);
+
+    useEffect(() => {
+        const handler = () => setSeasonId(read());
+        window.addEventListener('hashchange', handler);
+        return () => window.removeEventListener('hashchange', handler);
+    }, []);
+
+    return seasonId;
+}
+
 // Refetch when the tab regains focus, so changes other people made while this
 // tab was in the background show up without a reload.
 export function useRefreshOnFocus(refresh, onError) {
