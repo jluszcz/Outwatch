@@ -26,6 +26,12 @@ const currentlyWatchingUpdate = z.object({
         .nullable(),
 });
 
+const timerAction = z.object({
+    action: z.enum(['start', 'pause', 'resume'], {
+        message: 'action must be start, pause, or resume',
+    }),
+});
+
 const postCreate = z.object({
     body: z
         .string()
@@ -420,6 +426,81 @@ app.delete('/api/posts/:post_id', async (c) => {
 
     return c.json({ success: true, post_id: postId });
 });
+
+// The watch timer. There is no stop action: a session simply goes stale after
+// three hours without a start, pause, resume, or post (see shared/session.js).
+// Sessions are per (user, episode) and deliberately not mutually exclusive —
+// a forgotten one on another episode is harmless, because offsets freeze onto
+// the post at write time and the stale session stamps nothing.
+app.post(
+    '/api/seasons/:season_id/episodes/:episode/timer',
+    zValidator('json', timerAction, onInvalid),
+    async (c) => {
+        const me = await callerUser(c);
+        if (!me) return c.json({ error: 'Your account is not on the watch list' }, 403);
+
+        const resolved = await resolveEpisode(c);
+        if (resolved.error) return c.json({ error: resolved.error }, resolved.status);
+        const { season, episode } = resolved;
+
+        const { action } = c.req.valid('json');
+        const nowMs = Date.now();
+        const now = new Date(nowMs).toISOString();
+        const key = [me.id, season.id, episode];
+
+        if (action === 'start') {
+            // Starting again zeroes the session — it is the "I'm beginning this
+            // episode" action, not a resume.
+            await c.env.DB.prepare(
+                `INSERT INTO watch_sessions
+                     (user_id, season_id, episode, elapsed_secs, running_since, last_activity_at)
+                 VALUES (?, ?, ?, 0, ?, ?)
+                 ON CONFLICT (user_id, season_id, episode) DO UPDATE SET
+                     elapsed_secs = 0, running_since = excluded.running_since,
+                     last_activity_at = excluded.last_activity_at`,
+            )
+                .bind(...key, now, now)
+                .run();
+        } else if (action === 'pause') {
+            // Bank the running segment. Guarded on running_since so a double
+            // pause cannot bank the same stretch twice.
+            await c.env.DB.prepare(
+                `UPDATE watch_sessions
+                 SET elapsed_secs = elapsed_secs
+                         + CAST((julianday(?) - julianday(running_since)) * 86400 AS INTEGER),
+                     running_since = NULL,
+                     last_activity_at = ?
+                 WHERE user_id = ? AND season_id = ? AND episode = ? AND running_since IS NOT NULL`,
+            )
+                .bind(now, now, ...key)
+                .run();
+        } else {
+            // Resume only restarts the clock; the banked total is untouched.
+            await c.env.DB.prepare(
+                `UPDATE watch_sessions SET running_since = ?, last_activity_at = ?
+                 WHERE user_id = ? AND season_id = ? AND episode = ? AND running_since IS NULL`,
+            )
+                .bind(now, now, ...key)
+                .run();
+        }
+
+        const session = await c.env.DB.prepare(
+            `SELECT elapsed_secs, running_since, last_activity_at
+             FROM watch_sessions WHERE user_id = ? AND season_id = ? AND episode = ?`,
+        )
+            .bind(...key)
+            .first();
+        if (!session) return c.json({ error: 'No timer to update' }, 409);
+
+        return c.json({
+            success: true,
+            season_id: season.id,
+            episode,
+            session,
+            offset_secs: sessionOffsetSecs(session, nowMs),
+        });
+    },
+);
 
 app.all('/api/*', (c) => c.json({ error: 'Unknown API endpoint' }, 404));
 

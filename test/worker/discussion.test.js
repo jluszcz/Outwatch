@@ -305,3 +305,111 @@ describe('DELETE /api/posts/:post_id', () => {
         expect((await req('DELETE', '/api/posts/1')).status).toBe(403);
     });
 });
+
+const timer = (email, episode, action) =>
+    req('POST', `/api/seasons/45/episodes/${episode}/timer`, { body: { action }, email });
+
+describe('POST /api/seasons/:season_id/episodes/:episode/timer', () => {
+    it('starts a running session at zero', async () => {
+        const r = await timer('alice@example.com', 7, 'start');
+        expect(r.status).toBe(200);
+        const { session, offset_secs } = await r.json();
+        expect(session.elapsed_secs).toBe(0);
+        expect(session.running_since).not.toBeNull();
+        expect(offset_secs).toBeLessThan(5);
+    });
+
+    it('stamps a note posted while the timer runs', async () => {
+        await timer('alice@example.com', 7, 'start');
+        const { post: note } = await (await post('alice@example.com', 7, 'called it')).json();
+        expect(note.offset_secs).not.toBeNull();
+        expect(note.offset_secs).toBeLessThan(5);
+    });
+
+    it('banks elapsed time on pause and freezes the offset', async () => {
+        await env.DB.exec(
+            'INSERT INTO watch_sessions (user_id, season_id, episode, elapsed_secs, running_since, last_activity_at) ' +
+                "VALUES ('user-alice', 45, 7, 0, '2026-07-25T21:00:00.000Z', '2026-07-25T21:00:00.000Z')",
+        );
+        // Rewrite running_since to a known 600s ago so the banked total is exact.
+        const since = new Date(Date.now() - 600_000).toISOString();
+        await env.DB.prepare('UPDATE watch_sessions SET running_since = ?, last_activity_at = ?')
+            .bind(since, since)
+            .run();
+
+        const { session } = await (await timer('alice@example.com', 7, 'pause')).json();
+        expect(session.running_since).toBeNull();
+        expect(session.elapsed_secs).toBeGreaterThanOrEqual(600);
+        expect(session.elapsed_secs).toBeLessThan(610);
+    });
+
+    it('carries the frozen offset onto a note written while paused', async () => {
+        await timer('alice@example.com', 7, 'start');
+        await env.DB.prepare(
+            'UPDATE watch_sessions SET elapsed_secs = 900, running_since = NULL',
+        ).run();
+        const { post: note } = await (await post('alice@example.com', 7, 'paused to type')).json();
+        expect(note.offset_secs).toBe(900);
+    });
+
+    it('continues from the banked total on resume', async () => {
+        await timer('alice@example.com', 7, 'start');
+        await env.DB.prepare(
+            'UPDATE watch_sessions SET elapsed_secs = 900, running_since = NULL',
+        ).run();
+        const { session, offset_secs } = await (
+            await timer('alice@example.com', 7, 'resume')
+        ).json();
+        expect(session.elapsed_secs).toBe(900);
+        expect(session.running_since).not.toBeNull();
+        expect(offset_secs).toBeGreaterThanOrEqual(900);
+        expect(offset_secs).toBeLessThan(905);
+    });
+
+    it('zeroes the session when started again', async () => {
+        await timer('alice@example.com', 7, 'start');
+        await env.DB.prepare('UPDATE watch_sessions SET elapsed_secs = 900').run();
+        const { session } = await (await timer('alice@example.com', 7, 'start')).json();
+        expect(session.elapsed_secs).toBe(0);
+    });
+
+    it('leaves a note untimed once the session has been idle three hours', async () => {
+        await timer('alice@example.com', 7, 'start');
+        const stale = new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString();
+        await env.DB.prepare('UPDATE watch_sessions SET running_since = ?, last_activity_at = ?')
+            .bind(stale, stale)
+            .run();
+
+        const { post: note } = await (await post('alice@example.com', 7, 'next morning')).json();
+        expect(note.offset_secs).toBeNull();
+    });
+
+    it('keeps a session live across a post', async () => {
+        await timer('alice@example.com', 7, 'start');
+        const nearly = new Date(Date.now() - 2.9 * 60 * 60 * 1000).toISOString();
+        await env.DB.prepare('UPDATE watch_sessions SET last_activity_at = ?').bind(nearly).run();
+        await post('alice@example.com', 7, 'still here');
+
+        const row = await env.DB.prepare(
+            'SELECT last_activity_at FROM watch_sessions WHERE user_id = ?',
+        )
+            .bind('user-alice')
+            .first();
+        expect(Date.parse(row.last_activity_at)).toBeGreaterThan(Date.parse(nearly));
+    });
+
+    it('keeps sessions per episode and per user', async () => {
+        await timer('alice@example.com', 7, 'start');
+        const { episodes } = await (await discussion('alice@example.com')).json();
+        expect(episodes.find((e) => e.episode === 7).session).not.toBeNull();
+        expect(episodes.find((e) => e.episode === 8).session).toBeNull();
+
+        const bob = await (await discussion('bob@example.com')).json();
+        expect(bob.episodes.find((e) => e.episode === 7).session).toBeNull();
+    });
+
+    it('returns 400 for an unknown action and 403 for a stranger', async () => {
+        expect((await timer('alice@example.com', 7, 'stop')).status).toBe(400);
+        expect((await timer('stranger@example.com', 7, 'start')).status).toBe(403);
+    });
+});
