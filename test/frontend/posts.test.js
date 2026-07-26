@@ -1,0 +1,118 @@
+import { describe, it, expect } from 'vitest';
+import { orderPosts, formatOffset, episodeNumbers } from '../../frontend/utils.js';
+
+const timed = (id, user_id, offset_secs, created_at) => ({
+    id,
+    user_id,
+    body: `note ${id}`,
+    created_at,
+    offset_secs,
+});
+const untimed = (id, user_id, created_at) => timed(id, user_id, null, created_at);
+const names = (placed) => placed.map((p) => `${p.post.user_id}@${p.offset}`);
+
+describe('orderPosts', () => {
+    it('interleaves two timed viewers by their own offsets', () => {
+        // The spec's worked example: Alice watches at 9pm and posts at +10, +30,
+        // +45, +50; Bob watches days later and posts at +5, +11, +35.
+        const posts = [
+            timed(1, 'alice', 600, '2026-07-20T21:10:00.000Z'),
+            timed(2, 'alice', 1800, '2026-07-20T21:30:00.000Z'),
+            timed(3, 'alice', 2700, '2026-07-20T21:45:00.000Z'),
+            timed(4, 'alice', 3000, '2026-07-20T21:50:00.000Z'),
+            timed(5, 'bob', 300, '2026-07-23T06:05:00.000Z'),
+            timed(6, 'bob', 660, '2026-07-23T06:11:00.000Z'),
+            timed(7, 'bob', 2100, '2026-07-23T06:35:00.000Z'),
+        ];
+        expect(names(orderPosts(posts))).toEqual([
+            'bob@300',
+            'alice@600',
+            'bob@660',
+            'alice@1800',
+            'bob@2100',
+            'alice@2700',
+            'alice@3000',
+        ]);
+    });
+
+    it('infers a zero from an untimed author’s earliest note', () => {
+        const posts = [
+            timed(1, 'alice', 600, '2026-07-20T21:10:00.000Z'),
+            untimed(2, 'carol', '2026-07-22T20:00:00.000Z'),
+            untimed(3, 'carol', '2026-07-22T20:13:00.000Z'),
+        ];
+        const placed = orderPosts(posts);
+        expect(names(placed)).toEqual(['carol@0', 'alice@600', 'carol@780']);
+        expect(placed[0].inferred).toBe(true);
+        expect(placed[1].inferred).toBe(false);
+    });
+
+    it('drops an untimed straggler from a timed author to the tail', () => {
+        // Alice ran a timer, then came back two days later. Inventing an offset
+        // of +51:10:00 for that note would be a lie dressed as data.
+        const posts = [
+            timed(1, 'alice', 600, '2026-07-20T21:10:00.000Z'),
+            untimed(2, 'alice', '2026-07-22T21:10:00.000Z'),
+            timed(3, 'bob', 300, '2026-07-23T06:05:00.000Z'),
+        ];
+        const placed = orderPosts(posts);
+        expect(names(placed)).toEqual(['bob@300', 'alice@600', 'alice@null']);
+        expect(placed[2].tail).toBe(true);
+        expect(placed[2].offset).toBeNull();
+    });
+
+    it('breaks ties on equal offsets by post time', () => {
+        const posts = [
+            timed(1, 'bob', 600, '2026-07-23T06:10:00.000Z'),
+            timed(2, 'alice', 600, '2026-07-20T21:10:00.000Z'),
+        ];
+        expect(orderPosts(posts).map((p) => p.post.id)).toEqual([2, 1]);
+    });
+
+    it('orders several tail notes among themselves by post time', () => {
+        const posts = [
+            timed(1, 'alice', 600, '2026-07-20T21:10:00.000Z'),
+            untimed(2, 'alice', '2026-07-24T10:00:00.000Z'),
+            untimed(3, 'alice', '2026-07-23T10:00:00.000Z'),
+        ];
+        expect(orderPosts(posts).map((p) => p.post.id)).toEqual([1, 3, 2]);
+    });
+
+    it('handles an empty board and does not mutate its input', () => {
+        expect(orderPosts([])).toEqual([]);
+        const posts = [
+            timed(2, 'alice', 600, '2026-07-20T21:10:00.000Z'),
+            timed(1, 'bob', 300, '2026-07-23T06:05:00.000Z'),
+        ];
+        const snapshot = posts.map((p) => p.id);
+        orderPosts(posts);
+        expect(posts.map((p) => p.id)).toEqual(snapshot);
+    });
+});
+
+describe('formatOffset', () => {
+    it('formats sub-hour offsets without an hour part', () => {
+        expect(formatOffset(0)).toBe('+0:00');
+        expect(formatOffset(300)).toBe('+5:00');
+        expect(formatOffset(65)).toBe('+1:05');
+    });
+
+    it('pads minutes once an hour part appears', () => {
+        expect(formatOffset(3900)).toBe('+1:05:00');
+        expect(formatOffset(3600)).toBe('+1:00:00');
+    });
+
+    it('never renders a negative offset', () => {
+        expect(formatOffset(-30)).toBe('+0:00');
+    });
+});
+
+describe('episodeNumbers', () => {
+    it('counts from one', () => {
+        expect(episodeNumbers(3)).toEqual([1, 2, 3]);
+    });
+
+    it('is empty for a season with no episode count', () => {
+        expect(episodeNumbers(0)).toEqual([]);
+    });
+});
