@@ -67,7 +67,10 @@ function SeasonRow({ season, users, meId, fullyWatched, onToggle }) {
     return html`
         <tr class=${fullyWatched ? 'watched-all' : ''}>
             <td class="season-cell">
-                <a class="season-link" href=${`#/season/${season.id}`}
+                <a
+                    class="season-link"
+                    href=${`#/season/${season.id}`}
+                    aria-label=${seasonLabel(season)}
                     ><span class="season-num">${number}</span
                     >${subtitle ? html`<span class="season-sub">${subtitle}</span>` : null}</a
                 >
