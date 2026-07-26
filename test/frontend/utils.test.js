@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
     seasonLabel,
+    seasonParts,
     isFullyWatched,
     sortSeasons,
     sortBySeenCount,
@@ -26,6 +27,30 @@ describe('seasonLabel', () => {
 
     it('formats season 1', () => {
         expect(seasonLabel({ id: 1, subtitle: 'Borneo' })).toBe('Season 1: Borneo');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// seasonParts
+// ---------------------------------------------------------------------------
+
+describe('seasonParts', () => {
+    it('splits the number from the subtitle', () => {
+        expect(seasonParts({ id: 20, subtitle: 'Heroes vs. Villains' })).toEqual({
+            number: 'Season 20',
+            subtitle: 'Heroes vs. Villains',
+        });
+    });
+
+    it('returns an empty subtitle when the season has none', () => {
+        expect(seasonParts({ id: 41, subtitle: '' })).toEqual({
+            number: 'Season 41',
+            subtitle: '',
+        });
+    });
+
+    it('returns an empty subtitle when the field is absent', () => {
+        expect(seasonParts({ id: 41 })).toEqual({ number: 'Season 41', subtitle: '' });
     });
 });
 

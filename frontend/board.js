@@ -3,6 +3,7 @@ import { useState, useMemo } from 'preact/hooks';
 import htm from 'htm';
 import {
     seasonLabel,
+    seasonParts,
     isFullyWatched,
     sortSeasons,
     sortBySeenCount,
@@ -62,10 +63,14 @@ export function Header({ theme, onToggleTheme }) {
 }
 
 function SeasonRow({ season, users, meId, fullyWatched, onToggle }) {
+    const { number, subtitle } = seasonParts(season);
     return html`
         <tr class=${fullyWatched ? 'watched-all' : ''}>
             <td class="season-cell">
-                <a class="season-link" href=${`#/season/${season.id}`}>${seasonLabel(season)}</a>
+                <a class="season-link" href=${`#/season/${season.id}`}
+                    ><span class="season-num">${number}</span
+                    >${subtitle ? html`<span class="season-sub">${subtitle}</span>` : null}</a
+                >
                 ${
                     season.post_count > 0
                         ? html`<span class="post-badge" title=${`${season.post_count} notes`}>

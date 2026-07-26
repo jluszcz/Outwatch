@@ -335,6 +335,12 @@ tbody tr:hover td.check-cell.mine {
     border-bottom-color: var(--blue);
 }
 
+/* The label is two spans so the phone layout can stack them (see the 640px
+   block). On a wide screen they read as one line, colon and all. */
+.season-sub::before {
+    content: ': ';
+}
+
 .check-cell input {
     width: 17px;
     height: 17px;

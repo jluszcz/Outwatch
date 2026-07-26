@@ -4,6 +4,13 @@ export function seasonLabel(season) {
     return season.subtitle ? `Season ${season.id}: ${season.subtitle}` : `Season ${season.id}`;
 }
 
+// The same label split for layouts that put the number and the subtitle on
+// separate lines. `subtitle` is '' when the season has none, so callers can
+// test it directly rather than checking the season object again.
+export function seasonParts(season) {
+    return { number: `Season ${season.id}`, subtitle: season.subtitle ?? '' };
+}
+
 // A season is fully watched once every user has it checked. With no users, no
 // season can be "fully watched" (avoids graying out the whole board).
 export function isFullyWatched(season, userCount) {
