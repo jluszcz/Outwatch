@@ -400,6 +400,27 @@ app.post('/api/seasons/:season_id/episodes/:episode/reveal', async (c) => {
     return c.json({ success: true, season_id: season.id, episode });
 });
 
+// Season-agnostic: a post id alone identifies the row, so this doesn't go
+// through resolveEpisode. Deleting a note you do not own and deleting one that
+// never existed return the same 404 — a distinct "forbidden" would turn this
+// route into an oracle for which post ids are real.
+app.delete('/api/posts/:post_id', async (c) => {
+    const me = await callerUser(c);
+    if (!me) return c.json({ error: 'Your account is not on the watch list' }, 403);
+
+    const postId = Number(c.req.param('post_id'));
+    if (!Number.isInteger(postId) || postId <= 0) {
+        return c.json({ error: 'post_id must be a positive integer' }, 400);
+    }
+
+    const { meta } = await c.env.DB.prepare('DELETE FROM posts WHERE id = ? AND user_id = ?')
+        .bind(postId, me.id)
+        .run();
+    if (meta.changes === 0) return c.json({ error: 'Unknown post' }, 404);
+
+    return c.json({ success: true, post_id: postId });
+});
+
 app.all('/api/*', (c) => c.json({ error: 'Unknown API endpoint' }, 404));
 
 app.all('*', (c) => c.env.ASSETS.fetch(c.req.raw));

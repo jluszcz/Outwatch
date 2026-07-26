@@ -263,3 +263,45 @@ describe('POST /api/seasons/:season_id/episodes/:episode/reveal', () => {
         expect((await reveal('stranger@example.com', 7)).status).toBe(403);
     });
 });
+
+describe('DELETE /api/posts/:post_id', () => {
+    it('removes your own note', async () => {
+        const { post: mine } = await (await post('alice@example.com', 7, 'called it')).json();
+        const r = await req('DELETE', `/api/posts/${mine.id}`, { email: 'alice@example.com' });
+        expect(r.status).toBe(200);
+
+        const { episodes } = await (await discussion('alice@example.com')).json();
+        expect(episodes.find((e) => e.episode === 7).count).toBe(0);
+    });
+
+    it('refuses someone else’s note and leaves it intact', async () => {
+        const { post: theirs } = await (
+            await post('bob@example.com', 7, 'no way she flips')
+        ).json();
+        const r = await req('DELETE', `/api/posts/${theirs.id}`, { email: 'alice@example.com' });
+        expect(r.status).toBe(404);
+
+        const row = await env.DB.prepare('SELECT COUNT(*) AS count FROM posts').first();
+        expect(row.count).toBe(1);
+    });
+
+    it('returns the same 404 for a note that does not exist', async () => {
+        // Deliberately indistinguishable from the not-yours case: a distinct
+        // status would let anyone probe for which post ids are real.
+        const r = await req('DELETE', '/api/posts/999999', { email: 'alice@example.com' });
+        expect(r.status).toBe(404);
+    });
+
+    it('lets either partner of a shared column delete the column’s note', async () => {
+        const { post: theirs } = await (await post('bob@example.com', 7, 'ours')).json();
+        const r = await req('DELETE', `/api/posts/${theirs.id}`, { email: 'carol@example.com' });
+        expect(r.status).toBe(200);
+    });
+
+    it('returns 400 for a non-numeric id and 403 with no identity', async () => {
+        expect((await req('DELETE', '/api/posts/abc', { email: 'alice@example.com' })).status).toBe(
+            400,
+        );
+        expect((await req('DELETE', '/api/posts/1')).status).toBe(403);
+    });
+});
