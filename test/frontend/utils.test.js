@@ -3,6 +3,7 @@ import {
     seasonLabel,
     seasonParts,
     abbreviateName,
+    authorAccent,
     isFullyWatched,
     sortSeasons,
     sortBySeenCount,
@@ -86,6 +87,41 @@ describe('abbreviateName', () => {
 
     it('passes a name with a stray ampersand through untouched', () => {
         expect(abbreviateName('Alice &')).toBe('Alice &');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// authorAccent
+// ---------------------------------------------------------------------------
+
+describe('authorAccent', () => {
+    const roster = [{ id: 'user-1' }, { id: 'user-2' }, { id: 'user-3' }];
+
+    it("marks the caller's own notes", () => {
+        expect(authorAccent('user-2', 'user-2', roster)).toBe('mine');
+    });
+
+    it('keys everyone else off their roster position', () => {
+        expect(authorAccent('user-1', 'user-2', roster)).toBe(1);
+        expect(authorAccent('user-3', 'user-2', roster)).toBe(3);
+    });
+
+    it('gives a person the same slot no matter who is looking', () => {
+        expect(authorAccent('user-3', 'user-1', roster)).toBe(3);
+        expect(authorAccent('user-3', 'user-2', roster)).toBe(3);
+    });
+
+    it('has no own-note slot for a viewer who is not on the roster', () => {
+        expect(authorAccent('user-1', null, roster)).toBe(1);
+    });
+
+    it('returns null for an author missing from the roster', () => {
+        expect(authorAccent('ghost', 'user-1', roster)).toBe(null);
+    });
+
+    it('wraps once the roster outgrows the palette', () => {
+        const big = Array.from({ length: 7 }, (_, i) => ({ id: `user-${i + 1}` }));
+        expect(authorAccent('user-6', 'user-1', big)).toBe(1);
     });
 });
 

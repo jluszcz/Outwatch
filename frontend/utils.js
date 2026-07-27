@@ -18,6 +18,24 @@ export function seasonParts(season) {
 // while a single name always takes one. Anything without an "&" is returned
 // unchanged rather than reduced to initials, which would be unreadable for a
 // one-person column with a two-word name.
+// How many distinct author colours the stylesheet defines. The roster is a
+// handful of people, so this only wraps in a case that should not happen.
+const ACCENT_SLOTS = 5;
+
+// Which accent a note's left stripe should use. 'mine' for the caller's own
+// notes, which take the same blue their board column already uses; otherwise a
+// 1-based slot keyed off the author's position in the roster. The server orders
+// users by sort_order, so a person keeps the same colour across reloads and
+// across viewers — only "yours" changes depending on who is looking. null when
+// the author is not on the roster, which leaves the note unstriped rather than
+// inventing a colour for them.
+export function authorAccent(userId, meId, users) {
+    if (meId != null && userId === meId) return 'mine';
+    const index = users.findIndex((u) => u.id === userId);
+    if (index < 0) return null;
+    return (index % ACCENT_SLOTS) + 1;
+}
+
 export function abbreviateName(name) {
     const parts = name
         .split('&')

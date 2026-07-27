@@ -32,6 +32,17 @@
     --amber-bg: light-dark(#fdf6e3, #2a2515);
     --amber-border: light-dark(#f0e2b8, #4a4025);
     --amber-text: light-dark(#8a6d3b, #c9a96a);
+    /* Author stripes on discussion notes. Each pair is a darker light-mode
+       value and a lighter dark-mode one so the stripe stays visible against
+       --surface either way. They are decoration, not text, so they only need
+       to be distinguishable from each other rather than hit a text contrast
+       ratio. --blue is deliberately absent: it is reserved for your own notes,
+       matching the accent your board column already uses. */
+    --author-1: light-dark(#c2410c, #fb923c);
+    --author-2: light-dark(#15803d, #4ade80);
+    --author-3: light-dark(#7e22ce, #c084fc);
+    --author-4: light-dark(#0e7490, #22d3ee);
+    --author-5: light-dark(#be123c, #fb7185);
 }
 
 html[data-theme='light'] {
@@ -459,14 +470,49 @@ tr.watched-all .check-cell input {
     list-style: none;
     display: flex;
     flex-direction: column;
-    gap: 0.4rem;
+    /* Wider than the old 0.4rem so each stripe reads as its own block rather
+       than one long bar broken by hairlines. */
+    gap: 0.75rem;
 }
 
+/* The stripe distinguishes one note from the next and says who wrote it in the
+   same mark — worth more than a plain separator here, because orderPosts
+   interleaves authors by watch offset, so the note above yours is usually
+   someone else's. The colour comes from authorAccent, which keys off the
+   roster order so a person keeps their colour across reloads and viewers.
+   `transparent` is the default so an author with no slot still lines up with
+   the others instead of shifting left. */
 .post {
     display: flex;
     align-items: baseline;
     gap: 0.5rem;
     font-size: 0.9rem;
+    border-left: 3px solid transparent;
+    padding-left: 0.6rem;
+}
+
+.post-mine {
+    border-left-color: var(--blue);
+}
+
+.post-a1 {
+    border-left-color: var(--author-1);
+}
+
+.post-a2 {
+    border-left-color: var(--author-2);
+}
+
+.post-a3 {
+    border-left-color: var(--author-3);
+}
+
+.post-a4 {
+    border-left-color: var(--author-4);
+}
+
+.post-a5 {
+    border-left-color: var(--author-5);
 }
 
 .post-time {

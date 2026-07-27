@@ -3,7 +3,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'preact/hooks'
 import htm from 'htm';
 import { api } from './api.js';
 import { useRefreshGuard, useRefreshOnFocus } from './hooks.js';
-import { seasonLabel, orderPosts, formatOffset, formatOffsetShort } from './utils.js';
+import { seasonLabel, orderPosts, formatOffset, formatOffsetShort, authorAccent } from './utils.js';
 import { sessionOffsetSecs } from '../shared/session.js';
 
 const html = htm.bind(h);
@@ -111,6 +111,7 @@ export function SeasonView({ seasonId }) {
     const serverSkewMs = data.now ? Date.parse(data.now) - Date.now() : 0;
 
     const nameOf = (id) => data.users.find((u) => u.id === id)?.name ?? 'Someone';
+    const accentOf = (id) => authorAccent(id, data.me?.id ?? null, data.users);
 
     return html`
         <div class="season-view">
@@ -139,6 +140,7 @@ export function SeasonView({ seasonId }) {
                             ep=${ep}
                             meId=${data.me?.id ?? null}
                             nameOf=${nameOf}
+                            accentOf=${accentOf}
                             serverSkewMs=${serverSkewMs}
                             onReveal=${reveal}
                             onPost=${addPost}
@@ -153,7 +155,17 @@ export function SeasonView({ seasonId }) {
 
 // One episode's board. Locked boards are the default: you see the count and who
 // wrote, plus your own notes, and nothing else until you choose to open it.
-function EpisodeBoard({ ep, meId, nameOf, serverSkewMs, onReveal, onPost, onDelete, onTimer }) {
+function EpisodeBoard({
+    ep,
+    meId,
+    nameOf,
+    accentOf,
+    serverSkewMs,
+    onReveal,
+    onPost,
+    onDelete,
+    onTimer,
+}) {
     const [open, setOpen] = useState(false);
     const placed = useMemo(() => orderPosts(ep.posts), [ep.posts]);
 
@@ -179,6 +191,7 @@ function EpisodeBoard({ ep, meId, nameOf, serverSkewMs, onReveal, onPost, onDele
                             placed=${placed}
                             meId=${meId}
                             nameOf=${nameOf}
+                            accentOf=${accentOf}
                             onDelete=${onDelete}
                         />
                         ${
@@ -252,13 +265,18 @@ function WatchTimer({ session, serverSkewMs, onAction }) {
     `;
 }
 
-function PostList({ placed, meId, nameOf, onDelete }) {
+function PostList({ placed, meId, nameOf, accentOf, onDelete }) {
     if (placed.length === 0) return html`<div class="no-posts">Nothing here yet.</div>`;
     return html`
         <ol class="posts">
-            ${placed.map(
-                ({ post, offset, inferred, tail }) => html`
-                    <li key=${post.id} class="post">
+            ${placed.map(({ post, offset, inferred, tail }) => {
+                // 'mine' | 1..N | null — null leaves the note unstriped rather
+                // than inventing a colour for an author who left the roster.
+                const accent = accentOf(post.user_id);
+                const accentClass =
+                    accent === 'mine' ? ' post-mine' : accent ? ` post-a${accent}` : '';
+                return html`
+                    <li key=${post.id} class=${'post' + accentClass}>
                         <span class="post-time" title=${new Date(post.created_at).toLocaleString()}>
                             ${
                                 tail
@@ -281,8 +299,8 @@ function PostList({ placed, meId, nameOf, onDelete }) {
                             </button>`
                         }
                     </li>
-                `,
-            )}
+                `;
+            })}
         </ol>
     `;
 }
