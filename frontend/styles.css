@@ -225,8 +225,8 @@ td.check-cell {
     cursor: pointer;
 }
 
-.check-hit:has(input:disabled) {
-    cursor: default;
+td.check-cell:not(.mine) .check-hit {
+    cursor: not-allowed;
 }
 
 th.check-head.mine,
@@ -318,11 +318,9 @@ th .you {
 }
 
 .watching-indicator {
-    display: inline-block;
     font-size: 0.7rem;
     line-height: 1;
     color: var(--blue);
-    vertical-align: middle;
 }
 
 td {
@@ -354,7 +352,6 @@ tr:last-child td {
     height: 17px;
     cursor: pointer;
     accent-color: var(--blue);
-    vertical-align: middle;
 }
 
 .check-cell input:disabled {
@@ -400,11 +397,6 @@ tr.watched-all .check-cell input {
     text-decoration: none;
     font-size: 0.85rem;
     white-space: nowrap;
-}
-
-.season-link {
-    color: var(--text);
-    text-decoration: none;
 }
 
 .post-badge {
@@ -701,7 +693,7 @@ tr.watched-all .check-cell input {
     }
 
     .sort-btn {
-        min-height: 40px;
+        min-height: 44px;
         padding: 0.5rem 0.9rem;
         font-size: 0.85rem;
     }
@@ -774,10 +766,6 @@ tr.watched-all .check-cell input {
 
     .back-link:hover {
         color: var(--text);
-    }
-
-    .season-link:hover {
-        color: var(--blue);
     }
 
     .post-delete:hover {
