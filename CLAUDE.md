@@ -187,6 +187,38 @@ names and emails out of source control. `seed.sql` holds only optional sample
 - `styles.css` themes via CSS `light-dark()`, which needs a mid-2024 browser
   (Chrome 123+, Safari 17.5+, Firefox 120+); older browsers render with no
   theme colors at all.
+- In `styles.css`, keep the `@media (max-width: 640px)` block positioned
+  after every un-gated base rule it might otherwise be overridden by — media
+  queries add no specificity, so a mobile rule ahead of a same-specificity
+  base rule loses on source order and is silently dead. The
+  `@media (hover: hover)` and ungated `:active` blocks that follow it need no
+  such care: every selector in them carries a pseudo-class, which
+  out-specifies the mobile block's overlapping rules regardless of order.
+- Below `640px` that block switches the layout to a phone variant: the season
+  column pins to the left of `.table-wrapper` while the checkbox columns
+  scroll under it (pinning only engages once the grid overflows the wrapper,
+  which the current 3-column roster does not — it's a safety net for a
+  longer name or a fourth column); `seasonParts` splits the label so the
+  subtitle sits on its own line; each header swaps its full name for
+  `abbreviateName`'s initials (`Bob & Carol` renders `B & C`) and hides the
+  `(you)` suffix — both leave the accessibility tree, not just the layout, but
+  each checkbox's own `aria-label` still names its owner in full. A shared
+  column is the only kind that needed this: check columns size to their
+  longest word, so a name containing `&` wrapped to two or three lines at
+  every phone width while a single name always fit on one. The initials span
+  needs `white-space: nowrap`, or the column would size to one character and
+  break `B & C` across three lines;
+  each checkbox sits in a `.check-hit` label (`min-height: 44px`, width
+  unconstrained) that needs `td.check-cell { height: 1px }` plus
+  `height: 100%` on the label to fill the cell, since `td` is
+  `vertical-align: middle`; and a note's body wraps to full width below its
+  meta line. The text controls specifically — `.post-input` and `.nw-select` —
+  are at least `16px`, since Safari zooms the page in on focusing a form
+  control below that and never zooms back out; buttons are not affected and
+  stay smaller. Every `:hover` rule sits behind
+  `@media (hover: hover)`, with `.sort-btn:hover` scoped `:not(.active)` so
+  hovering the selected sort button keeps its style. No DOM test suite
+  exists; this layout is verified with an ad-hoc Playwright script, not CI.
 - The hash route `#/season/N` (`useHashRoute` in `hooks.js`) swaps the board for
   `SeasonView`, that season's per-episode discussion boards — a hash beats a
   router library for the app's one extra route, and it also makes Back work,

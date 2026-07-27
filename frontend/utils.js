@@ -4,6 +4,49 @@ export function seasonLabel(season) {
     return season.subtitle ? `Season ${season.id}: ${season.subtitle}` : `Season ${season.id}`;
 }
 
+// The same label split for layouts that put the number and the subtitle on
+// separate lines. `subtitle` is '' when the season has none, so callers can
+// test it directly rather than checking the season object again.
+export function seasonParts(season) {
+    return { number: `Season ${season.id}`, subtitle: season.subtitle ?? '' };
+}
+
+// A column header collapsed to initials: "Bob & Carol" becomes "B & C". Only a
+// shared column (two names joined by "&") is abbreviated, because that is
+// exactly the case that wraps — the check columns size to their longest word,
+// so a name with a space in it takes two or three lines at every phone width
+// while a single name always takes one. Anything without an "&" is returned
+// unchanged rather than reduced to initials, which would be unreadable for a
+// one-person column with a two-word name.
+// How many distinct author colours the stylesheet defines. The roster is a
+// handful of people, so this only wraps in a case that should not happen.
+const ACCENT_SLOTS = 5;
+
+// Which accent a note's left stripe should use. 'mine' for the caller's own
+// notes, which take the same blue their board column already uses; otherwise a
+// 1-based slot keyed off the author's position in the roster. The server orders
+// users by sort_order, so a person keeps the same colour across reloads and
+// across viewers — only "yours" changes depending on who is looking. null when
+// the author is not on the roster, which leaves the note unstriped rather than
+// inventing a colour for them.
+export function authorAccent(userId, meId, users) {
+    if (meId != null && userId === meId) return 'mine';
+    const index = users.findIndex((u) => u.id === userId);
+    if (index < 0) return null;
+    return (index % ACCENT_SLOTS) + 1;
+}
+
+export function abbreviateName(name) {
+    const parts = name
+        .split('&')
+        .map((part) => part.trim())
+        .filter(Boolean);
+    if (parts.length < 2) return name;
+    // Array.from, not [0], so a name starting with an astral character (an
+    // emoji, say) yields that whole character instead of half a surrogate pair.
+    return parts.map((part) => Array.from(part)[0].toUpperCase()).join(' & ');
+}
+
 // A season is fully watched once every user has it checked. With no users, no
 // season can be "fully watched" (avoids graying out the whole board).
 export function isFullyWatched(season, userCount) {
@@ -71,6 +114,18 @@ export function formatOffset(secs) {
     const seconds = total % 60;
     const mm = hours > 0 ? String(minutes).padStart(2, '0') : String(minutes);
     return `+${hours > 0 ? `${hours}:` : ''}${mm}:${String(seconds).padStart(2, '0')}`;
+}
+
+// The same offset in its largest whole unit — "45s", "4m", "5h" — for the post
+// timeline, where the exact second is noise next to the note itself. Truncates
+// rather than rounds, so a note stamped at 5:09:29 reads "5h" and never claims
+// a boundary it has not reached. The live timer chip keeps formatOffset, which
+// has to tick through every second.
+export function formatOffsetShort(secs) {
+    const total = Math.max(0, Math.floor(secs));
+    if (total >= 3600) return `${Math.floor(total / 3600)}h`;
+    if (total >= 60) return `${Math.floor(total / 60)}m`;
+    return `${total}s`;
 }
 
 // Places every note on one timeline so a conversation written days apart reads

@@ -3,6 +3,8 @@ import { useState, useMemo } from 'preact/hooks';
 import htm from 'htm';
 import {
     seasonLabel,
+    seasonParts,
+    abbreviateName,
     isFullyWatched,
     sortSeasons,
     sortBySeenCount,
@@ -62,17 +64,23 @@ export function Header({ theme, onToggleTheme }) {
 }
 
 function SeasonRow({ season, users, meId, fullyWatched, onToggle }) {
+    const { number, subtitle } = seasonParts(season);
     return html`
         <tr class=${fullyWatched ? 'watched-all' : ''}>
             <td class="season-cell">
-                <a class="season-link" href=${`#/season/${season.id}`}>${seasonLabel(season)}</a>
-                ${
-                    season.post_count > 0
-                        ? html`<span class="post-badge" title=${`${season.post_count} notes`}>
-                              💬 ${season.post_count}
-                          </span>`
-                        : null
-                }
+                <div class="season-cell-row">
+                    <a href=${`#/season/${season.id}`} aria-label=${seasonLabel(season)}
+                        ><span class="season-num">${number}</span
+                        >${subtitle ? html`<span class="season-sub">${subtitle}</span>` : null}</a
+                    >
+                    ${
+                        season.post_count > 0
+                            ? html`<span class="post-badge" title=${`${season.post_count} notes`}>
+                                  💬 ${season.post_count}
+                              </span>`
+                            : null
+                    }
+                </div>
             </td>
             ${users.map((u) => {
                 const checked = season.watched_by.includes(u.id);
@@ -80,26 +88,30 @@ function SeasonRow({ season, users, meId, fullyWatched, onToggle }) {
                 const isCurrentlyWatching = u.currently_watching_season_id === season.id;
                 return html`
                     <td key=${u.id} class=${'check-cell' + (isMe ? ' mine' : '')}>
-                        ${
-                            isCurrentlyWatching
-                                ? html`<span
-                                      class="watching-indicator"
-                                      role="img"
-                                      aria-label=${`${u.name} is currently watching this season`}
-                                      >▶</span
-                                  >`
-                                : null
-                        }
-                        <input
-                            type="checkbox"
-                            checked=${checked}
-                            disabled=${!isMe}
-                            aria-label=${`${u.name} watched ${seasonLabel(season)}`}
-                            title=${isMe ? '' : `Only ${u.name} can change this`}
-                            onChange=${
-                                isMe ? (e) => onToggle(season.id, e.target.checked) : undefined
+                        <label
+                            class="check-hit"
+                            title=${isMe ? undefined : `Only ${u.name} can change this`}
+                        >
+                            ${
+                                isCurrentlyWatching
+                                    ? html`<span
+                                          class="watching-indicator"
+                                          role="img"
+                                          aria-label=${`${u.name} is currently watching this season`}
+                                          >▶</span
+                                      >`
+                                    : null
                             }
-                        />
+                            <input
+                                type="checkbox"
+                                checked=${checked}
+                                disabled=${!isMe}
+                                aria-label=${`${u.name} watched ${seasonLabel(season)}`}
+                                onChange=${
+                                    isMe ? (e) => onToggle(season.id, e.target.checked) : undefined
+                                }
+                            />
+                        </label>
                     </td>
                 `;
             })}
@@ -216,7 +228,10 @@ export function Board({ users, seasons, meId, onToggle, onSetCurrentlyWatching }
                                         key=${u.id}
                                         class=${'check-head' + (u.id === meId ? ' mine' : '')}
                                     >
-                                        ${u.name}${
+                                        <span class="user-name-full">${u.name}</span
+                                        ><span class="user-name-short"
+                                            >${abbreviateName(u.name)}</span
+                                        >${
                                             u.id === meId
                                                 ? html`<span class="you"> (you)</span>`
                                                 : null

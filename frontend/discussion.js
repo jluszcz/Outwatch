@@ -1,9 +1,9 @@
 import { h } from 'preact';
-import { useState, useEffect, useMemo, useCallback } from 'preact/hooks';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'preact/hooks';
 import htm from 'htm';
 import { api } from './api.js';
 import { useRefreshGuard, useRefreshOnFocus } from './hooks.js';
-import { seasonLabel, orderPosts, formatOffset } from './utils.js';
+import { seasonLabel, orderPosts, formatOffset, formatOffsetShort, authorAccent } from './utils.js';
 import { sessionOffsetSecs } from '../shared/session.js';
 
 const html = htm.bind(h);
@@ -111,6 +111,7 @@ export function SeasonView({ seasonId }) {
     const serverSkewMs = data.now ? Date.parse(data.now) - Date.now() : 0;
 
     const nameOf = (id) => data.users.find((u) => u.id === id)?.name ?? 'Someone';
+    const accentOf = (id) => authorAccent(id, data.me?.id ?? null, data.users);
 
     return html`
         <div class="season-view">
@@ -139,6 +140,7 @@ export function SeasonView({ seasonId }) {
                             ep=${ep}
                             meId=${data.me?.id ?? null}
                             nameOf=${nameOf}
+                            accentOf=${accentOf}
                             serverSkewMs=${serverSkewMs}
                             onReveal=${reveal}
                             onPost=${addPost}
@@ -153,7 +155,17 @@ export function SeasonView({ seasonId }) {
 
 // One episode's board. Locked boards are the default: you see the count and who
 // wrote, plus your own notes, and nothing else until you choose to open it.
-function EpisodeBoard({ ep, meId, nameOf, serverSkewMs, onReveal, onPost, onDelete, onTimer }) {
+function EpisodeBoard({
+    ep,
+    meId,
+    nameOf,
+    accentOf,
+    serverSkewMs,
+    onReveal,
+    onPost,
+    onDelete,
+    onTimer,
+}) {
     const [open, setOpen] = useState(false);
     const placed = useMemo(() => orderPosts(ep.posts), [ep.posts]);
 
@@ -179,6 +191,7 @@ function EpisodeBoard({ ep, meId, nameOf, serverSkewMs, onReveal, onPost, onDele
                             placed=${placed}
                             meId=${meId}
                             nameOf=${nameOf}
+                            accentOf=${accentOf}
                             onDelete=${onDelete}
                         />
                         ${
@@ -252,18 +265,23 @@ function WatchTimer({ session, serverSkewMs, onAction }) {
     `;
 }
 
-function PostList({ placed, meId, nameOf, onDelete }) {
+function PostList({ placed, meId, nameOf, accentOf, onDelete }) {
     if (placed.length === 0) return html`<div class="no-posts">Nothing here yet.</div>`;
     return html`
         <ol class="posts">
-            ${placed.map(
-                ({ post, offset, inferred, tail }) => html`
-                    <li key=${post.id} class="post">
+            ${placed.map(({ post, offset, inferred, tail }) => {
+                // 'mine' | 1..N | null — null leaves the note unstriped rather
+                // than inventing a colour for an author who left the roster.
+                const accent = accentOf(post.user_id);
+                const accentClass =
+                    accent === 'mine' ? ' post-mine' : accent ? ` post-a${accent}` : '';
+                return html`
+                    <li key=${post.id} class=${'post' + accentClass}>
                         <span class="post-time" title=${new Date(post.created_at).toLocaleString()}>
                             ${
                                 tail
                                     ? new Date(post.created_at).toLocaleDateString()
-                                    : `${inferred ? '~' : ''}${formatOffset(offset)}`
+                                    : `${inferred ? '~' : ''}${formatOffsetShort(offset)}`
                             }
                         </span>
                         <span class="post-author"
@@ -281,8 +299,8 @@ function PostList({ placed, meId, nameOf, onDelete }) {
                             </button>`
                         }
                     </li>
-                `,
-            )}
+                `;
+            })}
         </ol>
     `;
 }
@@ -292,6 +310,35 @@ function PostList({ placed, meId, nameOf, onDelete }) {
 function PostForm({ onPost }) {
     const [body, setBody] = useState('');
     const [busy, setBusy] = useState(false);
+    const inputRef = useRef(null);
+
+    // A textarea does not size itself to its content, so the height is driven
+    // from scrollHeight. Resetting to 'auto' first is what lets the box shrink
+    // again after a delete — scrollHeight never reports less than the height
+    // already set.
+    const fit = useCallback(() => {
+        const el = inputRef.current;
+        if (!el) return;
+        el.style.height = 'auto';
+        const style = getComputedStyle(el);
+        // scrollHeight leaves out the border, which box-sizing: border-box
+        // counts inside the height, so skipping this clips the last line.
+        const border = parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
+        el.style.height = `${el.scrollHeight + border}px`;
+    }, []);
+
+    useEffect(fit, [body, fit]);
+
+    // The same text rewraps onto a different number of lines when the box gets
+    // narrower or wider, so height has to be recomputed on a rotation or a
+    // window resize too — not only when the text changes. The box's width here
+    // is a function of the viewport alone, so the window event is enough and a
+    // ResizeObserver (which would also have to guard against re-firing on the
+    // height changes made above) buys nothing.
+    useEffect(() => {
+        window.addEventListener('resize', fit);
+        return () => window.removeEventListener('resize', fit);
+    }, [fit]);
 
     const submit = async (e) => {
         e.preventDefault();
@@ -309,17 +356,28 @@ function PostForm({ onPost }) {
         }
     };
 
+    // Enter still posts, the way it did when this was an <input>. Shift+Enter
+    // is the escape hatch for a line break, which renders because .post-body is
+    // white-space: pre-wrap.
+    const keyDown = (e) => {
+        if (e.key !== 'Enter' || e.shiftKey) return;
+        e.preventDefault();
+        submit(e);
+    };
+
     return html`
         <form class="post-form" onSubmit=${submit}>
-            <input
+            <textarea
+                ref=${inputRef}
                 class="post-input"
-                type="text"
+                rows="1"
                 maxlength="2000"
                 placeholder="Write a note…"
                 value=${body}
                 disabled=${busy}
                 onInput=${(e) => setBody(e.target.value)}
-            />
+                onKeyDown=${keyDown}
+            ></textarea>
             <button class="post-submit" type="submit" disabled=${busy || !body.trim()}>Post</button>
         </form>
     `;

@@ -32,6 +32,17 @@
     --amber-bg: light-dark(#fdf6e3, #2a2515);
     --amber-border: light-dark(#f0e2b8, #4a4025);
     --amber-text: light-dark(#8a6d3b, #c9a96a);
+    /* Author stripes on discussion notes. Each pair is a darker light-mode
+       value and a lighter dark-mode one so the stripe stays visible against
+       --surface either way. They are decoration, not text, so they only need
+       to be distinguishable from each other rather than hit a text contrast
+       ratio. --blue is deliberately absent: it is reserved for your own notes,
+       matching the accent your board column already uses. */
+    --author-1: light-dark(#c2410c, #fb923c);
+    --author-2: light-dark(#15803d, #4ade80);
+    --author-3: light-dark(#7e22ce, #c084fc);
+    --author-4: light-dark(#0e7490, #22d3ee);
+    --author-5: light-dark(#be123c, #fb7185);
 }
 
 html[data-theme='light'] {
@@ -47,6 +58,7 @@ body {
     line-height: 1.5;
     background: var(--bg);
     min-height: 100vh;
+    min-height: 100dvh;
     color: var(--text);
 }
 
@@ -55,6 +67,7 @@ body {
     margin: 0 auto;
     background: var(--surface);
     min-height: 100vh;
+    min-height: 100dvh;
     box-shadow: 0 0 40px var(--shadow);
 }
 
@@ -84,11 +97,6 @@ body {
         background 0.15s;
     display: flex;
     align-items: center;
-}
-
-.theme-btn:hover {
-    color: var(--text);
-    background: var(--surface-hover);
 }
 
 .app {
@@ -156,11 +164,6 @@ body {
         border-color 0.15s;
 }
 
-.sort-btn:hover {
-    color: var(--text);
-    background: var(--surface-hover);
-}
-
 .sort-btn.active {
     background: var(--blue);
     border-color: var(--blue);
@@ -169,6 +172,7 @@ body {
 
 .table-wrapper {
     overflow-x: auto;
+    overscroll-behavior-x: contain;
     border: 1px solid var(--border);
     border-radius: 8px;
 }
@@ -207,6 +211,35 @@ td.check-cell {
     white-space: nowrap;
 }
 
+/* The padding moves from the cell to the label so the label fills the cell and
+   the whole thing is one tap target. The desktop values match the `td, th`
+   padding it replaces, so row height does not change.
+   `height: 1px` on the td plus `height: 100%` on the label is the standard
+   trick for stretching a flex/block child to its auto-height table-cell
+   parent — a percentage height alone resolves against the cell's auto
+   height and does nothing, so the label would otherwise stay pinned to its
+   own content height and float centered in a taller cell (vertical-align:
+   middle on `td`), leaving the rest of the cell visually tinted but not
+   tappable. */
+td.check-cell {
+    height: 1px;
+    padding: 0;
+}
+
+.check-hit {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    height: 100%;
+    padding: 11px 16px;
+    cursor: pointer;
+}
+
+td.check-cell:not(.mine) .check-hit {
+    cursor: not-allowed;
+}
+
 th.check-head.mine,
 td.check-cell.mine {
     background: var(--surface-accent);
@@ -217,6 +250,13 @@ th .you {
     text-transform: none;
     letter-spacing: normal;
     color: var(--text-muted);
+}
+
+/* Every header carries both its full name and an initials form; the phone
+   breakpoint swaps which one shows. Full names are the default because a wide
+   screen has room for them. */
+.user-name-short {
+    display: none;
 }
 
 .now-watching {
@@ -296,12 +336,9 @@ th .you {
 }
 
 .watching-indicator {
-    display: inline-block;
     font-size: 0.7rem;
     line-height: 1;
     color: var(--blue);
-    vertical-align: middle;
-    margin-right: 3px;
 }
 
 td {
@@ -313,14 +350,6 @@ tr:last-child td {
     border-bottom: none;
 }
 
-tbody tr:hover td {
-    background: var(--surface-hover);
-}
-
-tbody tr:hover td.check-cell.mine {
-    background: var(--surface-accent);
-}
-
 .season-cell a {
     color: var(--text);
     text-decoration: none;
@@ -330,9 +359,10 @@ tbody tr:hover td.check-cell.mine {
         border-color 0.15s;
 }
 
-.season-cell a:hover {
-    color: var(--blue);
-    border-bottom-color: var(--blue);
+/* The label is two spans so the phone layout can stack them (see the 640px
+   block). On a wide screen they read as one line, colon and all. */
+.season-sub::before {
+    content: ': ';
 }
 
 .check-cell input {
@@ -340,7 +370,6 @@ tbody tr:hover td.check-cell.mine {
     height: 17px;
     cursor: pointer;
     accent-color: var(--blue);
-    vertical-align: middle;
 }
 
 .check-cell input:disabled {
@@ -361,29 +390,12 @@ tr.watched-all .check-cell input {
     opacity: 0.4;
 }
 
-@media (max-width: 640px) {
-    .header {
-        padding: 14px 16px;
-    }
-    .app {
-        padding: 20px 16px;
-    }
-    td,
-    th {
-        padding: 10px 10px;
-    }
-}
-
 .back-link {
     display: inline-block;
     margin-bottom: 1rem;
     color: var(--text-subtle);
     text-decoration: none;
     font-size: 0.9rem;
-}
-
-.back-link:hover {
-    color: var(--text);
 }
 
 .season-view-head {
@@ -403,15 +415,6 @@ tr.watched-all .check-cell input {
     text-decoration: none;
     font-size: 0.85rem;
     white-space: nowrap;
-}
-
-.season-link {
-    color: var(--text);
-    text-decoration: none;
-}
-
-.season-link:hover {
-    color: var(--blue);
 }
 
 .post-badge {
@@ -467,26 +470,73 @@ tr.watched-all .check-cell input {
     list-style: none;
     display: flex;
     flex-direction: column;
-    gap: 0.4rem;
+    /* Wider than the old 0.4rem so each stripe reads as its own block rather
+       than one long bar broken by hairlines. */
+    gap: 0.75rem;
 }
 
+/* The stripe distinguishes one note from the next and says who wrote it in the
+   same mark — worth more than a plain separator here, because orderPosts
+   interleaves authors by watch offset, so the note above yours is usually
+   someone else's. The colour comes from authorAccent, which keys off the
+   roster order so a person keeps their colour across reloads and viewers.
+   `transparent` is the default so an author with no slot still lines up with
+   the others instead of shifting left. */
 .post {
     display: flex;
     align-items: baseline;
     gap: 0.5rem;
     font-size: 0.9rem;
+    border-left: 3px solid transparent;
+    padding-left: 0.6rem;
+}
+
+.post-mine {
+    border-left-color: var(--blue);
+}
+
+.post-a1 {
+    border-left-color: var(--author-1);
+}
+
+.post-a2 {
+    border-left-color: var(--author-2);
+}
+
+.post-a3 {
+    border-left-color: var(--author-3);
+}
+
+.post-a4 {
+    border-left-color: var(--author-4);
+}
+
+.post-a5 {
+    border-left-color: var(--author-5);
 }
 
 .post-time {
     font-variant-numeric: tabular-nums;
     color: var(--text-muted);
     font-size: 0.8rem;
-    min-width: 4.5rem;
+    /* Enough to keep the authors in a column for the offsets this holds
+       ("45s" through "~59m"); a tail note's date simply runs wider. Sized for
+       formatOffsetShort — the old 4.5rem was for the "+1:05:00" form and now
+       leaves a gap. */
+    min-width: 2.5rem;
 }
 
 .post-author {
     color: var(--text-subtle);
     font-weight: 600;
+}
+
+.post-body {
+    /* pre-wrap so a Shift+Enter line break survives into the rendered note.
+       `anywhere` keeps an unbroken run — a pasted URL, say — from pushing the
+       card sideways instead of wrapping. */
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
 }
 
 .post-delete {
@@ -495,10 +545,6 @@ tr.watched-all .check-cell input {
     border: none;
     color: var(--text-faint);
     cursor: pointer;
-}
-
-.post-delete:hover {
-    color: var(--red);
 }
 
 .no-posts,
@@ -564,12 +610,23 @@ tr.watched-all .check-cell input {
 
 .post-form {
     display: flex;
+    /* The box grows downward as you type, so the button tracks its bottom edge
+       instead of stretching to match its height. */
+    align-items: flex-end;
     gap: 0.5rem;
     margin-top: 0.75rem;
 }
 
 .post-input {
     flex: 1;
+    /* A textarea's intrinsic width comes from `cols`, which can exceed the form
+       at narrow widths; flex items refuse to shrink below that without this. */
+    min-width: 0;
+    /* The height is managed in PostForm, so a drag handle would only fight it.
+       Growth stops at max-height and the box scrolls from there. */
+    resize: none;
+    overflow-y: auto;
+    max-height: 9rem;
     padding: 0.4rem 0.6rem;
     background: var(--surface);
     border: 1px solid var(--border);
@@ -592,4 +649,258 @@ tr.watched-all .check-cell input {
 .post-submit:disabled {
     opacity: 0.5;
     cursor: default;
+}
+
+/* This block sits at the very end of the un-gated rules, after every base
+   component rule it might otherwise compete with. Three of its rules
+   originally lived earlier in the file (right after the board CSS) and lost
+   silently to same-specificity base rules that happen to be declared further
+   down (.post-time, .episode-head, .post-input) — equal specificity means
+   source order decides, and the block's old position was not reliably after
+   everything it needed to override. Living last removes that whole class of
+   bug instead of patching it selector by selector. */
+@media (max-width: 640px) {
+    .header {
+        padding: 14px 16px;
+    }
+
+    .app {
+        padding: 20px 16px;
+    }
+
+    td,
+    th {
+        padding: 12px 8px;
+    }
+
+    /* The season name stays put while the checkbox columns scroll under it —
+       otherwise you cannot see which season a checkbox belongs to while
+       tapping it. The cells need an opaque background for the same reason. */
+    th.season-head,
+    td.season-cell {
+        position: sticky;
+        left: 0;
+        z-index: 1;
+        background: var(--surface);
+        box-shadow: 1px 0 0 var(--border);
+    }
+
+    th.season-head {
+        background: var(--surface-subtle);
+        z-index: 2;
+    }
+
+    /* Number over subtitle, so a long subtitle cannot widen the pinned column. */
+    .season-num,
+    .season-sub {
+        display: block;
+    }
+
+    /* The season label is the row's primary content, so it sets its own sizes
+       rather than inheriting the table's 0.9rem — at that size the subtitle
+       landed near 12px, the smallest text on the board. Abbreviating the
+       shared-column headers freed the width to pay for this. */
+    /* The badge sits at the right edge of the pinned column rather than taking
+       a line of its own under the label. The flex container is the wrapper,
+       not the cell — td.season-cell carries `position: sticky` and the column
+       sizing, and changing its display would put both at risk. */
+    .season-cell-row {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+    }
+
+    /* Without this the label cannot shrink below its content width, so a long
+       subtitle would push the badge out of the cell instead of wrapping. */
+    .season-cell-row a {
+        min-width: 0;
+    }
+
+    .post-badge {
+        margin-left: auto;
+    }
+
+    .season-num {
+        font-size: 1rem;
+    }
+
+    .season-sub {
+        font-size: 0.875rem;
+        color: var(--text-subtle);
+    }
+
+    .season-sub::before {
+        content: none;
+    }
+
+    /* A shared column's name is two names joined by "&". Left unwrapped it
+       forces an ~85px column and squeezes the season name to a few characters
+       per line, which is what made the board unreadable at 390px. Wrapping,
+       combined with the existing `width: 1%` on th.check-head, is what
+       collapses each column to its longest word — no max-width needed, and
+       one would only risk clipping a longer name without breaking it. */
+    th.check-head {
+        white-space: normal;
+    }
+
+    /* The column is already tinted, and each checkbox's aria-label still names
+       its owner, so hiding the suffix here costs width and nothing else. */
+    th.check-head .you {
+        display: none;
+    }
+
+    /* Show initials instead of full names. A shared column is the only kind
+       that wraps — the column sizes to its longest word, so "Bob & Carol"
+       takes two or three lines at every phone width while a single name always
+       takes one — and `abbreviateName` collapses exactly those. `nowrap` is
+       required: without it the column would size to the widest single
+       character and break "B & C" across three lines. */
+    th.check-head .user-name-full {
+        display: none;
+    }
+
+    th.check-head .user-name-short {
+        display: inline;
+        white-space: nowrap;
+    }
+
+    .check-hit {
+        min-height: 44px;
+        padding: 8px;
+    }
+
+    .check-cell input {
+        width: 24px;
+        height: 24px;
+    }
+
+    /* Offset, author and delete stay on a meta line; the body takes the full
+       width beneath it. Without the `order`, the body's 100% basis would push
+       the delete button — which follows it in the DOM — onto a third line. */
+    .post {
+        flex-wrap: wrap;
+    }
+
+    .post-time {
+        min-width: 0;
+    }
+
+    .post-body {
+        flex-basis: 100%;
+        order: 1;
+    }
+
+    /* Defensive: measured at 320px, the timer (a chip plus at most two
+       buttons) does not actually wrap, but flex-wrap costs nothing if that
+       ever changes. */
+    .episode-head,
+    .season-view-head,
+    .timer,
+    .sort-controls {
+        flex-wrap: wrap;
+    }
+
+    .episode-head {
+        min-height: 44px;
+        align-items: center;
+    }
+
+    .reveal-btn,
+    .post-submit,
+    .post-input,
+    .timer-btn {
+        min-height: 44px;
+    }
+
+    .sort-btn {
+        min-height: 44px;
+        padding: 0.5rem 0.9rem;
+        font-size: 0.85rem;
+    }
+
+    .theme-btn {
+        min-width: 44px;
+        min-height: 44px;
+        justify-content: center;
+    }
+
+    /* Deliberately smaller than 44px: this deletes a note and sits inline with
+       notes you scroll past, so it should be reachable but not effortless. */
+    .post-delete {
+        min-width: 32px;
+        min-height: 32px;
+        font-size: 1.1rem;
+    }
+
+    /* Safari zooms the page in when a control under 16px takes focus, and does
+       not zoom back out afterwards. 16px is the threshold, not a preference.
+       The base rule's fixed max-width: 220px (not overridden here) already
+       keeps the chip inside a 320px viewport — measured directly, since a
+       percentage max-width on a <select> inside a shrink-to-fit flex parent
+       is circular (the parent's width depends on the select's own intrinsic
+       content width) and browsers resolve that by ignoring the percentage,
+       letting the select render at its full, unconstrained option-text
+       width instead of clipping it. No specificity trick is needed for
+       .post-input here (compare the .sort-btn-style workaround this task
+       used before relocating the block): this block now sits after every
+       base rule in the file, so plain, equal-specificity selectors win on
+       source order alone. */
+    .post-input,
+    .nw-select {
+        font-size: 16px;
+    }
+}
+
+/* Hover effects only where a pointer can actually hover. On a touch device a
+   :hover rule latches after a tap and stays until you tap something else. */
+@media (hover: hover) {
+    .theme-btn:hover {
+        color: var(--text);
+        background: var(--surface-hover);
+    }
+
+    /* :not(.active) rather than relying on source order: .sort-btn.active
+       and .sort-btn:hover are equal specificity (0,2,0), so whichever rule
+       sits later in the file would otherwise win outright and the selected
+       sort button would lose its blue fill while hovered. Scoping the hover
+       rule out of the active state is also the correct UX independent of
+       cascade order — a control that is already selected has nothing useful
+       to say on hover. */
+    .sort-btn:not(.active):hover {
+        color: var(--text);
+        background: var(--surface-hover);
+    }
+
+    tbody tr:hover td {
+        background: var(--surface-hover);
+    }
+
+    tbody tr:hover td.check-cell.mine {
+        background: var(--surface-accent);
+    }
+
+    .season-cell a:hover {
+        color: var(--blue);
+        border-bottom-color: var(--blue);
+    }
+
+    .back-link:hover {
+        color: var(--text);
+    }
+
+    .post-delete:hover {
+        color: var(--red);
+    }
+}
+
+/* Touch gets no hover, so taps need their own feedback. .sort-btn:not(.active)
+   for the same reason as the hover rule above: .sort-btn.active and
+   .sort-btn:active are equal specificity, so without the exclusion the press
+   feedback would flash the already-selected sort button near-white. */
+.sort-btn:not(.active):active,
+.timer-btn:active,
+.reveal-btn:active,
+.post-submit:active,
+.theme-btn:active {
+    background: var(--surface-hover);
 }

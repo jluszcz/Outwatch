@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
     seasonLabel,
+    seasonParts,
+    abbreviateName,
+    authorAccent,
     isFullyWatched,
     sortSeasons,
     sortBySeenCount,
@@ -26,6 +29,99 @@ describe('seasonLabel', () => {
 
     it('formats season 1', () => {
         expect(seasonLabel({ id: 1, subtitle: 'Borneo' })).toBe('Season 1: Borneo');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// seasonParts
+// ---------------------------------------------------------------------------
+
+describe('seasonParts', () => {
+    it('splits the number from the subtitle', () => {
+        expect(seasonParts({ id: 20, subtitle: 'Heroes vs. Villains' })).toEqual({
+            number: 'Season 20',
+            subtitle: 'Heroes vs. Villains',
+        });
+    });
+
+    it('returns an empty subtitle when the season has none', () => {
+        expect(seasonParts({ id: 41, subtitle: '' })).toEqual({
+            number: 'Season 41',
+            subtitle: '',
+        });
+    });
+
+    it('returns an empty subtitle when the field is absent', () => {
+        expect(seasonParts({ id: 41 })).toEqual({ number: 'Season 41', subtitle: '' });
+    });
+});
+
+// ---------------------------------------------------------------------------
+// abbreviateName
+// ---------------------------------------------------------------------------
+
+describe('abbreviateName', () => {
+    it('collapses a shared column to initials', () => {
+        expect(abbreviateName('Bob & Carol')).toBe('B & C');
+    });
+
+    it('leaves a single name alone', () => {
+        expect(abbreviateName('Alice')).toBe('Alice');
+    });
+
+    it('leaves a multi-word single name alone', () => {
+        expect(abbreviateName('Mary Jane')).toBe('Mary Jane');
+    });
+
+    it('handles more than two names', () => {
+        expect(abbreviateName('Dave & Erin & Alice')).toBe('D & E & A');
+    });
+
+    it('tolerates missing spaces around the ampersand', () => {
+        expect(abbreviateName('Bob&Carol')).toBe('B & C');
+    });
+
+    it('uppercases a lowercased name', () => {
+        expect(abbreviateName('bob & carol')).toBe('B & C');
+    });
+
+    it('passes a name with a stray ampersand through untouched', () => {
+        expect(abbreviateName('Alice &')).toBe('Alice &');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// authorAccent
+// ---------------------------------------------------------------------------
+
+describe('authorAccent', () => {
+    const roster = [{ id: 'user-1' }, { id: 'user-2' }, { id: 'user-3' }];
+
+    it("marks the caller's own notes", () => {
+        expect(authorAccent('user-2', 'user-2', roster)).toBe('mine');
+    });
+
+    it('keys everyone else off their roster position', () => {
+        expect(authorAccent('user-1', 'user-2', roster)).toBe(1);
+        expect(authorAccent('user-3', 'user-2', roster)).toBe(3);
+    });
+
+    it('gives a person the same slot no matter who is looking', () => {
+        expect(authorAccent('user-3', 'user-1', roster)).toBe(3);
+        expect(authorAccent('user-3', 'user-2', roster)).toBe(3);
+    });
+
+    it('has no own-note slot for a viewer who is not on the roster', () => {
+        expect(authorAccent('user-1', null, roster)).toBe(1);
+    });
+
+    it('returns null for an author missing from the roster', () => {
+        expect(authorAccent('ghost', 'user-1', roster)).toBe(null);
+    });
+
+    it('wraps once the roster outgrows the palette', () => {
+        const big = Array.from({ length: 7 }, (_, i) => ({ id: `user-${i + 1}` }));
+        expect(authorAccent('user-6', 'user-1', big)).toBe(1);
     });
 });
 
