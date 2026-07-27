@@ -722,19 +722,16 @@ Expected: PASS, whole file.
 In `frontend/discussion.js`, replace `fetchDiscussion` (and the comment above it) with:
 
 ```js
-    // One request: the discussion response names each note's author itself, so
-    // there is no roster to fetch and merge here.
-    const fetchDiscussion = useCallback(
-        () => api(`/api/seasons/${seasonId}/discussion`),
-        [seasonId],
-    );
+// One request: the discussion response names each note's author itself, so
+// there is no roster to fetch and merge here.
+const fetchDiscussion = useCallback(() => api(`/api/seasons/${seasonId}/discussion`), [seasonId]);
 ```
 
 Remove the now-unused `nameOf` and `accentOf` definitions further down (the two lines starting `const nameOf =` and `const accentOf =`). Leave the `./utils.js` import list alone: `authorAccent` is still imported, and `PostList` takes it over in the next step.
 
 In the `EpisodeBoard` element inside `SeasonView`'s returned template, delete the `nameOf=${nameOf}` and `accentOf=${accentOf}` props. Keep every other prop as it is.
 
-In the `mutate` callback's comment, the sentence `fetchDiscussion() re-merges \`users\`, so no separate preservation of \`prev.users\` is needed here.` is now false — replace that sentence with `fetchDiscussion() returns the whole view, so there is nothing to preserve across a refresh.`
+In the `mutate` callback's comment, the sentence `fetchDiscussion() re-merges \`users\`, so no separate preservation of \`prev.users\` is needed here.`is now false — replace that sentence with`fetchDiscussion() returns the whole view, so there is nothing to preserve across a refresh.`
 
 - [ ] **Step 6: Render the author from the post**
 
@@ -747,7 +744,7 @@ function EpisodeBoard({ ep, meId, serverSkewMs, onReveal, onPost, onDelete, onTi
 Replace its `others` line with one that reads the new author shape:
 
 ```js
-    const others = ep.authors.filter((a) => !a.mine).map((a) => a.name);
+const others = ep.authors.filter((a) => !a.mine).map((a) => a.name);
 ```
 
 Delete the `nameOf=${nameOf}` and `accentOf=${accentOf}` props from the `PostList` element inside `EpisodeBoard`, and change `PostList` itself to:
