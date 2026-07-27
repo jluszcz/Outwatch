@@ -212,8 +212,10 @@ names and emails out of source control. `seed.sql` holds only optional sample
   unconstrained) that needs `td.check-cell { height: 1px }` plus
   `height: 100%` on the label to fill the cell, since `td` is
   `vertical-align: middle`; and a note's body wraps to full width below its
-  meta line. Controls are at least `16px` (Safari zooms in on focus and never
-  zooms back out), and every `:hover` rule sits behind
+  meta line. The text controls specifically — `.post-input` and `.nw-select` —
+  are at least `16px`, since Safari zooms the page in on focusing a form
+  control below that and never zooms back out; buttons are not affected and
+  stay smaller. Every `:hover` rule sits behind
   `@media (hover: hover)`, with `.sort-btn:hover` scoped `:not(.active)` so
   hovering the selected sort button keeps its style. No DOM test suite
   exists; this layout is verified with an ad-hoc Playwright script, not CI.

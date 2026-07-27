@@ -313,10 +313,10 @@ function PostForm({ onPost }) {
     const inputRef = useRef(null);
 
     // A textarea does not size itself to its content, so the height is driven
-    // from scrollHeight on every change. Resetting to 'auto' first is what lets
-    // the box shrink again after a delete — scrollHeight never reports less
-    // than the height already set.
-    useEffect(() => {
+    // from scrollHeight. Resetting to 'auto' first is what lets the box shrink
+    // again after a delete — scrollHeight never reports less than the height
+    // already set.
+    const fit = useCallback(() => {
         const el = inputRef.current;
         if (!el) return;
         el.style.height = 'auto';
@@ -325,7 +325,20 @@ function PostForm({ onPost }) {
         // counts inside the height, so skipping this clips the last line.
         const border = parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
         el.style.height = `${el.scrollHeight + border}px`;
-    }, [body]);
+    }, []);
+
+    useEffect(fit, [body, fit]);
+
+    // The same text rewraps onto a different number of lines when the box gets
+    // narrower or wider, so height has to be recomputed on a rotation or a
+    // window resize too — not only when the text changes. The box's width here
+    // is a function of the viewport alone, so the window event is enough and a
+    // ResizeObserver (which would also have to guard against re-firing on the
+    // height changes made above) buys nothing.
+    useEffect(() => {
+        window.addEventListener('resize', fit);
+        return () => window.removeEventListener('resize', fit);
+    }, [fit]);
 
     const submit = async (e) => {
         e.preventDefault();
