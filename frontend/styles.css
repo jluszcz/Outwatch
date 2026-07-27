@@ -241,6 +241,13 @@ th .you {
     color: var(--text-muted);
 }
 
+/* Every header carries both its full name and an initials form; the phone
+   breakpoint swaps which one shows. Full names are the default because a wide
+   screen has room for them. */
+.user-name-short {
+    display: none;
+}
+
 .now-watching {
     display: flex;
     align-items: center;
@@ -639,9 +646,25 @@ tr.watched-all .check-cell input {
         white-space: normal;
     }
 
-    /* The column is already tinted; the suffix only costs width here. */
+    /* The column is already tinted, and each checkbox's aria-label still names
+       its owner, so hiding the suffix here costs width and nothing else. */
     th.check-head .you {
         display: none;
+    }
+
+    /* Show initials instead of full names. A shared column is the only kind
+       that wraps — the column sizes to its longest word, so "Bob & Carol"
+       takes two or three lines at every phone width while a single name always
+       takes one — and `abbreviateName` collapses exactly those. `nowrap` is
+       required: without it the column would size to the widest single
+       character and break "B & C" across three lines. */
+    th.check-head .user-name-full {
+        display: none;
+    }
+
+    th.check-head .user-name-short {
+        display: inline;
+        white-space: nowrap;
     }
 
     .check-hit {

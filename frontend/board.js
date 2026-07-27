@@ -4,6 +4,7 @@ import htm from 'htm';
 import {
     seasonLabel,
     seasonParts,
+    abbreviateName,
     isFullyWatched,
     sortSeasons,
     sortBySeenCount,
@@ -223,7 +224,10 @@ export function Board({ users, seasons, meId, onToggle, onSetCurrentlyWatching }
                                         key=${u.id}
                                         class=${'check-head' + (u.id === meId ? ' mine' : '')}
                                     >
-                                        ${u.name}${
+                                        <span class="user-name-full">${u.name}</span
+                                        ><span class="user-name-short"
+                                            >${abbreviateName(u.name)}</span
+                                        >${
                                             u.id === meId
                                                 ? html`<span class="you"> (you)</span>`
                                                 : null

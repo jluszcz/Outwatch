@@ -199,9 +199,15 @@ names and emails out of source control. `seed.sql` holds only optional sample
   scroll under it (pinning only engages once the grid overflows the wrapper,
   which the current 3-column roster does not — it's a safety net for a
   longer name or a fourth column); `seasonParts` splits the label so the
-  subtitle sits on its own line; `th.check-head` wraps its text and hides the
-  `(you)` suffix (from the accessibility tree too, not just visually — each
-  checkbox's own `aria-label` already names its owner, so nothing is lost);
+  subtitle sits on its own line; each header swaps its full name for
+  `abbreviateName`'s initials (`Bob & Carol` renders `B & C`) and hides the
+  `(you)` suffix — both leave the accessibility tree, not just the layout, but
+  each checkbox's own `aria-label` still names its owner in full. A shared
+  column is the only kind that needed this: check columns size to their
+  longest word, so a name containing `&` wrapped to two or three lines at
+  every phone width while a single name always fit on one. The initials span
+  needs `white-space: nowrap`, or the column would size to one character and
+  break `B & C` across three lines;
   each checkbox sits in a `.check-hit` label (`min-height: 44px`, width
   unconstrained) that needs `td.check-cell { height: 1px }` plus
   `height: 100%` on the label to fill the cell, since `td` is

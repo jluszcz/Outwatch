@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
     seasonLabel,
     seasonParts,
+    abbreviateName,
     isFullyWatched,
     sortSeasons,
     sortBySeenCount,
@@ -51,6 +52,40 @@ describe('seasonParts', () => {
 
     it('returns an empty subtitle when the field is absent', () => {
         expect(seasonParts({ id: 41 })).toEqual({ number: 'Season 41', subtitle: '' });
+    });
+});
+
+// ---------------------------------------------------------------------------
+// abbreviateName
+// ---------------------------------------------------------------------------
+
+describe('abbreviateName', () => {
+    it('collapses a shared column to initials', () => {
+        expect(abbreviateName('Bob & Carol')).toBe('B & C');
+    });
+
+    it('leaves a single name alone', () => {
+        expect(abbreviateName('Alice')).toBe('Alice');
+    });
+
+    it('leaves a multi-word single name alone', () => {
+        expect(abbreviateName('Mary Jane')).toBe('Mary Jane');
+    });
+
+    it('handles more than two names', () => {
+        expect(abbreviateName('Dave & Erin & Alice')).toBe('D & E & A');
+    });
+
+    it('tolerates missing spaces around the ampersand', () => {
+        expect(abbreviateName('Bob&Carol')).toBe('B & C');
+    });
+
+    it('uppercases a lowercased name', () => {
+        expect(abbreviateName('bob & carol')).toBe('B & C');
+    });
+
+    it('passes a name with a stray ampersand through untouched', () => {
+        expect(abbreviateName('Alice &')).toBe('Alice &');
     });
 });
 

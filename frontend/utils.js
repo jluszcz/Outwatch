@@ -11,6 +11,24 @@ export function seasonParts(season) {
     return { number: `Season ${season.id}`, subtitle: season.subtitle ?? '' };
 }
 
+// A column header collapsed to initials: "Bob & Carol" becomes "B & C". Only a
+// shared column (two names joined by "&") is abbreviated, because that is
+// exactly the case that wraps — the check columns size to their longest word,
+// so a name with a space in it takes two or three lines at every phone width
+// while a single name always takes one. Anything without an "&" is returned
+// unchanged rather than reduced to initials, which would be unreadable for a
+// one-person column with a two-word name.
+export function abbreviateName(name) {
+    const parts = name
+        .split('&')
+        .map((part) => part.trim())
+        .filter(Boolean);
+    if (parts.length < 2) return name;
+    // Array.from, not [0], so a name starting with an astral character (an
+    // emoji, say) yields that whole character instead of half a surrogate pair.
+    return parts.map((part) => Array.from(part)[0].toUpperCase()).join(' & ');
+}
+
 // A season is fully watched once every user has it checked. With no users, no
 // season can be "fully watched" (avoids graying out the whole board).
 export function isFullyWatched(season, userCount) {
