@@ -375,157 +375,6 @@ tr.watched-all .check-cell input {
     opacity: 0.4;
 }
 
-@media (max-width: 640px) {
-    .header {
-        padding: 14px 16px;
-    }
-
-    .app {
-        padding: 20px 16px;
-    }
-
-    td,
-    th {
-        padding: 12px 8px;
-    }
-
-    /* The season name stays put while the checkbox columns scroll under it —
-       otherwise you cannot see which season a checkbox belongs to while
-       tapping it. The cells need an opaque background for the same reason. */
-    th.season-head,
-    td.season-cell {
-        position: sticky;
-        left: 0;
-        z-index: 1;
-        background: var(--surface);
-        box-shadow: 1px 0 0 var(--border);
-    }
-
-    th.season-head {
-        background: var(--surface-subtle);
-        z-index: 2;
-    }
-
-    /* Number over subtitle, so a long subtitle cannot widen the pinned column. */
-    .season-num,
-    .season-sub {
-        display: block;
-    }
-
-    .season-sub {
-        font-size: 0.85em;
-        color: var(--text-subtle);
-    }
-
-    .season-sub::before {
-        content: none;
-    }
-
-    /* A shared column's name is two names joined by "&". Left unwrapped it
-       forces an ~85px column and squeezes the season name to a few characters
-       per line, which is what made the board unreadable at 390px. Wrapping,
-       combined with the existing `width: 1%` on th.check-head, is what
-       collapses each column to its longest word — no max-width needed, and
-       one would only risk clipping a longer name without breaking it. */
-    th.check-head {
-        white-space: normal;
-    }
-
-    /* The column is already tinted; the suffix only costs width here. */
-    th.check-head .you {
-        display: none;
-    }
-
-    .check-hit {
-        min-height: 44px;
-        padding: 8px;
-    }
-
-    .check-cell input {
-        width: 24px;
-        height: 24px;
-    }
-
-    /* Offset, author and delete stay on a meta line; the body takes the full
-       width beneath it. Without the `order`, the body's 100% basis would push
-       the delete button — which follows it in the DOM — onto a third line. */
-    .post {
-        flex-wrap: wrap;
-    }
-
-    .post-time {
-        min-width: 0;
-    }
-
-    .post-body {
-        flex-basis: 100%;
-        order: 1;
-    }
-
-    /* Defensive: measured at 320px, the timer (a chip plus at most two
-       buttons) does not actually wrap, but flex-wrap costs nothing if that
-       ever changes. */
-    .episode-head,
-    .season-view-head,
-    .timer,
-    .sort-controls {
-        flex-wrap: wrap;
-    }
-
-    .episode-head {
-        min-height: 44px;
-        align-items: center;
-    }
-
-    .reveal-btn,
-    .post-submit,
-    .post-input,
-    .timer-btn {
-        min-height: 44px;
-    }
-
-    .sort-btn {
-        min-height: 40px;
-        padding: 0.5rem 0.9rem;
-        font-size: 0.85rem;
-    }
-
-    .theme-btn {
-        min-width: 44px;
-        min-height: 44px;
-        justify-content: center;
-    }
-
-    /* Deliberately smaller than 44px: this deletes a note and sits inline with
-       notes you scroll past, so it should be reachable but not effortless. */
-    .post-delete {
-        min-width: 32px;
-        min-height: 32px;
-        font-size: 1.1rem;
-    }
-
-    /* Safari zooms the page in when a control under 16px takes focus, and does
-       not zoom back out afterwards. 16px is the threshold, not a preference.
-       The base rule's fixed max-width: 220px (not overridden here) already
-       keeps the chip inside a 320px viewport — measured directly, since a
-       percentage max-width on a <select> inside a shrink-to-fit flex parent
-       is circular (the parent's width depends on the select's own intrinsic
-       content width) and browsers resolve that by ignoring the percentage,
-       letting the select render at its full, unconstrained option-text
-       width instead of clipping it.
-       `.post-form .post-input` (rather than bare `.post-input`) is needed
-       for specificity, not style: the base `.post-input` font-size rule is
-       defined later in this file (in the discussion-view section, after
-       this media block), so at equal specificity it would win by source
-       order and silently keep the field below 16px. The extra ancestor is
-       real markup (`.post-input` always sits inside `.post-form`), not a
-       specificity hack. */
-    .post-form .post-input,
-    .nw-select {
-        font-size: 16px;
-    }
-}
-
 .back-link {
     display: inline-block;
     margin-bottom: 1rem;
@@ -734,6 +583,162 @@ tr.watched-all .check-cell input {
     cursor: default;
 }
 
+/* This block sits at the very end of the un-gated rules, after every base
+   component rule it might otherwise compete with. Three of its rules
+   originally lived earlier in the file (right after the board CSS) and lost
+   silently to same-specificity base rules that happen to be declared further
+   down (.post-time, .episode-head, .post-input) — equal specificity means
+   source order decides, and the block's old position was not reliably after
+   everything it needed to override. Living last removes that whole class of
+   bug instead of patching it selector by selector. */
+@media (max-width: 640px) {
+    .header {
+        padding: 14px 16px;
+    }
+
+    .app {
+        padding: 20px 16px;
+    }
+
+    td,
+    th {
+        padding: 12px 8px;
+    }
+
+    /* The season name stays put while the checkbox columns scroll under it —
+       otherwise you cannot see which season a checkbox belongs to while
+       tapping it. The cells need an opaque background for the same reason. */
+    th.season-head,
+    td.season-cell {
+        position: sticky;
+        left: 0;
+        z-index: 1;
+        background: var(--surface);
+        box-shadow: 1px 0 0 var(--border);
+    }
+
+    th.season-head {
+        background: var(--surface-subtle);
+        z-index: 2;
+    }
+
+    /* Number over subtitle, so a long subtitle cannot widen the pinned column. */
+    .season-num,
+    .season-sub {
+        display: block;
+    }
+
+    .season-sub {
+        font-size: 0.85em;
+        color: var(--text-subtle);
+    }
+
+    .season-sub::before {
+        content: none;
+    }
+
+    /* A shared column's name is two names joined by "&". Left unwrapped it
+       forces an ~85px column and squeezes the season name to a few characters
+       per line, which is what made the board unreadable at 390px. Wrapping,
+       combined with the existing `width: 1%` on th.check-head, is what
+       collapses each column to its longest word — no max-width needed, and
+       one would only risk clipping a longer name without breaking it. */
+    th.check-head {
+        white-space: normal;
+    }
+
+    /* The column is already tinted; the suffix only costs width here. */
+    th.check-head .you {
+        display: none;
+    }
+
+    .check-hit {
+        min-height: 44px;
+        padding: 8px;
+    }
+
+    .check-cell input {
+        width: 24px;
+        height: 24px;
+    }
+
+    /* Offset, author and delete stay on a meta line; the body takes the full
+       width beneath it. Without the `order`, the body's 100% basis would push
+       the delete button — which follows it in the DOM — onto a third line. */
+    .post {
+        flex-wrap: wrap;
+    }
+
+    .post-time {
+        min-width: 0;
+    }
+
+    .post-body {
+        flex-basis: 100%;
+        order: 1;
+    }
+
+    /* Defensive: measured at 320px, the timer (a chip plus at most two
+       buttons) does not actually wrap, but flex-wrap costs nothing if that
+       ever changes. */
+    .episode-head,
+    .season-view-head,
+    .timer,
+    .sort-controls {
+        flex-wrap: wrap;
+    }
+
+    .episode-head {
+        min-height: 44px;
+        align-items: center;
+    }
+
+    .reveal-btn,
+    .post-submit,
+    .post-input,
+    .timer-btn {
+        min-height: 44px;
+    }
+
+    .sort-btn {
+        min-height: 40px;
+        padding: 0.5rem 0.9rem;
+        font-size: 0.85rem;
+    }
+
+    .theme-btn {
+        min-width: 44px;
+        min-height: 44px;
+        justify-content: center;
+    }
+
+    /* Deliberately smaller than 44px: this deletes a note and sits inline with
+       notes you scroll past, so it should be reachable but not effortless. */
+    .post-delete {
+        min-width: 32px;
+        min-height: 32px;
+        font-size: 1.1rem;
+    }
+
+    /* Safari zooms the page in when a control under 16px takes focus, and does
+       not zoom back out afterwards. 16px is the threshold, not a preference.
+       The base rule's fixed max-width: 220px (not overridden here) already
+       keeps the chip inside a 320px viewport — measured directly, since a
+       percentage max-width on a <select> inside a shrink-to-fit flex parent
+       is circular (the parent's width depends on the select's own intrinsic
+       content width) and browsers resolve that by ignoring the percentage,
+       letting the select render at its full, unconstrained option-text
+       width instead of clipping it. No specificity trick is needed for
+       .post-input here (compare the .sort-btn-style workaround this task
+       used before relocating the block): this block now sits after every
+       base rule in the file, so plain, equal-specificity selectors win on
+       source order alone. */
+    .post-input,
+    .nw-select {
+        font-size: 16px;
+    }
+}
+
 /* Hover effects only where a pointer can actually hover. On a touch device a
    :hover rule latches after a tap and stays until you tap something else. */
 @media (hover: hover) {
@@ -742,7 +747,14 @@ tr.watched-all .check-cell input {
         background: var(--surface-hover);
     }
 
-    .sort-btn:hover {
+    /* :not(.active) rather than relying on source order: .sort-btn.active
+       and .sort-btn:hover are equal specificity (0,2,0), so whichever rule
+       sits later in the file would otherwise win outright and the selected
+       sort button would lose its blue fill while hovered. Scoping the hover
+       rule out of the active state is also the correct UX independent of
+       cascade order — a control that is already selected has nothing useful
+       to say on hover. */
+    .sort-btn:not(.active):hover {
         color: var(--text);
         background: var(--surface-hover);
     }
@@ -773,8 +785,11 @@ tr.watched-all .check-cell input {
     }
 }
 
-/* Touch gets no hover, so taps need their own feedback. */
-.sort-btn:active,
+/* Touch gets no hover, so taps need their own feedback. .sort-btn:not(.active)
+   for the same reason as the hover rule above: .sort-btn.active and
+   .sort-btn:active are equal specificity, so without the exclusion the press
+   feedback would flash the already-selected sort button near-white. */
+.sort-btn:not(.active):active,
 .timer-btn:active,
 .reveal-btn:active,
 .post-submit:active,
