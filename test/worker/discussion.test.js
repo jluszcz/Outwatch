@@ -437,9 +437,28 @@ describe('DELETE /api/posts/:post_id', () => {
         expect(r.status).toBe(404);
     });
 
-    it('lets either partner of a shared column delete the column’s note', async () => {
+    it('refuses to delete a note your partner wrote', async () => {
         const { post: theirs } = await (await post('bob@example.com', 7, 'ours')).json();
         const r = await req('DELETE', `/api/posts/${theirs.id}`, { email: 'carol@example.com' });
+        expect(r.status).toBe(404);
+
+        const row = await env.DB.prepare('SELECT COUNT(*) AS count FROM posts').first();
+        expect(row.count).toBe(1);
+    });
+
+    it('lets you delete your own note from a shared column', async () => {
+        const { post: mine } = await (await post('carol@example.com', 7, 'mine')).json();
+        const r = await req('DELETE', `/api/posts/${mine.id}`, { email: 'carol@example.com' });
+        expect(r.status).toBe(200);
+    });
+
+    // An un-attributed note predates individual authorship. It belongs to the
+    // column, so either partner may delete it rather than it being stranded.
+    it('lets either partner delete a note with no recorded author', async () => {
+        const { post: old } = await (await post('bob@example.com', 7, 'from before')).json();
+        await env.DB.exec('UPDATE posts SET author_email = NULL');
+
+        const r = await req('DELETE', `/api/posts/${old.id}`, { email: 'carol@example.com' });
         expect(r.status).toBe(200);
     });
 

@@ -491,9 +491,12 @@ app.post('/api/seasons/:season_id/episodes/:episode/reveal', async (c) => {
 });
 
 // Season-agnostic: a post id alone identifies the row, so this doesn't go
-// through resolveEpisode. Deleting a note you do not own and deleting one that
-// never existed return the same 404 — a distinct "forbidden" would turn this
-// route into an oracle for which post ids are real.
+// through resolveEpisode. Ownership is the individual, not the column — your
+// partner's note is not yours to delete — except for a note with no recorded
+// author, which predates individual attribution and so belongs to the column.
+// Deleting a note you do not own and deleting one that never existed return the
+// same 404: a distinct "forbidden" would turn this route into an oracle for
+// which post ids are real.
 app.delete('/api/posts/:post_id', async (c) => {
     const me = await callerUser(c);
     if (!me) return c.json({ error: 'Your account is not on the watch list' }, 403);
@@ -503,8 +506,11 @@ app.delete('/api/posts/:post_id', async (c) => {
         return c.json({ error: 'post_id must be a positive integer' }, 400);
     }
 
-    const { meta } = await c.env.DB.prepare('DELETE FROM posts WHERE id = ? AND user_id = ?')
-        .bind(postId, me.id)
+    const { meta } = await c.env.DB.prepare(
+        `DELETE FROM posts
+         WHERE id = ? AND user_id = ? AND (author_email = ? OR author_email IS NULL)`,
+    )
+        .bind(postId, me.id, me.email)
         .run();
     if (meta.changes === 0) return c.json({ error: 'Unknown post' }, 404);
 
