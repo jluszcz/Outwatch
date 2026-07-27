@@ -88,26 +88,28 @@ function SeasonRow({ season, users, meId, fullyWatched, onToggle }) {
                 const isCurrentlyWatching = u.currently_watching_season_id === season.id;
                 return html`
                     <td key=${u.id} class=${'check-cell' + (isMe ? ' mine' : '')}>
-                        ${
-                            isCurrentlyWatching
-                                ? html`<span
-                                      class="watching-indicator"
-                                      role="img"
-                                      aria-label=${`${u.name} is currently watching this season`}
-                                      >▶</span
-                                  >`
-                                : null
-                        }
-                        <input
-                            type="checkbox"
-                            checked=${checked}
-                            disabled=${!isMe}
-                            aria-label=${`${u.name} watched ${seasonLabel(season)}`}
-                            title=${isMe ? '' : `Only ${u.name} can change this`}
-                            onChange=${
-                                isMe ? (e) => onToggle(season.id, e.target.checked) : undefined
+                        <label class="check-hit">
+                            ${
+                                isCurrentlyWatching
+                                    ? html`<span
+                                          class="watching-indicator"
+                                          role="img"
+                                          aria-label=${`${u.name} is currently watching this season`}
+                                          >▶</span
+                                      >`
+                                    : null
                             }
-                        />
+                            <input
+                                type="checkbox"
+                                checked=${checked}
+                                disabled=${!isMe}
+                                aria-label=${`${u.name} watched ${seasonLabel(season)}`}
+                                title=${isMe ? '' : `Only ${u.name} can change this`}
+                                onChange=${
+                                    isMe ? (e) => onToggle(season.id, e.target.checked) : undefined
+                                }
+                            />
+                        </label>
                     </td>
                 `;
             })}

@@ -169,6 +169,7 @@ body {
 
 .table-wrapper {
     overflow-x: auto;
+    overscroll-behavior-x: contain;
     border: 1px solid var(--border);
     border-radius: 8px;
 }
@@ -205,6 +206,26 @@ td.check-cell {
     text-align: center;
     width: 1%;
     white-space: nowrap;
+}
+
+/* The padding moves from the cell to the label so the label fills the cell and
+   the whole thing is one tap target. The desktop values match the `td, th`
+   padding it replaces, so row height does not change. */
+td.check-cell {
+    padding: 0;
+}
+
+.check-hit {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    padding: 11px 16px;
+    cursor: pointer;
+}
+
+.check-hit:has(input:disabled) {
+    cursor: default;
 }
 
 th.check-head.mine,
@@ -301,7 +322,6 @@ th .you {
     line-height: 1;
     color: var(--blue);
     vertical-align: middle;
-    margin-right: 3px;
 }
 
 td {
@@ -371,12 +391,69 @@ tr.watched-all .check-cell input {
     .header {
         padding: 14px 16px;
     }
+
     .app {
         padding: 20px 16px;
     }
+
     td,
     th {
-        padding: 10px 10px;
+        padding: 12px 8px;
+    }
+
+    /* The season name stays put while the checkbox columns scroll under it —
+       otherwise you cannot see which season a checkbox belongs to while
+       tapping it. The cells need an opaque background for the same reason. */
+    th.season-head,
+    td.season-cell {
+        position: sticky;
+        left: 0;
+        z-index: 1;
+        background: var(--surface);
+        box-shadow: 1px 0 0 var(--border);
+    }
+
+    th.season-head {
+        background: var(--surface-subtle);
+        z-index: 2;
+    }
+
+    /* Number over subtitle, so a long subtitle cannot widen the pinned column. */
+    .season-num,
+    .season-sub {
+        display: block;
+    }
+
+    .season-sub {
+        font-size: 0.85em;
+        color: var(--text-subtle);
+    }
+
+    .season-sub::before {
+        content: none;
+    }
+
+    /* A shared column's name is two names joined by "&". Left unwrapped it
+       forces an ~85px column and squeezes the season name to a few characters
+       per line, which is what made the board unreadable at 390px. */
+    th.check-head {
+        white-space: normal;
+        max-width: 4.5rem;
+    }
+
+    /* The column is already tinted; the suffix only costs width here. */
+    th.check-head .you {
+        display: none;
+    }
+
+    .check-hit {
+        min-height: 44px;
+        padding: 8px;
+    }
+
+    .check-cell input {
+        width: 24px;
+        height: 24px;
     }
 }
 
