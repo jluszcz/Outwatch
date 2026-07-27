@@ -47,6 +47,7 @@ body {
     line-height: 1.5;
     background: var(--bg);
     min-height: 100vh;
+    min-height: 100dvh;
     color: var(--text);
 }
 
@@ -55,6 +56,7 @@ body {
     margin: 0 auto;
     background: var(--surface);
     min-height: 100vh;
+    min-height: 100dvh;
     box-shadow: 0 0 40px var(--shadow);
 }
 
@@ -84,11 +86,6 @@ body {
         background 0.15s;
     display: flex;
     align-items: center;
-}
-
-.theme-btn:hover {
-    color: var(--text);
-    background: var(--surface-hover);
 }
 
 .app {
@@ -154,11 +151,6 @@ body {
         color 0.15s,
         background 0.15s,
         border-color 0.15s;
-}
-
-.sort-btn:hover {
-    color: var(--text);
-    background: var(--surface-hover);
 }
 
 .sort-btn.active {
@@ -342,14 +334,6 @@ tr:last-child td {
     border-bottom: none;
 }
 
-tbody tr:hover td {
-    background: var(--surface-hover);
-}
-
-tbody tr:hover td.check-cell.mine {
-    background: var(--surface-accent);
-}
-
 .season-cell a {
     color: var(--text);
     text-decoration: none;
@@ -357,11 +341,6 @@ tbody tr:hover td.check-cell.mine {
     transition:
         color 0.15s,
         border-color 0.15s;
-}
-
-.season-cell a:hover {
-    color: var(--blue);
-    border-bottom-color: var(--blue);
 }
 
 /* The label is two spans so the phone layout can stack them (see the 640px
@@ -483,8 +462,9 @@ tr.watched-all .check-cell input {
         order: 1;
     }
 
-    /* The timer is the forcing case: a chip plus three buttons cannot fit
-       320px on one line. */
+    /* Defensive: measured at 320px, the timer (a chip plus at most two
+       buttons) does not actually wrap, but flex-wrap costs nothing if that
+       ever changes. */
     .episode-head,
     .season-view-head,
     .timer,
@@ -523,6 +503,27 @@ tr.watched-all .check-cell input {
         min-height: 32px;
         font-size: 1.1rem;
     }
+
+    /* Safari zooms the page in when a control under 16px takes focus, and does
+       not zoom back out afterwards. 16px is the threshold, not a preference.
+       The base rule's fixed max-width: 220px (not overridden here) already
+       keeps the chip inside a 320px viewport — measured directly, since a
+       percentage max-width on a <select> inside a shrink-to-fit flex parent
+       is circular (the parent's width depends on the select's own intrinsic
+       content width) and browsers resolve that by ignoring the percentage,
+       letting the select render at its full, unconstrained option-text
+       width instead of clipping it.
+       `.post-form .post-input` (rather than bare `.post-input`) is needed
+       for specificity, not style: the base `.post-input` font-size rule is
+       defined later in this file (in the discussion-view section, after
+       this media block), so at equal specificity it would win by source
+       order and silently keep the field below 16px. The extra ancestor is
+       real markup (`.post-input` always sits inside `.post-form`), not a
+       specificity hack. */
+    .post-form .post-input,
+    .nw-select {
+        font-size: 16px;
+    }
 }
 
 .back-link {
@@ -531,10 +532,6 @@ tr.watched-all .check-cell input {
     color: var(--text-subtle);
     text-decoration: none;
     font-size: 0.9rem;
-}
-
-.back-link:hover {
-    color: var(--text);
 }
 
 .season-view-head {
@@ -559,10 +556,6 @@ tr.watched-all .check-cell input {
 .season-link {
     color: var(--text);
     text-decoration: none;
-}
-
-.season-link:hover {
-    color: var(--blue);
 }
 
 .post-badge {
@@ -646,10 +639,6 @@ tr.watched-all .check-cell input {
     border: none;
     color: var(--text-faint);
     cursor: pointer;
-}
-
-.post-delete:hover {
-    color: var(--red);
 }
 
 .no-posts,
@@ -743,4 +732,52 @@ tr.watched-all .check-cell input {
 .post-submit:disabled {
     opacity: 0.5;
     cursor: default;
+}
+
+/* Hover effects only where a pointer can actually hover. On a touch device a
+   :hover rule latches after a tap and stays until you tap something else. */
+@media (hover: hover) {
+    .theme-btn:hover {
+        color: var(--text);
+        background: var(--surface-hover);
+    }
+
+    .sort-btn:hover {
+        color: var(--text);
+        background: var(--surface-hover);
+    }
+
+    tbody tr:hover td {
+        background: var(--surface-hover);
+    }
+
+    tbody tr:hover td.check-cell.mine {
+        background: var(--surface-accent);
+    }
+
+    .season-cell a:hover {
+        color: var(--blue);
+        border-bottom-color: var(--blue);
+    }
+
+    .back-link:hover {
+        color: var(--text);
+    }
+
+    .season-link:hover {
+        color: var(--blue);
+    }
+
+    .post-delete:hover {
+        color: var(--red);
+    }
+}
+
+/* Touch gets no hover, so taps need their own feedback. */
+.sort-btn:active,
+.timer-btn:active,
+.reveal-btn:active,
+.post-submit:active,
+.theme-btn:active {
+    background: var(--surface-hover);
 }
