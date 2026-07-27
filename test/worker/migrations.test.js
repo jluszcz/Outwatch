@@ -26,3 +26,18 @@ describe('seeded episode counts', () => {
         expect(names).toContain('watch_sessions');
     });
 });
+
+// The two columns individual attribution rests on. Both are added by ALTER
+// TABLE, which rewrites the stored CREATE statement, so sqlite_master is a
+// faithful record of whether migration 0006 actually applied.
+describe('individual author columns', () => {
+    it('adds a per-person name and a post author', async () => {
+        const { results } = await env.DB.prepare(
+            `SELECT name, sql FROM sqlite_master
+             WHERE type = 'table' AND name IN ('posts', 'user_emails')`,
+        ).all();
+        const sqlFor = Object.fromEntries(results.map((r) => [r.name, r.sql]));
+        expect(sqlFor.user_emails).toContain('name TEXT');
+        expect(sqlFor.posts).toContain('author_email TEXT');
+    });
+});
