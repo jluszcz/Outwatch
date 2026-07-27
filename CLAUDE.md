@@ -187,16 +187,22 @@ names and emails out of source control. `seed.sql` holds only optional sample
 - `styles.css` themes via CSS `light-dark()`, which needs a mid-2024 browser
   (Chrome 123+, Safari 17.5+, Firefox 120+); older browsers render with no
   theme colors at all.
-- In `styles.css`, the `@media (max-width: 640px)` block must stay positioned
-  after every un-gated base rule it might otherwise be overridden by, though
-  still before `@media (hover: hover)` and the ungated `:active` rules —
-  media queries add no specificity, so a mobile rule ahead of a
-  same-specificity base rule loses on source order and is silently dead.
+- In `styles.css`, keep the `@media (max-width: 640px)` block positioned
+  after every un-gated base rule it might otherwise be overridden by — media
+  queries add no specificity, so a mobile rule ahead of a same-specificity
+  base rule loses on source order and is silently dead. The
+  `@media (hover: hover)` and ungated `:active` blocks that follow it need no
+  such care: every selector in them carries a pseudo-class, which
+  out-specifies the mobile block's overlapping rules regardless of order.
 - Below `640px` that block switches the layout to a phone variant: the season
   column pins to the left of `.table-wrapper` while the checkbox columns
-  scroll under it; `seasonParts` splits the label so the subtitle sits on its
-  own line; `th.check-head` wraps its text and hides the `(you)` suffix; each
-  checkbox sits in a `.check-hit` label (`min-height: 44px`, width
+  scroll under it (pinning only engages once the grid overflows the wrapper,
+  which the current 3-column roster does not — it's a safety net for a
+  longer name or a fourth column); `seasonParts` splits the label so the
+  subtitle sits on its own line; `th.check-head` wraps its text and hides the
+  `(you)` suffix (from the accessibility tree too, not just visually — each
+  checkbox's own `aria-label` already names its owner, so nothing is lost);
+  each checkbox sits in a `.check-hit` label (`min-height: 44px`, width
   unconstrained) that needs `td.check-cell { height: 1px }` plus
   `height: 100%` on the label to fill the cell, since `td` is
   `vertical-align: middle`; and a note's body wraps to full width below its
