@@ -210,8 +210,16 @@ td.check-cell {
 
 /* The padding moves from the cell to the label so the label fills the cell and
    the whole thing is one tap target. The desktop values match the `td, th`
-   padding it replaces, so row height does not change. */
+   padding it replaces, so row height does not change.
+   `height: 1px` on the td plus `height: 100%` on the label is the standard
+   trick for stretching a flex/block child to its auto-height table-cell
+   parent — a percentage height alone resolves against the cell's auto
+   height and does nothing, so the label would otherwise stay pinned to its
+   own content height and float centered in a taller cell (vertical-align:
+   middle on `td`), leaving the rest of the cell visually tinted but not
+   tappable. */
 td.check-cell {
+    height: 1px;
     padding: 0;
 }
 
@@ -220,6 +228,7 @@ td.check-cell {
     align-items: center;
     justify-content: center;
     gap: 3px;
+    height: 100%;
     padding: 11px 16px;
     cursor: pointer;
 }
@@ -435,10 +444,12 @@ tr.watched-all .check-cell input {
 
     /* A shared column's name is two names joined by "&". Left unwrapped it
        forces an ~85px column and squeezes the season name to a few characters
-       per line, which is what made the board unreadable at 390px. */
+       per line, which is what made the board unreadable at 390px. Wrapping,
+       combined with the existing `width: 1%` on th.check-head, is what
+       collapses each column to its longest word — no max-width needed, and
+       one would only risk clipping a longer name without breaking it. */
     th.check-head {
         white-space: normal;
-        max-width: 4.5rem;
     }
 
     /* The column is already tinted; the suffix only costs width here. */
