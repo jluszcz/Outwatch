@@ -232,7 +232,7 @@ Primary key is `(user_id, season_id)`.
 | `id`           | INTEGER PK | Autoincrement                                                                                      |
 | `season_id`    | INTEGER    | References `seasons.id`                                                                            |
 | `episode`      | INTEGER    | Episode number within the season                                                                   |
-| `user_id`      | TEXT       | References `users.id`; the note's author                                                           |
+| `user_id`      | TEXT       | References `users.id`; the note's column (the individual author, when known, is `author_email`)    |
 | `body`         | TEXT       | Note text                                                                                          |
 | `created_at`   | TEXT       | ISO timestamp                                                                                      |
 | `offset_secs`  | INTEGER    | Author's watch-timer offset at post time; `NULL` if no timer was running                           |
