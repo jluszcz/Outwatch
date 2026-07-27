@@ -3,7 +3,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'preact/hooks'
 import htm from 'htm';
 import { api } from './api.js';
 import { useRefreshGuard, useRefreshOnFocus } from './hooks.js';
-import { seasonLabel, orderPosts, formatOffset } from './utils.js';
+import { seasonLabel, orderPosts, formatOffset, formatOffsetShort } from './utils.js';
 import { sessionOffsetSecs } from '../shared/session.js';
 
 const html = htm.bind(h);
@@ -263,7 +263,7 @@ function PostList({ placed, meId, nameOf, onDelete }) {
                             ${
                                 tail
                                     ? new Date(post.created_at).toLocaleDateString()
-                                    : `${inferred ? '~' : ''}${formatOffset(offset)}`
+                                    : `${inferred ? '~' : ''}${formatOffsetShort(offset)}`
                             }
                         </span>
                         <span class="post-author"

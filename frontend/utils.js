@@ -98,6 +98,18 @@ export function formatOffset(secs) {
     return `+${hours > 0 ? `${hours}:` : ''}${mm}:${String(seconds).padStart(2, '0')}`;
 }
 
+// The same offset in its largest whole unit — "45s", "4m", "5h" — for the post
+// timeline, where the exact second is noise next to the note itself. Truncates
+// rather than rounds, so a note stamped at 5:09:29 reads "5h" and never claims
+// a boundary it has not reached. The live timer chip keeps formatOffset, which
+// has to tick through every second.
+export function formatOffsetShort(secs) {
+    const total = Math.max(0, Math.floor(secs));
+    if (total >= 3600) return `${Math.floor(total / 3600)}h`;
+    if (total >= 60) return `${Math.floor(total / 60)}m`;
+    return `${total}s`;
+}
+
 // Places every note on one timeline so a conversation written days apart reads
 // in episode order. Returns { post, offset, inferred, tail, created } — `created`
 // is the parsed created_at used as the sort key (and tiebreaker within a tail),

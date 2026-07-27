@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { orderPosts, formatOffset, episodeNumbers } from '../../frontend/utils.js';
+import {
+    orderPosts,
+    formatOffset,
+    formatOffsetShort,
+    episodeNumbers,
+} from '../../frontend/utils.js';
 
 const timed = (id, user_id, offset_secs, created_at) => ({
     id,
@@ -104,6 +109,28 @@ describe('formatOffset', () => {
 
     it('never renders a negative offset', () => {
         expect(formatOffset(-30)).toBe('+0:00');
+    });
+});
+
+describe('formatOffsetShort', () => {
+    it('uses seconds below a minute', () => {
+        expect(formatOffsetShort(0)).toBe('0s');
+        expect(formatOffsetShort(45)).toBe('45s');
+    });
+
+    it('truncates to whole minutes rather than rounding up', () => {
+        expect(formatOffsetShort(60)).toBe('1m');
+        expect(formatOffsetShort(242)).toBe('4m'); // 4:02
+        expect(formatOffsetShort(3599)).toBe('59m');
+    });
+
+    it('truncates to whole hours rather than rounding up', () => {
+        expect(formatOffsetShort(3600)).toBe('1h');
+        expect(formatOffsetShort(18569)).toBe('5h'); // 5:09:29
+    });
+
+    it('never renders a negative offset', () => {
+        expect(formatOffsetShort(-30)).toBe('0s');
     });
 });
 

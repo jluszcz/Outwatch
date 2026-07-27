@@ -473,7 +473,11 @@ tr.watched-all .check-cell input {
     font-variant-numeric: tabular-nums;
     color: var(--text-muted);
     font-size: 0.8rem;
-    min-width: 4.5rem;
+    /* Enough to keep the authors in a column for the offsets this holds
+       ("45s" through "~59m"); a tail note's date simply runs wider. Sized for
+       formatOffsetShort — the old 4.5rem was for the "+1:05:00" form and now
+       leaves a gap. */
+    min-width: 2.5rem;
 }
 
 .post-author {
