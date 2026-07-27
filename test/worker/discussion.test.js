@@ -153,6 +153,25 @@ describe('POST /api/seasons/:season_id/episodes/:episode/posts', () => {
         });
         expect(stranger.status).toBe(403);
     });
+
+    it('records which half of a shared column wrote the note', async () => {
+        await req('POST', '/api/seasons/45/episodes/7/posts', {
+            body: { body: 'she is cooked' },
+            email: 'carol@example.com',
+        });
+
+        const row = await env.DB.prepare('SELECT user_id, author_email FROM posts').first();
+        expect(row).toEqual({ user_id: 'user-bob', author_email: 'carol@example.com' });
+    });
+
+    it('does not echo the author email back to the client', async () => {
+        const r = await req('POST', '/api/seasons/45/episodes/7/posts', {
+            body: { body: 'called it' },
+            email: 'carol@example.com',
+        });
+        const { post } = await r.json();
+        expect(post).not.toHaveProperty('author_email');
+    });
 });
 
 const post = (email, episode, body) =>

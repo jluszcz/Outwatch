@@ -79,13 +79,19 @@ async function callerEmail(c) {
 async function callerUser(c) {
     const email = await callerEmail(c);
     if (!email) return null;
-    return c.env.DB.prepare(
+    const column = await c.env.DB.prepare(
         `SELECT users.id, users.name
          FROM user_emails JOIN users ON users.id = user_emails.user_id
          WHERE user_emails.email = ?`,
     )
         .bind(email)
         .first();
+    // The row identifies the column; the email identifies the person inside it.
+    // A shared column has two logins, and discussion notes need to tell them
+    // apart — so the email rides along rather than being dropped here. It is
+    // never serialized: routes that echo the caller pick `id` and `name`
+    // explicitly.
+    return column && { ...column, email };
 }
 
 app.get('/api/board', async (c) => {
@@ -289,10 +295,10 @@ app.post(
         // there is no session row.
         const [inserted] = await c.env.DB.batch([
             c.env.DB.prepare(
-                `INSERT INTO posts (season_id, episode, user_id, body, created_at, offset_secs)
-                 VALUES (?, ?, ?, ?, ?, ?)
+                `INSERT INTO posts (season_id, episode, user_id, body, created_at, offset_secs, author_email)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)
                  RETURNING id, season_id, episode, user_id, body, created_at, offset_secs`,
-            ).bind(season.id, episode, me.id, body, now, offsetSecs),
+            ).bind(season.id, episode, me.id, body, now, offsetSecs, me.email),
             c.env.DB.prepare(
                 `UPDATE watch_sessions SET last_activity_at = ?
                  WHERE user_id = ? AND season_id = ? AND episode = ?`,
