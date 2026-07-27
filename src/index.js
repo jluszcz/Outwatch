@@ -309,6 +309,45 @@ app.post(
     },
 );
 
+// The roster seen as individuals rather than as columns: one entry per login,
+// ordered so it does not depend on who is asking. That ordering is what makes
+// an author's accent slot stable — a person keeps the same colour across
+// reloads and across everyone's screens. `name` falls back to the column's own
+// name, which is what a solo column and a not-yet-named roster entry get.
+async function rosterPeople(c) {
+    const { results } = await c.env.DB.prepare(
+        `SELECT user_emails.email AS email, user_emails.name AS person_name,
+                users.id AS user_id, users.name AS user_name
+         FROM user_emails JOIN users ON users.id = user_emails.user_id
+         ORDER BY users.sort_order ASC, users.name ASC, user_emails.email ASC`,
+    ).all();
+
+    const byEmail = new Map();
+    const columnName = new Map();
+    results.forEach((row, index) => {
+        // user_emails.email is COLLATE NOCASE, so the stored spelling may differ
+        // from the lowercased one written onto a post. Key on the lowered form.
+        byEmail.set(row.email.toLowerCase(), { index, name: row.person_name || row.user_name });
+        columnName.set(row.user_id, row.user_name);
+    });
+    return { byEmail, columnName };
+}
+
+// A note's author. The individual when the note carries an email the roster
+// still knows, the column otherwise — which covers every note written before
+// authorship was recorded and anyone since removed from the roster. `mine`
+// mirrors exactly what DELETE /api/posts/:post_id permits, so the delete button
+// the client draws from it is never a button the server would refuse.
+function attribute(post, people, me) {
+    const email = post.author_email ? post.author_email.toLowerCase() : null;
+    const person = email ? people.byEmail.get(email) : null;
+    return {
+        author_name: person?.name ?? people.columnName.get(post.user_id) ?? 'Someone',
+        author_index: person ? person.index : null,
+        mine: Boolean(me) && post.user_id === me.id && (email === null || email === me.email),
+    };
+}
+
 // The spoiler gate. An episode is readable when the caller has watched the whole
 // season or has explicitly opened that episode. Everything else about the
 // feature follows from this one predicate — and it is evaluated here, on the
@@ -328,10 +367,10 @@ app.get('/api/seasons/:season_id/discussion', async (c) => {
 
     const me = await callerUser(c);
 
-    const [{ results: posts }, watchedRow, { results: reveals }, { results: sessions }] =
+    const [{ results: posts }, watchedRow, { results: reveals }, { results: sessions }, people] =
         await Promise.all([
             c.env.DB.prepare(
-                `SELECT id, episode, user_id, body, created_at, offset_secs
+                `SELECT id, episode, user_id, body, created_at, offset_secs, author_email
                  FROM posts WHERE season_id = ? ORDER BY episode ASC, id ASC`,
             )
                 .bind(seasonId)
@@ -356,6 +395,7 @@ app.get('/api/seasons/:season_id/discussion', async (c) => {
                       .bind(me.id, seasonId)
                       .all()
                 : { results: [] },
+            rosterPeople(c),
         ]);
 
     const watchedSeason = watchedRow != null;
@@ -375,11 +415,23 @@ app.get('/api/seasons/:season_id/discussion', async (c) => {
 
         // Authors are named even on a locked board: the main board already shows
         // who has watched which season, so this reveals nothing new — and it
-        // tells you whether opening the board is worth it.
-        const authors = [...new Set(all.map((p) => p.user_id))];
+        // tells you whether opening the board is worth it. Deduped on the author
+        // key rather than the display name, so two people who share a first name
+        // still list twice.
+        const authors = [];
+        const seenAuthors = new Set();
+        for (const p of all) {
+            const key = p.author_email ? p.author_email.toLowerCase() : p.user_id;
+            if (seenAuthors.has(key)) continue;
+            seenAuthors.add(key);
+            const { author_name, mine } = attribute(p, people, me);
+            authors.push({ name: author_name, mine });
+        }
 
         // The one line that matters. On a locked board only the caller's own
-        // posts survive; nobody else's body reaches the response.
+        // column's posts survive; nobody else's body reaches the response.
+        // Column-level, not per-person: a couple watches together, so a
+        // partner's note is not a spoiler.
         const visible = readable ? all : all.filter((p) => me && p.user_id === me.id);
 
         const session = sessionByEpisode.get(episode) ?? null;
@@ -394,6 +446,7 @@ app.get('/api/seasons/:season_id/discussion', async (c) => {
                 body: p.body,
                 created_at: p.created_at,
                 offset_secs: p.offset_secs,
+                ...attribute(p, people, me),
             })),
             session: session
                 ? {
