@@ -627,8 +627,16 @@ tr.watched-all .check-cell input {
         display: block;
     }
 
+    /* The season label is the row's primary content, so it sets its own sizes
+       rather than inheriting the table's 0.9rem — at that size the subtitle
+       landed near 12px, the smallest text on the board. Abbreviating the
+       shared-column headers freed the width to pay for this. */
+    .season-num {
+        font-size: 1rem;
+    }
+
     .season-sub {
-        font-size: 0.85em;
+        font-size: 0.875rem;
         color: var(--text-subtle);
     }
 
