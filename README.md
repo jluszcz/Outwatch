@@ -13,6 +13,7 @@ Built on Cloudflare Workers with a D1 SQLite database, behind Cloudflare Access.
 - All 50 U.S. seasons of _Survivor_ seeded with official subtitles + Wikipedia links
 - One checkbox column per person/couple; you can only change your own (Access-derived identity)
 - Couples share a column — either partner's login can toggle it
+- Discussion notes are bylined to the individual who wrote them, so a shared column speaks with two voices
 - Fully-watched seasons gray out and sink to the bottom
 - Per-episode discussion boards, write-only until you open them
 - Light/dark theme toggle
@@ -104,9 +105,17 @@ template with fake placeholders.
 - **Columns** (`users`) — one row per person or couple; `name` is the column header.
 - **Login emails** (`user_emails`) — maps each Cloudflare Access email to a
   column (a couple's column has two emails).
+- **Byline name** (`user_emails.name`) — the individual's display name on a
+  discussion note. It's optional: leave it `NULL` and the note falls back to
+  the column's own name. Set it for each half of a shared column so their
+  notes read as two voices instead of one.
 - **User ids** are deliberately generic (`user-1`, `user-2`, …) so nothing in
   source control reveals who the real people are. Keep these ids; change only the
   names and emails.
+
+`roster.example.sql` upserts login emails on conflict rather than ignoring
+them, so re-editing a name (or moving an email to a different column) and
+re-running it updates the existing row instead of silently doing nothing.
 
 ```bash
 cp roster.example.sql roster.sql
@@ -163,17 +172,17 @@ the `Cf-Access-Jwt-Assertion` header (or `DEV_USER_EMAIL` locally). Clients neve
 send a user id, and the plaintext `Cf-Access-Authenticated-User-Email` header is
 never trusted — see [Authentication](#authentication).
 
-| Method   | Path                                               | Description                                                                                  |
-| -------- | -------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `GET`    | `/api/board`                                       | Current user, all users, and all seasons with watched state, episode counts, and post counts |
-| `POST`   | `/api/watched`                                     | Mark the caller as having watched a season (`{ season_id }`)                                 |
-| `DELETE` | `/api/watched/:season_id`                          | Unmark the caller for a season                                                               |
-| `PUT`    | `/api/currently-watching`                          | Set the caller's currently-watching season, or clear it (`{ season_id }`, nullable)          |
-| `POST`   | `/api/seasons/:season_id/episodes/:episode/posts`  | Add a discussion note, stamped with the caller's live watch-timer offset (`{ body }`)        |
-| `GET`    | `/api/seasons/:season_id/discussion`               | Per-episode discussion state for a season, gated by the spoiler rule                         |
-| `POST`   | `/api/seasons/:season_id/episodes/:episode/reveal` | Open one episode's discussion board for reading (permanent)                                  |
-| `DELETE` | `/api/posts/:post_id`                              | Delete one of the caller's own discussion notes                                              |
-| `POST`   | `/api/seasons/:season_id/episodes/:episode/timer`  | Start, pause, or resume the caller's watch timer for an episode (`{ action }`)               |
+| Method   | Path                                               | Description                                                                                                                                                                                                                 |
+| -------- | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET`    | `/api/board`                                       | Current user, all users, and all seasons with watched state, episode counts, and post counts                                                                                                                                |
+| `POST`   | `/api/watched`                                     | Mark the caller as having watched a season (`{ season_id }`)                                                                                                                                                                |
+| `DELETE` | `/api/watched/:season_id`                          | Unmark the caller for a season                                                                                                                                                                                              |
+| `PUT`    | `/api/currently-watching`                          | Set the caller's currently-watching season, or clear it (`{ season_id }`, nullable)                                                                                                                                         |
+| `POST`   | `/api/seasons/:season_id/episodes/:episode/posts`  | Add a discussion note, stamped with the caller's live watch-timer offset (`{ body }`)                                                                                                                                       |
+| `GET`    | `/api/seasons/:season_id/discussion`               | Per-episode discussion state for a season, gated by the spoiler rule; each post carries `author_name`, `author_index`, and `mine`, and each episode's `authors` names its bylined individuals — emails are never serialized |
+| `POST`   | `/api/seasons/:season_id/episodes/:episode/reveal` | Open one episode's discussion board for reading (permanent)                                                                                                                                                                 |
+| `DELETE` | `/api/posts/:post_id`                              | Delete one of the caller's own discussion notes, scoped to the individual author; a note from before individual attribution stays deletable by the column                                                                   |
+| `POST`   | `/api/seasons/:season_id/episodes/:episode/timer`  | Start, pause, or resume the caller's watch timer for an episode (`{ action }`)                                                                                                                                              |
 
 ## Database Schema
 
@@ -188,10 +197,11 @@ never trusted — see [Authentication](#authentication).
 
 **`user_emails`** — maps each Access login email to a column
 
-| Column    | Type    | Notes                                                 |
-| --------- | ------- | ----------------------------------------------------- |
-| `email`   | TEXT PK | Cloudflare Access email; `COLLATE NOCASE`             |
-| `user_id` | TEXT    | References `users.id`; a couple's column has two rows |
+| Column    | Type    | Notes                                                                 |
+| --------- | ------- | --------------------------------------------------------------------- |
+| `email`   | TEXT PK | Cloudflare Access email; `COLLATE NOCASE`                             |
+| `user_id` | TEXT    | References `users.id`; a couple's column has two rows                 |
+| `name`    | TEXT    | Display name on a discussion note; NULL falls back to the column name |
 
 Both tables are populated from the gitignored `roster.sql`, not a migration —
 see [The roster](#the-roster).
@@ -217,15 +227,16 @@ Primary key is `(user_id, season_id)`.
 
 **`posts`** — one row per discussion note
 
-| Column        | Type       | Notes                                                                    |
-| ------------- | ---------- | ------------------------------------------------------------------------ |
-| `id`          | INTEGER PK | Autoincrement                                                            |
-| `season_id`   | INTEGER    | References `seasons.id`                                                  |
-| `episode`     | INTEGER    | Episode number within the season                                         |
-| `user_id`     | TEXT       | References `users.id`; the note's author                                 |
-| `body`        | TEXT       | Note text                                                                |
-| `created_at`  | TEXT       | ISO timestamp                                                            |
-| `offset_secs` | INTEGER    | Author's watch-timer offset at post time; `NULL` if no timer was running |
+| Column         | Type       | Notes                                                                                              |
+| -------------- | ---------- | -------------------------------------------------------------------------------------------------- |
+| `id`           | INTEGER PK | Autoincrement                                                                                      |
+| `season_id`    | INTEGER    | References `seasons.id`                                                                            |
+| `episode`      | INTEGER    | Episode number within the season                                                                   |
+| `user_id`      | TEXT       | References `users.id`; the note's author                                                           |
+| `body`         | TEXT       | Note text                                                                                          |
+| `created_at`   | TEXT       | ISO timestamp                                                                                      |
+| `offset_secs`  | INTEGER    | Author's watch-timer offset at post time; `NULL` if no timer was running                           |
+| `author_email` | TEXT       | References `user_emails.email`; who wrote the note. NULL on notes predating individual attribution |
 
 **`reveals`** — presence means that user opened that episode's board for reading (one-way)
 
@@ -256,7 +267,11 @@ Primary key is `(user_id, season_id, episode)`.
 Sign-in is handled entirely by Cloudflare Access at the edge — no application
 code, no password to store. Access forwards each authenticated request with a
 signed JWT in the `Cf-Access-Jwt-Assertion` header; the Worker verifies that
-token and maps its `email` claim through `user_emails` to a board column. Local
+token and maps its `email` claim through `user_emails` to a board column. That
+column is the unit of identity for everything the app does — checkboxes, watch
+timers, episode reveals — except discussion note authorship: a note is bylined
+to the individual, so the verified email itself is recorded on the post,
+letting a shared column's two people post under their own names. Local
 development bypasses Access (see "Local dev identity").
 
 ### Why the token and not the header
