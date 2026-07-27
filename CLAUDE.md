@@ -187,30 +187,24 @@ names and emails out of source control. `seed.sql` holds only optional sample
 - `styles.css` themes via CSS `light-dark()`, which needs a mid-2024 browser
   (Chrome 123+, Safari 17.5+, Firefox 120+); older browsers render with no
   theme colors at all.
-- Below `640px` the layout switches to a phone variant in the same stylesheet,
-  gated by a single `@media (max-width: 640px)` block that must stay
-  positioned after every un-gated base rule (though still before
-  `@media (hover: hover)` and the ungated `:active` rules at the end of the
-  file) — media queries add no specificity, so a mobile rule ahead of a
-  same-specificity base rule loses on source order and is silently dead; two
-  rules shipped briefly broken this way before the block was moved. Within it:
-  the season column pins to the left of `.table-wrapper` while the checkbox
-  columns scroll under it; `seasonParts` splits the label so the subtitle sits
-  on its own line; `th.check-head` wraps its text and hides the `(you)`
-  suffix, since a shared column's two-part name was the main cause of the
-  board overflowing at 390px; each checkbox sits in a 44px `.check-hit`
-  label, which needs both `td.check-cell { height: 1px }` and `height: 100%`
-  on the label to actually fill the cell (`td` is `vertical-align: middle`,
-  so without both halves the label just centers in a taller cell, leaving
-  most of it dead); and a discussion note's body wraps to full width below
-  its meta line. Two rules are load-bearing rather than cosmetic: controls
-  are at least `16px` (Safari zooms the page in on focusing anything smaller
-  and never zooms back out), and every `:hover` rule sits behind
-  `@media (hover: hover)` (a tap otherwise leaves the control highlighted) —
-  `.sort-btn:hover` is further scoped `:not(.active)` so hovering the
-  selected sort button doesn't strip its selected styling. There is no DOM
-  test suite, so this layout is verified with an ad-hoc Playwright script
-  rather than in CI.
+- In `styles.css`, the `@media (max-width: 640px)` block must stay positioned
+  after every un-gated base rule it might otherwise be overridden by, though
+  still before `@media (hover: hover)` and the ungated `:active` rules —
+  media queries add no specificity, so a mobile rule ahead of a
+  same-specificity base rule loses on source order and is silently dead.
+- Below `640px` that block switches the layout to a phone variant: the season
+  column pins to the left of `.table-wrapper` while the checkbox columns
+  scroll under it; `seasonParts` splits the label so the subtitle sits on its
+  own line; `th.check-head` wraps its text and hides the `(you)` suffix; each
+  checkbox sits in a `.check-hit` label (`min-height: 44px`, width
+  unconstrained) that needs `td.check-cell { height: 1px }` plus
+  `height: 100%` on the label to fill the cell, since `td` is
+  `vertical-align: middle`; and a note's body wraps to full width below its
+  meta line. Controls are at least `16px` (Safari zooms in on focus and never
+  zooms back out), and every `:hover` rule sits behind
+  `@media (hover: hover)`, with `.sort-btn:hover` scoped `:not(.active)` so
+  hovering the selected sort button keeps its style. No DOM test suite
+  exists; this layout is verified with an ad-hoc Playwright script, not CI.
 - The hash route `#/season/N` (`useHashRoute` in `hooks.js`) swaps the board for
   `SeasonView`, that season's per-episode discussion boards — a hash beats a
   router library for the app's one extra route, and it also makes Back work,
