@@ -631,6 +631,26 @@ tr.watched-all .check-cell input {
        rather than inheriting the table's 0.9rem — at that size the subtitle
        landed near 12px, the smallest text on the board. Abbreviating the
        shared-column headers freed the width to pay for this. */
+    /* The badge sits at the right edge of the pinned column rather than taking
+       a line of its own under the label. The flex container is the wrapper,
+       not the cell — td.season-cell carries `position: sticky` and the column
+       sizing, and changing its display would put both at risk. */
+    .season-cell-row {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+    }
+
+    /* Without this the label cannot shrink below its content width, so a long
+       subtitle would push the badge out of the cell instead of wrapping. */
+    .season-cell-row a {
+        min-width: 0;
+    }
+
+    .post-badge {
+        margin-left: auto;
+    }
+
     .season-num {
         font-size: 1rem;
     }

@@ -68,17 +68,19 @@ function SeasonRow({ season, users, meId, fullyWatched, onToggle }) {
     return html`
         <tr class=${fullyWatched ? 'watched-all' : ''}>
             <td class="season-cell">
-                <a href=${`#/season/${season.id}`} aria-label=${seasonLabel(season)}
-                    ><span class="season-num">${number}</span
-                    >${subtitle ? html`<span class="season-sub">${subtitle}</span>` : null}</a
-                >
-                ${
-                    season.post_count > 0
-                        ? html`<span class="post-badge" title=${`${season.post_count} notes`}>
-                              💬 ${season.post_count}
-                          </span>`
-                        : null
-                }
+                <div class="season-cell-row">
+                    <a href=${`#/season/${season.id}`} aria-label=${seasonLabel(season)}
+                        ><span class="season-num">${number}</span
+                        >${subtitle ? html`<span class="season-sub">${subtitle}</span>` : null}</a
+                    >
+                    ${
+                        season.post_count > 0
+                            ? html`<span class="post-badge" title=${`${season.post_count} notes`}>
+                                  💬 ${season.post_count}
+                              </span>`
+                            : null
+                    }
+                </div>
             </td>
             ${users.map((u) => {
                 const checked = season.watched_by.includes(u.id);
