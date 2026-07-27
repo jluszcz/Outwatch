@@ -466,6 +466,63 @@ tr.watched-all .check-cell input {
         width: 24px;
         height: 24px;
     }
+
+    /* Offset, author and delete stay on a meta line; the body takes the full
+       width beneath it. Without the `order`, the body's 100% basis would push
+       the delete button — which follows it in the DOM — onto a third line. */
+    .post {
+        flex-wrap: wrap;
+    }
+
+    .post-time {
+        min-width: 0;
+    }
+
+    .post-body {
+        flex-basis: 100%;
+        order: 1;
+    }
+
+    /* The timer is the forcing case: a chip plus three buttons cannot fit
+       320px on one line. */
+    .episode-head,
+    .season-view-head,
+    .timer,
+    .sort-controls {
+        flex-wrap: wrap;
+    }
+
+    .episode-head {
+        min-height: 44px;
+        align-items: center;
+    }
+
+    .reveal-btn,
+    .post-submit,
+    .post-input,
+    .timer-btn {
+        min-height: 44px;
+    }
+
+    .sort-btn {
+        min-height: 40px;
+        padding: 0.5rem 0.9rem;
+        font-size: 0.85rem;
+    }
+
+    .theme-btn {
+        min-width: 44px;
+        min-height: 44px;
+        justify-content: center;
+    }
+
+    /* Deliberately smaller than 44px: this deletes a note and sits inline with
+       notes you scroll past, so it should be reachable but not effortless. */
+    .post-delete {
+        min-width: 32px;
+        min-height: 32px;
+        font-size: 1.1rem;
+    }
 }
 
 .back-link {
