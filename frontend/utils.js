@@ -24,16 +24,16 @@ const ACCENT_SLOTS = 5;
 
 // Which accent a note's left stripe should use. 'mine' for the caller's own
 // notes, which take the same blue their board column already uses; otherwise a
-// 1-based slot keyed off the author's position in the roster. The server orders
-// users by sort_order, so a person keeps the same colour across reloads and
-// across viewers — only "yours" changes depending on who is looking. null when
-// the author is not on the roster, which leaves the note unstriped rather than
-// inventing a colour for them.
-export function authorAccent(userId, meId, users) {
-    if (meId != null && userId === meId) return 'mine';
-    const index = users.findIndex((u) => u.id === userId);
-    if (index < 0) return null;
-    return (index % ACCENT_SLOTS) + 1;
+// 1-based slot from the author's position in the roster of individuals. The
+// server assigns that position in an order that does not depend on the viewer,
+// so a person keeps the same colour across reloads and across everyone's
+// screens — only "yours" changes depending on who is looking. null when the
+// server could not place the author, which leaves the note unstriped rather
+// than inventing a colour for them.
+export function authorAccent(post) {
+    if (post.mine) return 'mine';
+    if (post.author_index == null) return null;
+    return (post.author_index % ACCENT_SLOTS) + 1;
 }
 
 export function abbreviateName(name) {

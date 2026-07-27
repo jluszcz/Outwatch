@@ -13,16 +13,12 @@ export function SeasonView({ seasonId }) {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
 
-    // GET /api/seasons/:id/discussion returns user ids but not names, so the
-    // season view fetches the board alongside it. Both are small and the board
-    // is already warm in cache.
-    const fetchDiscussion = useCallback(async () => {
-        const [discussion, board] = await Promise.all([
-            api(`/api/seasons/${seasonId}/discussion`),
-            api('/api/board'),
-        ]);
-        return { ...discussion, users: board.users };
-    }, [seasonId]);
+    // One request: the discussion response names each note's author itself, so
+    // there is no roster to fetch and merge here.
+    const fetchDiscussion = useCallback(
+        () => api(`/api/seasons/${seasonId}/discussion`),
+        [seasonId],
+    );
 
     const { refresh, beginMutation, endMutation } = useRefreshGuard(fetchDiscussion, setData);
     useRefreshOnFocus(refresh, setError);
@@ -45,8 +41,8 @@ export function SeasonView({ seasonId }) {
                 // Goes through the guard rather than fetching inline: called while
                 // the mutation is still in flight, this defers (mutationsInFlight
                 // > 0) and queues a refresh; endMutation() below then runs it once
-                // the last mutation settles. fetchDiscussion() re-merges `users`,
-                // so no separate preservation of `prev.users` is needed here.
+                // the last mutation settles. fetchDiscussion() returns the whole
+                // view, so there is nothing to preserve across a refresh.
                 await refresh();
                 setError(null);
                 return true;
@@ -110,9 +106,6 @@ export function SeasonView({ seasonId }) {
     // only needs to be right to the second.
     const serverSkewMs = data.now ? Date.parse(data.now) - Date.now() : 0;
 
-    const nameOf = (id) => data.users.find((u) => u.id === id)?.name ?? 'Someone';
-    const accentOf = (id) => authorAccent(id, data.me?.id ?? null, data.users);
-
     return html`
         <div class="season-view">
             <a class="back-link" href="#/">← Board</a>
@@ -139,8 +132,6 @@ export function SeasonView({ seasonId }) {
                             key=${ep.episode}
                             ep=${ep}
                             meId=${data.me?.id ?? null}
-                            nameOf=${nameOf}
-                            accentOf=${accentOf}
                             serverSkewMs=${serverSkewMs}
                             onReveal=${reveal}
                             onPost=${addPost}
@@ -155,23 +146,13 @@ export function SeasonView({ seasonId }) {
 
 // One episode's board. Locked boards are the default: you see the count and who
 // wrote, plus your own notes, and nothing else until you choose to open it.
-function EpisodeBoard({
-    ep,
-    meId,
-    nameOf,
-    accentOf,
-    serverSkewMs,
-    onReveal,
-    onPost,
-    onDelete,
-    onTimer,
-}) {
+function EpisodeBoard({ ep, meId, serverSkewMs, onReveal, onPost, onDelete, onTimer }) {
     const [open, setOpen] = useState(false);
     const placed = useMemo(() => orderPosts(ep.posts), [ep.posts]);
 
     const summary =
         ep.count === 0 ? 'no notes' : `${ep.count} ${ep.count === 1 ? 'note' : 'notes'}`;
-    const others = ep.authors.filter((id) => id !== meId).map(nameOf);
+    const others = ep.authors.filter((a) => !a.mine).map((a) => a.name);
 
     return html`
         <div class=${'episode-card' + (ep.readable ? '' : ' locked')}>
@@ -187,13 +168,7 @@ function EpisodeBoard({
                 open &&
                 html`
                     <div class="episode-body">
-                        <${PostList}
-                            placed=${placed}
-                            meId=${meId}
-                            nameOf=${nameOf}
-                            accentOf=${accentOf}
-                            onDelete=${onDelete}
-                        />
+                        <${PostList} placed=${placed} onDelete=${onDelete} />
                         ${
                             !ep.readable &&
                             html`
@@ -265,14 +240,14 @@ function WatchTimer({ session, serverSkewMs, onAction }) {
     `;
 }
 
-function PostList({ placed, meId, nameOf, accentOf, onDelete }) {
+function PostList({ placed, onDelete }) {
     if (placed.length === 0) return html`<div class="no-posts">Nothing here yet.</div>`;
     return html`
         <ol class="posts">
             ${placed.map(({ post, offset, inferred, tail }) => {
                 // 'mine' | 1..N | null — null leaves the note unstriped rather
                 // than inventing a colour for an author who left the roster.
-                const accent = accentOf(post.user_id);
+                const accent = authorAccent(post);
                 const accentClass =
                     accent === 'mine' ? ' post-mine' : accent ? ` post-a${accent}` : '';
                 return html`
@@ -284,12 +259,10 @@ function PostList({ placed, meId, nameOf, accentOf, onDelete }) {
                                     : `${inferred ? '~' : ''}${formatOffsetShort(offset)}`
                             }
                         </span>
-                        <span class="post-author"
-                            >${post.user_id === meId ? 'You' : nameOf(post.user_id)}</span
-                        >
+                        <span class="post-author">${post.mine ? 'You' : post.author_name}</span>
                         <span class="post-body">${post.body}</span>
                         ${
-                            post.user_id === meId &&
+                            post.mine &&
                             html`<button
                                 class="post-delete"
                                 title="Delete this note"
