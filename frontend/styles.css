@@ -481,6 +481,14 @@ tr.watched-all .check-cell input {
     font-weight: 600;
 }
 
+.post-body {
+    /* pre-wrap so a Shift+Enter line break survives into the rendered note.
+       `anywhere` keeps an unbroken run — a pasted URL, say — from pushing the
+       card sideways instead of wrapping. */
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
 .post-delete {
     margin-left: auto;
     background: none;
@@ -552,12 +560,23 @@ tr.watched-all .check-cell input {
 
 .post-form {
     display: flex;
+    /* The box grows downward as you type, so the button tracks its bottom edge
+       instead of stretching to match its height. */
+    align-items: flex-end;
     gap: 0.5rem;
     margin-top: 0.75rem;
 }
 
 .post-input {
     flex: 1;
+    /* A textarea's intrinsic width comes from `cols`, which can exceed the form
+       at narrow widths; flex items refuse to shrink below that without this. */
+    min-width: 0;
+    /* The height is managed in PostForm, so a drag handle would only fight it.
+       Growth stops at max-height and the box scrolls from there. */
+    resize: none;
+    overflow-y: auto;
+    max-height: 9rem;
     padding: 0.4rem 0.6rem;
     background: var(--surface);
     border: 1px solid var(--border);

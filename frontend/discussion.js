@@ -1,5 +1,5 @@
 import { h } from 'preact';
-import { useState, useEffect, useMemo, useCallback } from 'preact/hooks';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'preact/hooks';
 import htm from 'htm';
 import { api } from './api.js';
 import { useRefreshGuard, useRefreshOnFocus } from './hooks.js';
@@ -292,6 +292,22 @@ function PostList({ placed, meId, nameOf, onDelete }) {
 function PostForm({ onPost }) {
     const [body, setBody] = useState('');
     const [busy, setBusy] = useState(false);
+    const inputRef = useRef(null);
+
+    // A textarea does not size itself to its content, so the height is driven
+    // from scrollHeight on every change. Resetting to 'auto' first is what lets
+    // the box shrink again after a delete — scrollHeight never reports less
+    // than the height already set.
+    useEffect(() => {
+        const el = inputRef.current;
+        if (!el) return;
+        el.style.height = 'auto';
+        const style = getComputedStyle(el);
+        // scrollHeight leaves out the border, which box-sizing: border-box
+        // counts inside the height, so skipping this clips the last line.
+        const border = parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
+        el.style.height = `${el.scrollHeight + border}px`;
+    }, [body]);
 
     const submit = async (e) => {
         e.preventDefault();
@@ -309,17 +325,28 @@ function PostForm({ onPost }) {
         }
     };
 
+    // Enter still posts, the way it did when this was an <input>. Shift+Enter
+    // is the escape hatch for a line break, which renders because .post-body is
+    // white-space: pre-wrap.
+    const keyDown = (e) => {
+        if (e.key !== 'Enter' || e.shiftKey) return;
+        e.preventDefault();
+        submit(e);
+    };
+
     return html`
         <form class="post-form" onSubmit=${submit}>
-            <input
+            <textarea
+                ref=${inputRef}
                 class="post-input"
-                type="text"
+                rows="1"
                 maxlength="2000"
                 placeholder="Write a note…"
                 value=${body}
                 disabled=${busy}
                 onInput=${(e) => setBody(e.target.value)}
-            />
+                onKeyDown=${keyDown}
+            ></textarea>
             <button class="post-submit" type="submit" disabled=${busy || !body.trim()}>Post</button>
         </form>
     `;
