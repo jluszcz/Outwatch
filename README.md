@@ -113,9 +113,14 @@ template with fake placeholders.
   source control reveals who the real people are. Keep these ids; change only the
   names and emails.
 
-`roster.example.sql` upserts login emails on conflict rather than ignoring
-them, so re-editing a name (or moving an email to a different column) and
-re-running it updates the existing row instead of silently doing nothing.
+`roster.example.sql` upserts both tables on conflict rather than ignoring
+them, so re-editing a column name, a byline, or an email (or moving an email
+to a different column) and re-running it updates the existing rows instead of
+silently doing nothing. To retire a login — someone's address changes, or they
+leave the group — repoint its `user_emails` row rather than deleting it: D1
+enforces foreign keys unconditionally, so once that email has authored a note,
+`DELETE FROM user_emails` fails with an opaque foreign-key error, while an
+`UPDATE`/upsert that reassigns the row leaves `posts.author_email` untouched.
 
 ```bash
 cp roster.example.sql roster.sql
@@ -156,7 +161,14 @@ npm run build    # one-shot production bundle
 
 ### Deploy
 
+Apply any new migrations to production before deploying — `npm run deploy`
+does not do this for you. Deploying Worker code that reads or writes a column
+a migration hasn't added yet breaks outright; `author_email` (migration
+`0006`) is the current example, since the Worker both selects and inserts it
+on every discussion request.
+
 ```bash
+npx wrangler d1 migrations apply outwatch
 npm run deploy
 ```
 
@@ -178,7 +190,7 @@ never trusted — see [Authentication](#authentication).
 | `POST`   | `/api/watched`                                     | Mark the caller as having watched a season (`{ season_id }`)                                                                                                                                                                |
 | `DELETE` | `/api/watched/:season_id`                          | Unmark the caller for a season                                                                                                                                                                                              |
 | `PUT`    | `/api/currently-watching`                          | Set the caller's currently-watching season, or clear it (`{ season_id }`, nullable)                                                                                                                                         |
-| `POST`   | `/api/seasons/:season_id/episodes/:episode/posts`  | Add a discussion note, stamped with the caller's live watch-timer offset (`{ body }`)                                                                                                                                       |
+| `POST`   | `/api/seasons/:season_id/episodes/:episode/posts`  | Add a discussion note, stamped with the caller's live watch-timer offset and their author email (`{ body }`)                                                                                                                |
 | `GET`    | `/api/seasons/:season_id/discussion`               | Per-episode discussion state for a season, gated by the spoiler rule; each post carries `author_name`, `author_index`, and `mine`, and each episode's `authors` names its bylined individuals — emails are never serialized |
 | `POST`   | `/api/seasons/:season_id/episodes/:episode/reveal` | Open one episode's discussion board for reading (permanent)                                                                                                                                                                 |
 | `DELETE` | `/api/posts/:post_id`                              | Delete one of the caller's own discussion notes, scoped to the individual author; a note from before individual attribution stays deletable by the column                                                                   |

@@ -11,21 +11,25 @@
 -- Notes:
 --   * user ids are deliberately generic (user-1, user-2, …) so committed files
 --     reveal nothing about who the real people are.
---   * `name` is the column header shown on the board.
+--   * `users.name` is the column header shown on the board.
 --   * a couple shares one column (one users row, two user_emails rows).
 --   * email case is not significant — user_emails.email is COLLATE NOCASE, and
 --     the Worker lowercases the Access identity before looking it up.
---   * `name` is the individual's display name on a discussion note. Leave it
---     NULL for a one-person column — its notes fall back to the column name.
---     Set it for each half of a shared column, which is the whole point: it is
---     what turns a note bylined "Bob & Carol" into one bylined "Carol".
---   * this file upserts rather than ignores, so editing a name here and
---     re-applying updates the existing row instead of quietly doing nothing.
+--   * `user_emails.name` is the individual's display name on a discussion note.
+--     Leave it NULL for a one-person column — its notes fall back to the
+--     column name. Set it for each half of a shared column, which is the whole
+--     point: it is what turns a note bylined "Bob & Carol" into one bylined
+--     "Carol".
+--   * both blocks below upsert rather than ignore — users on conflict (id), and
+--     user_emails on conflict (email) — so editing a column name, a byline, or
+--     an email and re-applying updates the existing rows instead of quietly
+--     doing nothing.
 
-INSERT OR IGNORE INTO users (id, name, sort_order) VALUES
+INSERT INTO users (id, name, sort_order) VALUES
     ('user-1', 'Alice',        1),
     ('user-2', 'Bob & Carol',  2),
-    ('user-3', 'Dave & Erin',  3);
+    ('user-3', 'Dave & Erin',  3)
+ON CONFLICT (id) DO UPDATE SET name = excluded.name, sort_order = excluded.sort_order;
 
 INSERT INTO user_emails (email, user_id, name) VALUES
     ('alice@example.com', 'user-1', NULL),
