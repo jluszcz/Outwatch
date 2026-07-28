@@ -240,6 +240,41 @@ names and emails out of source control. `seed.sql` holds only optional sample
   `readable`) shows only the note count, the authors, and the caller's own
   notes; opening it (`POST .../reveal`) is permanent. Marking a whole season
   watched has the same effect on every one of its episodes.
+- The boards are an accordion: `SeasonView` owns a single `openEpisode` (an
+  episode number or `null`) and `EpisodeBoard` is controlled via `open` /
+  `onToggle`, so expanding one collapses the rest rather than burying it in a
+  tall stack. Keying on the episode number rather than component identity means
+  the open board survives the focus refetch.
+- `SeasonView` renders a fetch/mutation error as a banner **above** the view,
+  the way `App` does; only a failure with no data yet (the initial load) gets
+  the view to itself. It must not early-return on `error`, which would unmount
+  the whole view — discussion, open episode, and the text sitting unposted in
+  the box — on a transient failure, with only a reload or a tab-out to get it
+  back.
+- Posting shows its progress in the button (spinner + "Posting…", full contrast
+  via `aria-busy`) and leaves the textarea **enabled** throughout: disabling a
+  focused textarea blurs it, which on a phone tears down the keyboard mid-post
+  and never restores it. `busy` gates the submit path instead, so Enter can't
+  double-post. Because the box stays editable in flight, the success path clears
+  only the text that actually posted (`current === trimmed`), preserving
+  anything typed on top of it.
+- An open board reads controls → discussion → compose box: the
+  `.episode-actions` row leads `.episode-body`, then the notes, then the
+  `hidden-note` count, then `PostForm`. The controls sit above the list because
+  the list grows — as people post and as revealing unhides notes — and anything
+  below it moves every time it does.
+- The reveal button and the watch timer share one row (`.episode-actions`):
+  reveal left, timer pushed right by `margin-left: auto`. The row pins its own
+  height to `--control-height` rather than taking it from its tallest child,
+  because that child is the reveal button and it vanishes on reveal — a
+  content-sized row would shrink by a few pixels and pull the timer up under
+  the cursor mid-click. The row is `flex-wrap: wrap-reverse`, not `wrap`: only
+  genuinely narrow widths (below roughly `430px`) fail to fit both, and the
+  reversed cross axis puts the wrapped-off timer _above_ the button rather
+  than below it, so revealing still removes the button from under the timer.
+  Deliberately width-driven rather than gated on the `640px` breakpoint — the
+  controls fit on one line well below it, and a breakpoint would stack them
+  where they didn't need stacking.
 - Within an opened board, `orderPosts` (`utils.js`) places every note on one
   synced timeline by watch-timer offset instead of wall-clock time, using
   three cases per author: a real `offset_secs` is used as-is; an author who

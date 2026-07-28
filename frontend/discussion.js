@@ -12,6 +12,10 @@ export function SeasonView({ seasonId }) {
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    // Which episode's board is expanded, or null for none. Held here rather than
+    // per-board so opening one closes the rest: the boards are a tall stack, and
+    // leaving them all open buries the one you just opened.
+    const [openEpisode, setOpenEpisode] = useState(null);
 
     // One request: the discussion response names each note's author itself, so
     // there is no roster to fetch and merge here.
@@ -97,8 +101,14 @@ export function SeasonView({ seasonId }) {
         );
 
     if (loading) return html`<div class="loading">Loading…</div>`;
-    if (error) return html`<div class="error">${error}</div>`;
-    if (!data) return null;
+    // Only a failure with nothing to show yet (the initial load) gets the view to
+    // itself. Once there is data, an error is a banner *above* it, the way the
+    // board does it — a failed post must not unmount the view, because that
+    // takes the discussion, the open episode, and the text still sitting in the
+    // post box with it, and nothing short of a reload or a tab-out brings them
+    // back. The one mutation whose failure is recoverable was the one whose
+    // failure erased the most.
+    if (!data) return error ? html`<div class="error">${error}</div>` : null;
 
     // Anchors the ticking chip to the server's clock rather than a possibly-
     // wrong local one. Recomputed each render from the last response, so it
@@ -109,6 +119,7 @@ export function SeasonView({ seasonId }) {
     return html`
         <div class="season-view">
             <a class="back-link" href="#/">← Board</a>
+            ${error && html`<div class="error">${error}</div>`}
             <div class="season-view-head">
                 <h2 class="season-view-title">${seasonLabel(data.season)}</h2>
                 <a
@@ -133,6 +144,9 @@ export function SeasonView({ seasonId }) {
                             ep=${ep}
                             meId=${data.me?.id ?? null}
                             serverSkewMs=${serverSkewMs}
+                            open=${openEpisode === ep.episode}
+                            onToggle=${() =>
+                                setOpenEpisode((cur) => (cur === ep.episode ? null : ep.episode))}
                             onReveal=${reveal}
                             onPost=${addPost}
                             onDelete=${removePost}
@@ -146,8 +160,17 @@ export function SeasonView({ seasonId }) {
 
 // One episode's board. Locked boards are the default: you see the count and who
 // wrote, plus your own notes, and nothing else until you choose to open it.
-function EpisodeBoard({ ep, meId, serverSkewMs, onReveal, onPost, onDelete, onTimer }) {
-    const [open, setOpen] = useState(false);
+function EpisodeBoard({
+    ep,
+    meId,
+    serverSkewMs,
+    open,
+    onToggle,
+    onReveal,
+    onPost,
+    onDelete,
+    onTimer,
+}) {
     const placed = useMemo(() => orderPosts(ep.posts), [ep.posts]);
 
     const summary =
@@ -156,7 +179,7 @@ function EpisodeBoard({ ep, meId, serverSkewMs, onReveal, onPost, onDelete, onTi
 
     return html`
         <div class=${'episode-card' + (ep.readable ? '' : ' locked')}>
-            <button class="episode-head" aria-expanded=${open} onClick=${() => setOpen(!open)}>
+            <button class="episode-head" aria-expanded=${open} onClick=${onToggle}>
                 <span class="episode-name">Episode ${ep.episode}</span>
                 <span class="episode-meta">
                     ${ep.readable ? '' : '🔒 '}${summary}${
@@ -168,28 +191,49 @@ function EpisodeBoard({ ep, meId, serverSkewMs, onReveal, onPost, onDelete, onTi
                 open &&
                 html`
                     <div class="episode-body">
+                        ${
+                            // The controls sit above the discussion, not below
+                            // it, so they hold one position: a board's notes
+                            // grow as people post and as revealing unhides
+                            // them, and anything underneath that list moves
+                            // every time it does.
+                            //
+                            // One row: reveal on the left, timer pushed to the
+                            // right. Rendered only when it would hold something,
+                            // so a readable episode you can't post to doesn't
+                            // leave an empty band. The row holds its height on
+                            // its own (.episode-actions), so revealing removes
+                            // the button without dragging the timer upward.
+                            (!ep.readable || meId) &&
+                            html`
+                                <div class="episode-actions">
+                                    ${
+                                        !ep.readable &&
+                                        html`<button
+                                            class="reveal-btn"
+                                            onClick=${() => onReveal(ep.episode)}
+                                        >
+                                            Show discussion
+                                        </button>`
+                                    }
+                                    ${
+                                        meId &&
+                                        html`<${WatchTimer}
+                                            session=${ep.session}
+                                            serverSkewMs=${serverSkewMs}
+                                            onAction=${(action) => onTimer(ep.episode, action)}
+                                        />`
+                                    }
+                                </div>
+                            `
+                        }
                         <${PostList} placed=${placed} onDelete=${onDelete} />
                         ${
                             !ep.readable &&
-                            html`
-                                ${
-                                    ep.count > ep.posts.length &&
-                                    html`<div class="hidden-note">
-                                        — ${ep.count - ep.posts.length} notes hidden —
-                                    </div>`
-                                }
-                                <button class="reveal-btn" onClick=${() => onReveal(ep.episode)}>
-                                    Show discussion
-                                </button>
-                            `
-                        }
-                        ${
-                            meId &&
-                            html`<${WatchTimer}
-                                session=${ep.session}
-                                serverSkewMs=${serverSkewMs}
-                                onAction=${(action) => onTimer(ep.episode, action)}
-                            />`
+                            ep.count > ep.posts.length &&
+                            html`<div class="hidden-note">
+                                — ${ep.count - ep.posts.length} notes hidden —
+                            </div>`
                         }
                         ${meId && html`<${PostForm} onPost=${(body) => onPost(ep.episode, body)} />`}
                     </div>
@@ -323,7 +367,10 @@ function PostForm({ onPost }) {
             // error banner, and wiping what the user just typed on top of that
             // would silently discard it.
             const posted = await onPost(trimmed);
-            if (posted) setBody('');
+            // The box stays editable during the flight, so it may no longer hold
+            // what was submitted: clear only the text that actually posted, and
+            // leave anything typed on top of it alone.
+            if (posted) setBody((current) => (current === trimmed ? '' : current));
         } finally {
             setBusy(false);
         }
@@ -338,6 +385,11 @@ function PostForm({ onPost }) {
         submit(e);
     };
 
+    // The textarea deliberately stays enabled while a post is in flight.
+    // Disabling a focused textarea blurs it, which on a phone tears the keyboard
+    // down mid-post and does not bring it back — you tap the box again for every
+    // note. `busy` gates the submit path instead, so a second Enter can't
+    // double-post while the first is still going.
     return html`
         <form class="post-form" onSubmit=${submit}>
             <textarea
@@ -347,11 +399,17 @@ function PostForm({ onPost }) {
                 maxlength="2000"
                 placeholder="Write a note…"
                 value=${body}
-                disabled=${busy}
                 onInput=${(e) => setBody(e.target.value)}
                 onKeyDown=${keyDown}
             ></textarea>
-            <button class="post-submit" type="submit" disabled=${busy || !body.trim()}>Post</button>
+            <button
+                class="post-submit"
+                type="submit"
+                aria-busy=${busy}
+                disabled=${busy || !body.trim()}
+            >
+                ${busy ? html`<span class="spinner" aria-hidden="true"></span>Posting…` : 'Post'}
+            </button>
         </form>
     `;
 }
