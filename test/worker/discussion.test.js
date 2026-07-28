@@ -42,10 +42,10 @@ beforeEach(async () => {
         "INSERT INTO users (id, name, sort_order) VALUES ('user-bob', 'Bob & Carol', 2)",
     );
     await env.DB.exec(
-        'INSERT INTO user_emails (email, user_id) VALUES ' +
-            "('alice@example.com', 'user-alice'), " +
-            "('bob@example.com', 'user-bob'), " +
-            "('carol@example.com', 'user-bob')",
+        'INSERT INTO user_emails (email, user_id, name) VALUES ' +
+            "('alice@example.com', 'user-alice', NULL), " +
+            "('bob@example.com', 'user-bob', 'Bob'), " +
+            "('carol@example.com', 'user-bob', 'Carol')",
     );
     await env.DB.exec(
         'INSERT INTO seasons (id, subtitle, wikipedia_url, episode_count) VALUES ' +
@@ -153,6 +153,25 @@ describe('POST /api/seasons/:season_id/episodes/:episode/posts', () => {
         });
         expect(stranger.status).toBe(403);
     });
+
+    it('records which half of a shared column wrote the note', async () => {
+        await req('POST', '/api/seasons/45/episodes/7/posts', {
+            body: { body: 'she is cooked' },
+            email: 'carol@example.com',
+        });
+
+        const row = await env.DB.prepare('SELECT user_id, author_email FROM posts').first();
+        expect(row).toEqual({ user_id: 'user-bob', author_email: 'carol@example.com' });
+    });
+
+    it('does not echo the author email back to the client', async () => {
+        const r = await req('POST', '/api/seasons/45/episodes/7/posts', {
+            body: { body: 'called it' },
+            email: 'carol@example.com',
+        });
+        const { post } = await r.json();
+        expect(post).not.toHaveProperty('author_email');
+    });
 });
 
 const post = (email, episode, body) =>
@@ -178,7 +197,10 @@ describe('GET /api/seasons/:season_id/discussion', () => {
 
         expect(ep7.readable).toBe(false);
         expect(ep7.count).toBe(3);
-        expect(ep7.authors.sort()).toEqual(['user-alice', 'user-bob']);
+        expect(ep7.authors).toEqual([
+            { name: 'Bob', mine: false },
+            { name: 'Alice', mine: true },
+        ]);
         expect(ep7.posts).toHaveLength(1);
         expect(ep7.posts[0].body).toBe('called it');
     });
@@ -215,6 +237,125 @@ describe('GET /api/seasons/:season_id/discussion', () => {
 
     it('returns 400 for a non-numeric season id', async () => {
         expect((await req('GET', '/api/seasons/abc/discussion')).status).toBe(400);
+    });
+});
+
+describe('note attribution', () => {
+    // The whole point of the feature: two logins, one column, two bylines.
+    it('names each half of a shared column separately', async () => {
+        await post('bob@example.com', 7, 'no way she flips');
+        await post('carol@example.com', 7, 'she is cooked');
+        // Reading requires the episode be open — alice has not watched season 45.
+        await req('POST', '/api/seasons/45/episodes/7/reveal', { email: 'alice@example.com' });
+
+        const { episodes } = await (await discussion('alice@example.com')).json();
+        const names = episodes.find((e) => e.episode === 7).posts.map((p) => p.author_name);
+        expect(names).toEqual(['Bob', 'Carol']);
+    });
+
+    it('gives the two people distinct accent slots', async () => {
+        await post('bob@example.com', 7, 'one');
+        await post('carol@example.com', 7, 'two');
+        await req('POST', '/api/seasons/45/episodes/7/reveal', { email: 'alice@example.com' });
+
+        const { episodes } = await (await discussion('alice@example.com')).json();
+        const [first, second] = episodes.find((e) => e.episode === 7).posts;
+        expect(first.author_index).not.toBe(second.author_index);
+    });
+
+    // Viewer-independent: a person's colour must not shift depending on who is
+    // looking, which is the one thing an index computed per-request could get
+    // wrong.
+    it('gives a person the same slot whoever is asking', async () => {
+        await post('carol@example.com', 7, 'two');
+        await req('POST', '/api/seasons/45/episodes/7/reveal', { email: 'alice@example.com' });
+
+        const seenBy = async (email) => {
+            const { episodes } = await (await discussion(email)).json();
+            return episodes.find((e) => e.episode === 7).posts[0].author_index;
+        };
+        expect(await seenBy('alice@example.com')).toBe(await seenBy('bob@example.com'));
+    });
+
+    it('falls back to the column name when the roster has no individual name', async () => {
+        await post('alice@example.com', 7, 'called it');
+
+        const { episodes } = await (await discussion('alice@example.com')).json();
+        expect(episodes.find((e) => e.episode === 7).posts[0].author_name).toBe('Alice');
+    });
+
+    it('marks only your own notes as yours, not your partner’s', async () => {
+        await post('bob@example.com', 7, 'mine');
+        await post('carol@example.com', 7, 'theirs');
+
+        const { episodes } = await (await discussion('bob@example.com')).json();
+        expect(episodes.find((e) => e.episode === 7).posts.map((p) => p.mine)).toEqual([
+            true,
+            false,
+        ]);
+    });
+
+    // Un-attributed notes predate the feature. They belong to the column, so
+    // both partners still own them — matching what the delete route allows.
+    it('treats a note with no author as the whole column’s', async () => {
+        await post('bob@example.com', 7, 'from before');
+        await env.DB.exec('UPDATE posts SET author_email = NULL');
+
+        const { episodes } = await (await discussion('carol@example.com')).json();
+        const [only] = episodes.find((e) => e.episode === 7).posts;
+        expect(only).toMatchObject({ author_name: 'Bob & Carol', author_index: null, mine: true });
+    });
+
+    it('leaves an author who is no longer on the roster unplaceable', async () => {
+        await post('carol@example.com', 7, 'goodbye');
+        // posts.author_email has a real FK into user_emails, and D1 enforces it
+        // unconditionally (PRAGMA foreign_keys can't be turned off). Deferring
+        // the check for this one statement is the only way to land a post on a
+        // login the roster no longer has — exactly the state this test targets.
+        await env.DB.exec(
+            'PRAGMA defer_foreign_keys = ON; ' +
+                "UPDATE posts SET author_email = 'ghost@example.com'; " +
+                'PRAGMA defer_foreign_keys = OFF;',
+        );
+
+        const { episodes } = await (await discussion('bob@example.com')).json();
+        const [only] = episodes.find((e) => e.episode === 7).posts;
+        expect(only).toMatchObject({ author_name: 'Bob & Carol', author_index: null, mine: false });
+    });
+
+    it('names individuals in a locked episode’s author list', async () => {
+        await post('carol@example.com', 7, 'she is cooked');
+
+        const { episodes } = await (await discussion('alice@example.com')).json();
+        const ep = episodes.find((e) => e.episode === 7);
+        expect(ep.readable).toBe(false);
+        expect(ep.authors).toEqual([{ name: 'Carol', mine: false }]);
+    });
+
+    it('lists an author once however many notes they wrote', async () => {
+        await post('carol@example.com', 7, 'one');
+        await post('carol@example.com', 7, 'two');
+
+        const { episodes } = await (await discussion('alice@example.com')).json();
+        expect(episodes.find((e) => e.episode === 7).authors).toHaveLength(1);
+    });
+
+    // The spoiler gate stays column-level: a couple watches together, so a
+    // partner's note is not a spoiler even on an episode you have not opened.
+    it('still shows a partner’s notes on a locked board', async () => {
+        await post('carol@example.com', 7, 'she is cooked');
+
+        const { episodes } = await (await discussion('bob@example.com')).json();
+        const ep = episodes.find((e) => e.episode === 7);
+        expect(ep.readable).toBe(false);
+        expect(ep.posts).toHaveLength(1);
+    });
+
+    it('never serializes an email', async () => {
+        await post('carol@example.com', 7, 'she is cooked');
+
+        const body = await (await discussion('carol@example.com')).text();
+        expect(body).not.toContain('@example.com');
     });
 });
 
@@ -296,9 +437,28 @@ describe('DELETE /api/posts/:post_id', () => {
         expect(r.status).toBe(404);
     });
 
-    it('lets either partner of a shared column delete the column’s note', async () => {
+    it('refuses to delete a note your partner wrote', async () => {
         const { post: theirs } = await (await post('bob@example.com', 7, 'ours')).json();
         const r = await req('DELETE', `/api/posts/${theirs.id}`, { email: 'carol@example.com' });
+        expect(r.status).toBe(404);
+
+        const row = await env.DB.prepare('SELECT COUNT(*) AS count FROM posts').first();
+        expect(row.count).toBe(1);
+    });
+
+    it('lets you delete your own note from a shared column', async () => {
+        const { post: mine } = await (await post('carol@example.com', 7, 'mine')).json();
+        const r = await req('DELETE', `/api/posts/${mine.id}`, { email: 'carol@example.com' });
+        expect(r.status).toBe(200);
+    });
+
+    // An un-attributed note predates individual authorship. It belongs to the
+    // column, so either partner may delete it rather than it being stranded.
+    it('lets either partner delete a note with no recorded author', async () => {
+        const { post: old } = await (await post('bob@example.com', 7, 'from before')).json();
+        await env.DB.exec('UPDATE posts SET author_email = NULL');
+
+        const r = await req('DELETE', `/api/posts/${old.id}`, { email: 'carol@example.com' });
         expect(r.status).toBe(200);
     });
 

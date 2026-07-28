@@ -38,6 +38,7 @@ It is a sibling of the **Seen** project and follows the same stack and structure
     - `0003_currently_watching.sql` — adds `users.currently_watching_season_id`
     - `0004_email_nocase.sql` — rebuilds `user_emails` with `COLLATE NOCASE` emails
     - `0005_discussions.sql` — adds `seasons.episode_count`; creates `posts`, `reveals`, `watch_sessions`
+    - `0006_individual_authors.sql` — adds `user_emails.name` and `posts.author_email`
 - `roster.sql` — real roster: `users` (names) + `user_emails` (emails), with generic `user-N` ids (gitignored; template in `roster.example.sql`)
 - `test/` — Tests
     - `test/worker/` — Worker API tests (`@cloudflare/vitest-pool-workers`)
@@ -132,6 +133,12 @@ Never bypass either with `--no-verify`.
   partner acts as the same column. All mutations attribute to the caller's own
   `users.id` — there is no client-supplied user id, so you can only toggle your own
   column.
+- `callerUser()` resolves to `{ id, name, email }`, carrying the verified email
+  alongside the column. The email rides along only for note authorship: a
+  discussion note is bylined to the individual, not the column, so it's the one
+  mutation that needs to tell a shared column's two logins apart. Every other
+  mutation — watched, currently-watching, reveals, timers — still attributes to
+  `users.id` alone, and the email is never serialized to the client.
 - Local dev bypasses Access, so there is no token to verify; `DEV_USER_EMAIL` (in
   `.dev.vars`) simulates a signed-in user, and the `ACCESS_*` settings are unused.
 - Worker tests authenticate with real signed tokens: `test/worker/access-token.js`
@@ -141,10 +148,10 @@ Never bypass either with `--no-verify`.
 ### Database Schema
 
 - `users` — `id`, `name` (column header), `sort_order`, `currently_watching_season_id` (added in `0003`, `NULL` when not watching anything); one row per board column
-- `user_emails` — `email` PK, `user_id`; maps each Access login email to a column (couples have two rows)
+- `user_emails` — `email` PK, `user_id`, `name` (added in `0006`, the individual's byline on a discussion note; `NULL` falls back to the column's `users.name`); maps each Access login email to a column (couples have two rows)
 - `seasons` — `id` (the season number), `subtitle` (may be empty), `wikipedia_url`, `episode_count` (added in `0005`, from Wikipedia's episode table, excluding the reunion special)
 - `watched` — `(user_id, season_id)` PK + `created_at`; presence = watched
-- `posts` — one row per discussion note: `id`, `season_id`, `episode`, `user_id`, `body`, `created_at`, `offset_secs` (the writer's watch-timer offset at post time, frozen, `NULL` if no timer was running)
+- `posts` — one row per discussion note: `id`, `season_id`, `episode`, `user_id`, `body`, `created_at`, `offset_secs` (the writer's watch-timer offset at post time, frozen, `NULL` if no timer was running), `author_email` (added in `0006`, `REFERENCES user_emails (email)`; who wrote the note, `NULL` on notes predating individual attribution, which fall back to the column for both the byline and the delete rule)
 - `reveals` — `(user_id, season_id, episode)` PK + `created_at`; presence = that user opened that episode's board for reading (one-way — there is no re-lock)
 - `watch_sessions` — `(user_id, season_id, episode)` PK, `elapsed_secs`, `running_since` (`NULL` while paused), `last_activity_at`; a running or paused watch timer, stale after three hours of inactivity
 
@@ -161,10 +168,10 @@ names and emails out of source control. `seed.sql` holds only optional sample
 - `POST /api/watched` — `{ season_id }`; marks the caller watched (idempotent, `INSERT OR IGNORE`); also clears the season as the caller's currently-watching, atomically via `DB.batch`
 - `DELETE /api/watched/:season_id` — unmarks the caller (no-op safe)
 - `PUT /api/currently-watching` — `{ season_id }` (nullable); sets the caller's currently-watching season, or clears it with `null`. Invariant: it's always one of the caller's unwatched seasons — a season the caller has already watched is rejected with 409.
-- `POST /api/seasons/:season_id/episodes/:episode/posts` — `{ body }`; adds a discussion note, stamped with the caller's live watch-timer offset (or `null` if no timer is running); also touches the timer session's `last_activity_at`
-- `GET /api/seasons/:season_id/discussion` — `{ season, me, now, episodes }`; each episode carries `episode`, `readable`, `count`, `authors`, gated `posts`, and the caller's timer `session`. **The spoiler rule**: an episode's foreign post bodies are readable only once the caller has watched the whole season or explicitly revealed that episode, and this is enforced server-side — a locked body is never serialized into the response.
+- `POST /api/seasons/:season_id/episodes/:episode/posts` — `{ body }`; adds a discussion note, stamped with the caller's live watch-timer offset (or `null` if no timer is running) and their `author_email`; also touches the timer session's `last_activity_at`
+- `GET /api/seasons/:season_id/discussion` — `{ season, me, now, episodes }`; each episode carries `episode`, `readable`, `count`, `authors` (now `[{ name, mine }]`, one per distinct individual rather than per user id), gated `posts`, and the caller's timer `session`. Each post still carries `user_id`, plus `author_name`, `author_index` (a viewer-independent position in the roster of individuals, used for the accent stripe; `null` when the author can't be placed), and `mine` (server-computed ownership); emails are never serialized. **The spoiler rule**: an episode's foreign post bodies are readable only once the caller has watched the whole season or explicitly revealed that episode, and this is enforced server-side — a locked body is never serialized into the response.
 - `POST /api/seasons/:season_id/episodes/:episode/reveal` — opens one episode for reading; permanent and idempotent (`INSERT OR IGNORE`); watching the season has the same effect for all of its episodes without writing a row per episode
-- `DELETE /api/posts/:post_id` — deletes one of the caller's own notes; a post that isn't theirs and one that doesn't exist both 404, so the route can't be used to probe which post ids are real
+- `DELETE /api/posts/:post_id` — deletes one of the caller's own notes, scoped to the individual author who wrote it; a note with no recorded `author_email` predates attribution and stays deletable by the column. A post that isn't theirs and one that doesn't exist both 404, so the route can't be used to probe which post ids are real
 - `POST /api/seasons/:season_id/episodes/:episode/timer` — `{ action: "start" | "pause" | "resume" }`; drives the caller's watch timer for that episode. `start` always zeroes the session; `pause`/`resume` return 409 both when there is no session to act on and when one exists but has gone stale (three hours idle) — either way nothing is written and the caller starts a new session instead of reviving the old one.
 
 ### Frontend
@@ -223,6 +230,12 @@ names and emails out of source control. `seed.sql` holds only optional sample
   `SeasonView`, that season's per-episode discussion boards — a hash beats a
   router library for the app's one extra route, and it also makes Back work,
   survives a reload, and gives each season a link you can paste into chat.
+- `SeasonView` fetches only `/api/seasons/:season_id/discussion` — the response
+  already names each post's author, so there's no separate `/api/board` fetch
+  or roster to merge here, and the season view is a single request.
+  `authorAccent` (`utils.js`) takes a post (`{ mine, author_index }`) and reads
+  those fields for its stripe colour, rather than searching the roster with a
+  `(userId, meId, users)` triple.
 - `SeasonView` renders one `EpisodeBoard` per episode. A locked board (not
   `readable`) shows only the note count, the authors, and the caller's own
   notes; opening it (`POST .../reveal`) is permanent. Marking a whole season

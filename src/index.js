@@ -79,13 +79,19 @@ async function callerEmail(c) {
 async function callerUser(c) {
     const email = await callerEmail(c);
     if (!email) return null;
-    return c.env.DB.prepare(
+    const column = await c.env.DB.prepare(
         `SELECT users.id, users.name
          FROM user_emails JOIN users ON users.id = user_emails.user_id
          WHERE user_emails.email = ?`,
     )
         .bind(email)
         .first();
+    // The row identifies the column; the email identifies the person inside it.
+    // A shared column has two logins, and discussion notes need to tell them
+    // apart — so the email rides along rather than being dropped here. It is
+    // never serialized: routes that echo the caller pick `id` and `name`
+    // explicitly.
+    return column && { ...column, email };
 }
 
 app.get('/api/board', async (c) => {
@@ -289,10 +295,10 @@ app.post(
         // there is no session row.
         const [inserted] = await c.env.DB.batch([
             c.env.DB.prepare(
-                `INSERT INTO posts (season_id, episode, user_id, body, created_at, offset_secs)
-                 VALUES (?, ?, ?, ?, ?, ?)
+                `INSERT INTO posts (season_id, episode, user_id, body, created_at, offset_secs, author_email)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)
                  RETURNING id, season_id, episode, user_id, body, created_at, offset_secs`,
-            ).bind(season.id, episode, me.id, body, now, offsetSecs),
+            ).bind(season.id, episode, me.id, body, now, offsetSecs, me.email),
             c.env.DB.prepare(
                 `UPDATE watch_sessions SET last_activity_at = ?
                  WHERE user_id = ? AND season_id = ? AND episode = ?`,
@@ -302,6 +308,48 @@ app.post(
         return c.json({ success: true, post: inserted.results[0] }, 201);
     },
 );
+
+// The roster seen as individuals rather than as columns: one entry per login,
+// ordered so it does not depend on who is asking. That ordering is what makes
+// an author's accent slot stable — a person keeps the same colour across
+// reloads and across everyone's screens, for as long as the roster's shape
+// doesn't change; adding or removing an entry that sorts earlier reshuffles
+// every index after it, which is rare and only costs a colour. `name` falls
+// back to the column's own name, which is what a solo column and a
+// not-yet-named roster entry get.
+async function rosterPeople(c) {
+    const { results } = await c.env.DB.prepare(
+        `SELECT user_emails.email AS email, user_emails.name AS person_name,
+                users.id AS user_id, users.name AS user_name
+         FROM user_emails JOIN users ON users.id = user_emails.user_id
+         ORDER BY users.sort_order ASC, users.name ASC, user_emails.email ASC`,
+    ).all();
+
+    const byEmail = new Map();
+    const columnName = new Map();
+    results.forEach((row, index) => {
+        // user_emails.email is COLLATE NOCASE, so the stored spelling may differ
+        // from the lowercased one written onto a post. Key on the lowered form.
+        byEmail.set(row.email.toLowerCase(), { index, name: row.person_name || row.user_name });
+        columnName.set(row.user_id, row.user_name);
+    });
+    return { byEmail, columnName };
+}
+
+// A note's author. The individual when the note carries an email the roster
+// still knows, the column otherwise — which covers every note written before
+// authorship was recorded and anyone since removed from the roster. `mine`
+// mirrors exactly what DELETE /api/posts/:post_id permits, so the delete button
+// the client draws from it is never a button the server would refuse.
+function attribute(post, people, me) {
+    const email = post.author_email ? post.author_email.toLowerCase() : null;
+    const person = email ? people.byEmail.get(email) : null;
+    return {
+        author_name: person?.name ?? people.columnName.get(post.user_id) ?? 'Someone',
+        author_index: person ? person.index : null,
+        mine: Boolean(me) && post.user_id === me.id && (email === null || email === me.email),
+    };
+}
 
 // The spoiler gate. An episode is readable when the caller has watched the whole
 // season or has explicitly opened that episode. Everything else about the
@@ -322,10 +370,10 @@ app.get('/api/seasons/:season_id/discussion', async (c) => {
 
     const me = await callerUser(c);
 
-    const [{ results: posts }, watchedRow, { results: reveals }, { results: sessions }] =
+    const [{ results: posts }, watchedRow, { results: reveals }, { results: sessions }, people] =
         await Promise.all([
             c.env.DB.prepare(
-                `SELECT id, episode, user_id, body, created_at, offset_secs
+                `SELECT id, episode, user_id, body, created_at, offset_secs, author_email
                  FROM posts WHERE season_id = ? ORDER BY episode ASC, id ASC`,
             )
                 .bind(seasonId)
@@ -350,6 +398,7 @@ app.get('/api/seasons/:season_id/discussion', async (c) => {
                       .bind(me.id, seasonId)
                       .all()
                 : { results: [] },
+            rosterPeople(c),
         ]);
 
     const watchedSeason = watchedRow != null;
@@ -369,11 +418,29 @@ app.get('/api/seasons/:season_id/discussion', async (c) => {
 
         // Authors are named even on a locked board: the main board already shows
         // who has watched which season, so this reveals nothing new — and it
-        // tells you whether opening the board is worth it.
-        const authors = [...new Set(all.map((p) => p.user_id))];
+        // tells you whether opening the board is worth it. Deduped on the author
+        // key rather than the display name, so two people who share a first name
+        // still list twice. The key mixes two spaces — author_email when a note
+        // has one, user_id when it doesn't — so until the one-time backfill
+        // attributes every pre-existing note, a household with both an old and a
+        // new note lists twice (once as the column, once as the individual).
+        // Self-healing once the backfill lands, and the conservative choice
+        // given the data: there is no way to tell from a NULL author_email alone
+        // whether it's the same person as a later attributed one.
+        const authors = [];
+        const seenAuthors = new Set();
+        for (const p of all) {
+            const key = p.author_email ? p.author_email.toLowerCase() : p.user_id;
+            if (seenAuthors.has(key)) continue;
+            seenAuthors.add(key);
+            const { author_name, mine } = attribute(p, people, me);
+            authors.push({ name: author_name, mine });
+        }
 
         // The one line that matters. On a locked board only the caller's own
-        // posts survive; nobody else's body reaches the response.
+        // column's posts survive; nobody else's body reaches the response.
+        // Column-level, not per-person: a couple watches together, so a
+        // partner's note is not a spoiler.
         const visible = readable ? all : all.filter((p) => me && p.user_id === me.id);
 
         const session = sessionByEpisode.get(episode) ?? null;
@@ -388,6 +455,7 @@ app.get('/api/seasons/:season_id/discussion', async (c) => {
                 body: p.body,
                 created_at: p.created_at,
                 offset_secs: p.offset_secs,
+                ...attribute(p, people, me),
             })),
             session: session
                 ? {
@@ -432,9 +500,12 @@ app.post('/api/seasons/:season_id/episodes/:episode/reveal', async (c) => {
 });
 
 // Season-agnostic: a post id alone identifies the row, so this doesn't go
-// through resolveEpisode. Deleting a note you do not own and deleting one that
-// never existed return the same 404 — a distinct "forbidden" would turn this
-// route into an oracle for which post ids are real.
+// through resolveEpisode. Ownership is the individual, not the column — your
+// partner's note is not yours to delete — except for a note with no recorded
+// author, which predates individual attribution and so belongs to the column.
+// Deleting a note you do not own and deleting one that never existed return the
+// same 404: a distinct "forbidden" would turn this route into an oracle for
+// which post ids are real.
 app.delete('/api/posts/:post_id', async (c) => {
     const me = await callerUser(c);
     if (!me) return c.json({ error: 'Your account is not on the watch list' }, 403);
@@ -444,8 +515,11 @@ app.delete('/api/posts/:post_id', async (c) => {
         return c.json({ error: 'post_id must be a positive integer' }, 400);
     }
 
-    const { meta } = await c.env.DB.prepare('DELETE FROM posts WHERE id = ? AND user_id = ?')
-        .bind(postId, me.id)
+    const { meta } = await c.env.DB.prepare(
+        `DELETE FROM posts
+         WHERE id = ? AND user_id = ? AND (author_email = ? OR author_email IS NULL)`,
+    )
+        .bind(postId, me.id, me.email)
         .run();
     if (meta.changes === 0) return c.json({ error: 'Unknown post' }, 404);
 
