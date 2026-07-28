@@ -7,6 +7,10 @@ import { REACTIONS } from '../shared/reactions.js';
 
 const html = htm.bind(h);
 
+// emoji -> label, built once rather than a REACTIONS.find() per chip per
+// render. Used for a chip's accessible name (see ReactionBar).
+const REACTION_LABELS = new Map(REACTIONS.map(({ emoji, label }) => [emoji, label]));
+
 // The accent class for a note — 'mine' | 1..N | null, where null leaves it
 // unstriped rather than inventing a colour for an author who left the roster.
 export function accentClass(source) {
@@ -142,8 +146,11 @@ function EditForm({ post, onSave, onCancel }) {
 
 // A note's existing reactions. The server sends them in set order with the
 // counts and names already resolved, so this only draws them. `mine` fills the
-// chip in and is what tapping it toggles.
-function ReactionBar({ post, onReact }) {
+// chip in and is what tapping it toggles. The bar still renders for a viewer
+// with no `meId` — the counts and names are information they're entitled to
+// see — but each chip is disabled, since reacting, like every other control in
+// the action row, requires being on the roster.
+function ReactionBar({ post, meId, onReact }) {
     return html`
         <div class="reaction-bar">
             ${post.reactions.map(
@@ -152,7 +159,9 @@ function ReactionBar({ post, onReact }) {
                         key=${r.emoji}
                         class=${'reaction-chip' + (r.mine ? ' mine' : '')}
                         aria-pressed=${r.mine}
+                        aria-label=${`${REACTION_LABELS.get(r.emoji)}: ${r.count}`}
                         title=${r.names.join(', ')}
+                        disabled=${!meId}
                         onClick=${() => onReact(post.id, r.emoji, !r.mine)}
                     >
                         <span aria-hidden="true">${r.emoji}</span>${r.count}
@@ -231,7 +240,10 @@ function Post({
                           />`
                         : html`<span class="post-body">${post.body}</span>`
                 }
-                ${post.reactions.length > 0 && html`<${ReactionBar} post=${post} onReact=${onReact} />`}
+                ${
+                    post.reactions.length > 0 &&
+                    html`<${ReactionBar} post=${post} meId=${meId} onReact=${onReact} />`
+                }
                 ${pickerOpen && html`<${EmojiPicker} post=${post} onReact=${onReact} />`}
             </div>
             ${

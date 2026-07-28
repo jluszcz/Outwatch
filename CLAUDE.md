@@ -321,7 +321,7 @@ names and emails out of source control. `seed.sql` holds only optional sample
   with `PostForm`'s compose box, extracted from `PostForm.fit` rather than
   duplicated, and stays enabled while saving for the same reason `PostForm`'s
   does.
-- Reacting is one emoji picker button (`☺+`, third in the action row: `↰ ☺+ ✎
+- Reacting is one emoji picker button (`☺+`, second in the action row: `↰ ☺+ ✎
 ×`) plus a `ReactionBar` of chips (`post.js`), both driven by the four-emoji
   set in `shared/reactions.js` — the same module the Worker
   validates against, so the picker can never offer an emoji the server would
