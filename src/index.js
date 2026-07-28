@@ -4,6 +4,7 @@ import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 
 import { sessionOffsetSecs } from '../shared/session.js';
+import { REACTIONS } from '../shared/reactions.js';
 import { accessTokenEmail } from './access.js';
 
 const app = new Hono();
@@ -49,6 +50,14 @@ const postCreate = z.object({
 });
 
 const postEdit = z.object({ body: postBody });
+
+const reactionUpdate = z.object({
+    emoji: z.enum(
+        REACTIONS.map((r) => r.emoji),
+        { message: 'emoji must be one of the supported reactions' },
+    ),
+    on: z.boolean({ message: 'on must be true or false' }),
+});
 
 app.onError((err, c) => {
     // An HTTPException is an intentional HTTP error (e.g. Hono's 400 for a
@@ -420,6 +429,24 @@ function quoteOf(post, byId, visibleIds, people, me) {
     return { id: parent.id, author_name, author_index, mine, body: parent.body };
 }
 
+// A note's reactions, in REACTIONS order, omitting any nobody used. Names
+// rather than a bare count: on a roster this size "2" says almost nothing and
+// "Bob, Carol" says all of it. Only ever called for posts that survived the
+// visibility filter, so a locked board carries no counts and no names.
+function reactionsOf(postId, byPost, people, me) {
+    const rows = byPost.get(postId);
+    if (!rows) return [];
+    return REACTIONS.map(({ emoji }) => {
+        const hits = rows.filter((r) => r.emoji === emoji);
+        return {
+            emoji,
+            count: hits.length,
+            mine: Boolean(me) && hits.some((r) => r.email.toLowerCase() === me.email),
+            names: hits.map((r) => people.byEmail.get(r.email.toLowerCase())?.name ?? 'Someone'),
+        };
+    }).filter((r) => r.count > 0);
+}
+
 // The spoiler gate. An episode is readable when the caller has watched the whole
 // season or has explicitly opened that episode. Everything else about the
 // feature follows from this one predicate — and it is evaluated here, on the
@@ -439,37 +466,50 @@ app.get('/api/seasons/:season_id/discussion', async (c) => {
 
     const me = await callerUser(c);
 
-    const [{ results: posts }, watchedRow, { results: reveals }, { results: sessions }, people] =
-        await Promise.all([
-            c.env.DB.prepare(
-                `SELECT id, episode, user_id, body, created_at, offset_secs, author_email,
-                        reply_to_post_id, edited_at
-                 FROM posts WHERE season_id = ? ORDER BY episode ASC, id ASC`,
-            )
-                .bind(seasonId)
-                .all(),
-            me
-                ? c.env.DB.prepare('SELECT 1 FROM watched WHERE user_id = ? AND season_id = ?')
-                      .bind(me.id, seasonId)
-                      .first()
-                : null,
-            me
-                ? c.env.DB.prepare(
-                      'SELECT episode FROM reveals WHERE user_id = ? AND season_id = ?',
-                  )
-                      .bind(me.id, seasonId)
-                      .all()
-                : { results: [] },
-            me
-                ? c.env.DB.prepare(
-                      `SELECT episode, elapsed_secs, running_since, last_activity_at
-                       FROM watch_sessions WHERE user_id = ? AND season_id = ?`,
-                  )
-                      .bind(me.id, seasonId)
-                      .all()
-                : { results: [] },
-            rosterPeople(c),
-        ]);
+    const [
+        { results: posts },
+        watchedRow,
+        { results: reveals },
+        { results: sessions },
+        people,
+        { results: reactionRows },
+    ] = await Promise.all([
+        c.env.DB.prepare(
+            `SELECT id, episode, user_id, body, created_at, offset_secs, author_email,
+                    reply_to_post_id, edited_at
+             FROM posts WHERE season_id = ? ORDER BY episode ASC, id ASC`,
+        )
+            .bind(seasonId)
+            .all(),
+        me
+            ? c.env.DB.prepare('SELECT 1 FROM watched WHERE user_id = ? AND season_id = ?')
+                  .bind(me.id, seasonId)
+                  .first()
+            : null,
+        me
+            ? c.env.DB.prepare('SELECT episode FROM reveals WHERE user_id = ? AND season_id = ?')
+                  .bind(me.id, seasonId)
+                  .all()
+            : { results: [] },
+        me
+            ? c.env.DB.prepare(
+                  `SELECT episode, elapsed_secs, running_since, last_activity_at
+                   FROM watch_sessions WHERE user_id = ? AND season_id = ?`,
+              )
+                  .bind(me.id, seasonId)
+                  .all()
+            : { results: [] },
+        rosterPeople(c),
+        // One query for the season's reactions rather than one per note; grouped
+        // below alongside the posts themselves.
+        c.env.DB.prepare(
+            `SELECT reactions.post_id AS post_id, reactions.email AS email, reactions.emoji AS emoji
+             FROM reactions JOIN posts ON posts.id = reactions.post_id
+             WHERE posts.season_id = ?`,
+        )
+            .bind(seasonId)
+            .all(),
+    ]);
 
     const watchedSeason = watchedRow != null;
     const revealed = new Set(reveals.map((r) => r.episode));
@@ -481,6 +521,12 @@ app.get('/api/seasons/:season_id/discussion', async (c) => {
         byEpisode.get(p.episode).push(p);
     }
     const byId = new Map(posts.map((p) => [p.id, p]));
+
+    const reactionsByPost = new Map();
+    for (const r of reactionRows) {
+        if (!reactionsByPost.has(r.post_id)) reactionsByPost.set(r.post_id, []);
+        reactionsByPost.get(r.post_id).push(r);
+    }
 
     const episodes = [];
     for (let episode = 1; episode <= season.episode_count; episode++) {
@@ -529,6 +575,7 @@ app.get('/api/seasons/:season_id/discussion', async (c) => {
                 offset_secs: p.offset_secs,
                 edited_at: p.edited_at,
                 reply_to: quoteOf(p, byId, visibleIds, people, me),
+                reactions: reactionsOf(p.id, reactionsByPost, people, me),
                 ...attribute(p, people, me),
             })),
             session: session
@@ -572,6 +619,48 @@ app.post('/api/seasons/:season_id/episodes/:episode/reveal', async (c) => {
 
     return c.json({ success: true, season_id: season.id, episode });
 });
+
+// A reaction is the individual's, so it is keyed on the caller's verified email
+// rather than their column — both halves of a shared column react separately.
+// `on` is explicit rather than a toggle, which makes the route idempotent: a
+// double tap cannot flip the state twice, and a retry after a dropped response
+// is harmless. The emoji travels in the body rather than the path because every
+// one of them is an astral character a path param carries only percent-encoded.
+app.put(
+    '/api/posts/:post_id/reactions',
+    zValidator('json', reactionUpdate, onInvalid),
+    async (c) => {
+        const me = await callerUser(c);
+        if (!me) return c.json({ error: 'Your account is not on the watch list' }, 403);
+
+        const postId = Number(c.req.param('post_id'));
+        if (!Number.isInteger(postId) || postId <= 0) {
+            return c.json({ error: 'post_id must be a positive integer' }, 400);
+        }
+
+        // Same gate, same 404: you cannot react to a note you cannot read.
+        const post = await visiblePost(c, postId, me);
+        if (!post) return c.json({ error: 'Unknown post' }, 404);
+
+        const { emoji, on } = c.req.valid('json');
+        if (on) {
+            await c.env.DB.prepare(
+                `INSERT OR IGNORE INTO reactions (post_id, email, emoji, created_at)
+             VALUES (?, ?, ?, ?)`,
+            )
+                .bind(postId, me.email, emoji, new Date().toISOString())
+                .run();
+        } else {
+            await c.env.DB.prepare(
+                'DELETE FROM reactions WHERE post_id = ? AND email = ? AND emoji = ?',
+            )
+                .bind(postId, me.email, emoji)
+                .run();
+        }
+
+        return c.json({ success: true, post_id: postId, emoji, on });
+    },
+);
 
 // Editing a note changes its body and nothing else: created_at and offset_secs
 // are frozen, so the note holds its place on the timeline however often it is

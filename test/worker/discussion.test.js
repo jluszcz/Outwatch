@@ -30,6 +30,7 @@ async function req(method, path, { body, email, envOverrides } = {}) {
 beforeEach(async () => {
     // Serve the test signing key the way Cloudflare serves the team's real one.
     await stubJwksEndpoint();
+    await env.DB.exec('DELETE FROM reactions');
     await env.DB.exec('DELETE FROM watch_sessions');
     await env.DB.exec('DELETE FROM reveals');
     await env.DB.exec('DELETE FROM posts');
@@ -49,7 +50,8 @@ beforeEach(async () => {
     );
     await env.DB.exec(
         'INSERT INTO seasons (id, subtitle, wikipedia_url, episode_count) VALUES ' +
-            "(45, '', 'https://en.wikipedia.org/wiki/Survivor_45', 13)",
+            "(45, '', 'https://en.wikipedia.org/wiki/Survivor_45', 13), " +
+            "(46, '', 'https://en.wikipedia.org/wiki/Survivor_46', 13)",
     );
 });
 
@@ -688,6 +690,21 @@ describe('quote replies', () => {
         expect(r.status).toBe(404);
     });
 
+    // The reply-parent check enforces both axes independently: same episode
+    // number is not enough if it belongs to a different season. The parent is
+    // the caller's own note, so it is visible regardless of watched/reveal
+    // state — isolating the season mismatch from the visibility gate.
+    it('returns 404 for a parent in another season', async () => {
+        const { post: parent } = await (
+            await req('POST', '/api/seasons/46/episodes/7/posts', {
+                body: { body: 'season 46 note' },
+                email: 'alice@example.com',
+            })
+        ).json();
+        const r = await postNote('alice@example.com', 'reply', 7, parent.id);
+        expect(r.status).toBe(404);
+    });
+
     it('returns 404 for a parent the caller cannot see', async () => {
         const { post: parent } = await (await postNote('bob@example.com', 'secret')).json();
         const r = await postNote('alice@example.com', 'reply', 7, parent.id);
@@ -820,5 +837,116 @@ describe('PATCH /api/posts/:post_id', () => {
         const ep = await episodeView('alice@example.com');
         const reply = ep.posts.find((x) => x.body === 'quoting');
         expect(reply.reply_to.body).toBe('after');
+    });
+});
+
+async function react(email, postId, emoji, on) {
+    return req('PUT', `/api/posts/${postId}/reactions`, { body: { emoji, on }, email });
+}
+
+describe('PUT /api/posts/:post_id/reactions', () => {
+    it('adds a reaction and is idempotent', async () => {
+        const { post: p } = await (await postNote('alice@example.com', 'note')).json();
+        expect((await react('alice@example.com', p.id, '👍', true)).status).toBe(200);
+        await react('alice@example.com', p.id, '👍', true);
+
+        const ep = await episodeView('alice@example.com');
+        expect(ep.posts[0].reactions).toEqual([
+            { emoji: '👍', count: 1, mine: true, names: ['Alice'] },
+        ]);
+    });
+
+    it('removes a reaction, and removing an absent one is a no-op', async () => {
+        const { post: p } = await (await postNote('alice@example.com', 'note')).json();
+        await react('alice@example.com', p.id, '👍', true);
+        await react('alice@example.com', p.id, '👍', false);
+        expect((await react('alice@example.com', p.id, '👍', false)).status).toBe(200);
+
+        const ep = await episodeView('alice@example.com');
+        expect(ep.posts[0].reactions).toEqual([]);
+    });
+
+    it('lets one person apply several different emoji, in set order', async () => {
+        const { post: p } = await (await postNote('alice@example.com', 'note')).json();
+        await react('alice@example.com', p.id, '😮', true);
+        await react('alice@example.com', p.id, '👍', true);
+
+        const ep = await episodeView('alice@example.com');
+        expect(ep.posts[0].reactions.map((r) => r.emoji)).toEqual(['👍', '😮']);
+    });
+
+    // Reactions are the individual's, so the two halves of a shared column count
+    // separately — unlike the watched checkbox they sit beside.
+    it('counts both halves of a shared column separately', async () => {
+        const { post: p } = await (await postNote('alice@example.com', 'note')).json();
+        await revealEpisode('bob@example.com');
+        await revealEpisode('carol@example.com');
+        await react('bob@example.com', p.id, '🤣', true);
+        await react('carol@example.com', p.id, '🤣', true);
+
+        const ep = await episodeView('alice@example.com');
+        const [chip] = ep.posts[0].reactions;
+        expect(chip.count).toBe(2);
+        expect(chip.names.sort()).toEqual(['Bob', 'Carol']);
+        expect(chip.mine).toBe(false);
+    });
+
+    it('allows reacting to your own note', async () => {
+        const { post: p } = await (await postNote('alice@example.com', 'note')).json();
+        expect((await react('alice@example.com', p.id, '🤣', true)).status).toBe(200);
+    });
+
+    it('returns 400 for an emoji outside the set', async () => {
+        const { post: p } = await (await postNote('alice@example.com', 'note')).json();
+        for (const emoji of ['❤️', '🐍', 'x', '']) {
+            expect((await react('alice@example.com', p.id, emoji, true)).status).toBe(400);
+        }
+    });
+
+    it('returns 404 for a post the caller cannot see', async () => {
+        const { post: p } = await (await postNote('bob@example.com', 'hidden')).json();
+        expect((await react('alice@example.com', p.id, '👍', true)).status).toBe(404);
+    });
+
+    it('returns 404 for a post that does not exist', async () => {
+        expect((await react('alice@example.com', 999999, '👍', true)).status).toBe(404);
+    });
+
+    it('serializes no reactions for a foreign post on a locked board', async () => {
+        const { post: p } = await (await postNote('bob@example.com', 'locked body')).json();
+        await react('bob@example.com', p.id, '👍', true);
+
+        const ep = await episodeView('alice@example.com');
+        expect(ep.readable).toBe(false);
+        expect(ep.posts).toHaveLength(0);
+        expect(JSON.stringify(ep)).not.toContain('👍');
+    });
+
+    it('takes a post reactions with it when the post is deleted', async () => {
+        const { post: p } = await (await postNote('alice@example.com', 'note')).json();
+        await react('alice@example.com', p.id, '👍', true);
+        await req('DELETE', `/api/posts/${p.id}`, { email: 'alice@example.com' });
+
+        const { results } = await env.DB.prepare(
+            'SELECT COUNT(*) AS n FROM reactions WHERE post_id = ?',
+        )
+            .bind(p.id)
+            .all();
+        expect(results[0].n).toBe(0);
+    });
+
+    it('leaves reactions alone when a non-owner delete is refused', async () => {
+        const { post: p } = await (await postNote('bob@example.com', 'bob note')).json();
+        await react('bob@example.com', p.id, '👍', true);
+        expect(
+            (await req('DELETE', `/api/posts/${p.id}`, { email: 'alice@example.com' })).status,
+        ).toBe(404);
+
+        const { results } = await env.DB.prepare(
+            'SELECT COUNT(*) AS n FROM reactions WHERE post_id = ?',
+        )
+            .bind(p.id)
+            .all();
+        expect(results[0].n).toBe(1);
     });
 });
