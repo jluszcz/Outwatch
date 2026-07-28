@@ -33,12 +33,19 @@ const timerAction = z.object({
     }),
 });
 
+const postBody = z
+    .string()
+    .trim()
+    .min(1, { message: 'body must not be empty' })
+    .max(2000, { message: 'body must be at most 2000 characters' });
+
 const postCreate = z.object({
-    body: z
-        .string()
-        .trim()
-        .min(1, { message: 'body must not be empty' })
-        .max(2000, { message: 'body must be at most 2000 characters' }),
+    body: postBody,
+    reply_to_post_id: z
+        .number()
+        .int()
+        .positive({ message: 'reply_to_post_id must be a positive integer' })
+        .nullish(),
 });
 
 app.onError((err, c) => {
@@ -260,6 +267,40 @@ async function resolveEpisode(c) {
     return { season, episode };
 }
 
+// The single-post form of the spoiler gate. GET /discussion evaluates
+// readability per episode; the routes that act on one post by id need the same
+// predicate for one row. Returns the post when the caller may see it — the
+// board is readable (season watched, or that episode revealed) or it is their
+// own column's note — and null otherwise. Callers turn null into the same 404 a
+// missing post gets, so these routes never become an oracle for which post ids
+// are real.
+async function visiblePost(c, postId, me) {
+    if (!me) return null;
+
+    const post = await c.env.DB.prepare(
+        `SELECT id, season_id, episode, user_id, body, author_email
+         FROM posts WHERE id = ?`,
+    )
+        .bind(postId)
+        .first();
+    if (!post) return null;
+
+    // Column-level, matching the read path: a partner's note is not a spoiler.
+    if (post.user_id === me.id) return post;
+
+    const [watchedRow, revealRow] = await Promise.all([
+        c.env.DB.prepare('SELECT 1 FROM watched WHERE user_id = ? AND season_id = ?')
+            .bind(me.id, post.season_id)
+            .first(),
+        c.env.DB.prepare(
+            'SELECT 1 FROM reveals WHERE user_id = ? AND season_id = ? AND episode = ?',
+        )
+            .bind(me.id, post.season_id, post.episode)
+            .first(),
+    ]);
+    return watchedRow || revealRow ? post : null;
+}
+
 // The caller's accumulated watch time for this episode, or null when no live
 // timer is running. Read fresh on every post so the stamp reflects the session
 // as it stands at write time.
@@ -285,7 +326,18 @@ app.post(
         if (resolved.error) return c.json({ error: resolved.error }, resolved.status);
         const { season, episode } = resolved;
 
-        const { body } = c.req.valid('json');
+        const { body, reply_to_post_id: replyToId = null } = c.req.valid('json');
+
+        // A reply may only point at a note the caller can actually see, in this
+        // same episode. Missing, wrong-episode, and not-visible all answer 404
+        // alike.
+        if (replyToId != null) {
+            const parent = await visiblePost(c, replyToId, me);
+            if (!parent || parent.season_id !== season.id || parent.episode !== episode) {
+                return c.json({ error: 'Unknown post' }, 404);
+            }
+        }
+
         const nowMs = Date.now();
         const now = new Date(nowMs).toISOString();
         const offsetSecs = await currentOffsetSecs(c, me.id, season.id, episode, nowMs);
@@ -295,10 +347,10 @@ app.post(
         // there is no session row.
         const [inserted] = await c.env.DB.batch([
             c.env.DB.prepare(
-                `INSERT INTO posts (season_id, episode, user_id, body, created_at, offset_secs, author_email)
-                 VALUES (?, ?, ?, ?, ?, ?, ?)
-                 RETURNING id, season_id, episode, user_id, body, created_at, offset_secs`,
-            ).bind(season.id, episode, me.id, body, now, offsetSecs, me.email),
+                `INSERT INTO posts (season_id, episode, user_id, body, created_at, offset_secs, author_email, reply_to_post_id)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                 RETURNING id, season_id, episode, user_id, body, created_at, offset_secs, reply_to_post_id`,
+            ).bind(season.id, episode, me.id, body, now, offsetSecs, me.email, replyToId),
             c.env.DB.prepare(
                 `UPDATE watch_sessions SET last_activity_at = ?
                  WHERE user_id = ? AND season_id = ? AND episode = ?`,
@@ -351,6 +403,21 @@ function attribute(post, people, me) {
     };
 }
 
+// A quote block's source. The parent is always in the same season, so it comes
+// from the map already built over the season's posts — no extra query. Three
+// forms: absent, visible (with its body), or locked (its id alone). A locked
+// parent's body is never serialized, which is the whole point: reply_to_post_id
+// is frozen at write time while visibility is recomputed on every read, so the
+// two can disagree.
+function quoteOf(post, byId, visibleIds, people, me) {
+    if (post.reply_to_post_id == null) return null;
+    const parent = byId.get(post.reply_to_post_id);
+    if (!parent) return null;
+    if (!visibleIds.has(parent.id)) return { id: parent.id, locked: true };
+    const { author_name, author_index, mine } = attribute(parent, people, me);
+    return { id: parent.id, author_name, author_index, mine, body: parent.body };
+}
+
 // The spoiler gate. An episode is readable when the caller has watched the whole
 // season or has explicitly opened that episode. Everything else about the
 // feature follows from this one predicate — and it is evaluated here, on the
@@ -373,7 +440,8 @@ app.get('/api/seasons/:season_id/discussion', async (c) => {
     const [{ results: posts }, watchedRow, { results: reveals }, { results: sessions }, people] =
         await Promise.all([
             c.env.DB.prepare(
-                `SELECT id, episode, user_id, body, created_at, offset_secs, author_email
+                `SELECT id, episode, user_id, body, created_at, offset_secs, author_email,
+                        reply_to_post_id, edited_at
                  FROM posts WHERE season_id = ? ORDER BY episode ASC, id ASC`,
             )
                 .bind(seasonId)
@@ -410,6 +478,7 @@ app.get('/api/seasons/:season_id/discussion', async (c) => {
         if (!byEpisode.has(p.episode)) byEpisode.set(p.episode, []);
         byEpisode.get(p.episode).push(p);
     }
+    const byId = new Map(posts.map((p) => [p.id, p]));
 
     const episodes = [];
     for (let episode = 1; episode <= season.episode_count; episode++) {
@@ -442,6 +511,7 @@ app.get('/api/seasons/:season_id/discussion', async (c) => {
         // Column-level, not per-person: a couple watches together, so a
         // partner's note is not a spoiler.
         const visible = readable ? all : all.filter((p) => me && p.user_id === me.id);
+        const visibleIds = new Set(visible.map((p) => p.id));
 
         const session = sessionByEpisode.get(episode) ?? null;
         episodes.push({
@@ -455,6 +525,8 @@ app.get('/api/seasons/:season_id/discussion', async (c) => {
                 body: p.body,
                 created_at: p.created_at,
                 offset_secs: p.offset_secs,
+                edited_at: p.edited_at,
+                reply_to: quoteOf(p, byId, visibleIds, people, me),
                 ...attribute(p, people, me),
             })),
             session: session
@@ -515,13 +587,31 @@ app.delete('/api/posts/:post_id', async (c) => {
         return c.json({ error: 'post_id must be a positive integer' }, 400);
     }
 
-    const { meta } = await c.env.DB.prepare(
-        `DELETE FROM posts
+    // Ownership is checked first, with a select, so a caller who does not own the
+    // note cannot reach the cleanup statements below and strip its reactions or
+    // detach its replies.
+    const owned = await c.env.DB.prepare(
+        `SELECT id FROM posts
          WHERE id = ? AND user_id = ? AND (author_email = ? OR author_email IS NULL)`,
     )
         .bind(postId, me.id, me.email)
-        .run();
-    if (meta.changes === 0) return c.json({ error: 'Unknown post' }, 404);
+        .first();
+    if (!owned) return c.json({ error: 'Unknown post' }, 404);
+
+    // Order matters whether or not D1 enforces foreign keys: dependants go before
+    // the row they reference. Children are detached rather than deleted — a reply
+    // survives its parent as an ordinary note, because delete is the author's
+    // explicit "unsay it" and a [deleted] ghost would preserve what they removed.
+    const [, , deleted] = await c.env.DB.batch([
+        c.env.DB.prepare('DELETE FROM reactions WHERE post_id = ?').bind(postId),
+        c.env.DB.prepare(
+            'UPDATE posts SET reply_to_post_id = NULL WHERE reply_to_post_id = ?',
+        ).bind(postId),
+        c.env.DB.prepare('DELETE FROM posts WHERE id = ?').bind(postId),
+    ]);
+    // The row vanished between the select and the batch — report it honestly
+    // rather than as a success that deleted nothing.
+    if (deleted.meta.changes === 0) return c.json({ error: 'Unknown post' }, 404);
 
     return c.json({ success: true, post_id: postId });
 });

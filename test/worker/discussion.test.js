@@ -637,3 +637,108 @@ describe('POST /api/seasons/:season_id/episodes/:episode/timer', () => {
         expect((await timer('stranger@example.com', 7, 'start')).status).toBe(403);
     });
 });
+
+// `post`, `reveal`, and `discussion` shadow the module-level helpers of the
+// same name above (which predate replies and have narrower signatures the
+// rest of the file already depends on) — scoped to this describe block only,
+// per the brief, so later tasks in this plan can define their own local
+// versions rather than fight over one shared shape.
+describe('quote replies', () => {
+    async function post(email, body, episode = 7, replyTo = undefined) {
+        const r = await req('POST', `/api/seasons/45/episodes/${episode}/posts`, {
+            body: replyTo === undefined ? { body } : { body, reply_to_post_id: replyTo },
+            email,
+        });
+        return r;
+    }
+
+    async function reveal(email, episode = 7) {
+        return req('POST', `/api/seasons/45/episodes/${episode}/reveal`, { email });
+    }
+
+    async function watch(email) {
+        return req('POST', '/api/watched', { body: { season_id: 45 }, email });
+    }
+
+    async function discussion(email, episode = 7) {
+        const { episodes } = await (
+            await req('GET', '/api/seasons/45/discussion', { email })
+        ).json();
+        return episodes.find((e) => e.episode === episode);
+    }
+
+    it('stores the parent and serializes it with its body', async () => {
+        const { post: parent } = await (await post('bob@example.com', 'jeff is right')).json();
+        await reveal('alice@example.com');
+        const r = await post('alice@example.com', 'agreed', 7, parent.id);
+        expect(r.status).toBe(201);
+
+        const ep = await discussion('alice@example.com');
+        const reply = ep.posts.find((p) => p.body === 'agreed');
+        expect(reply.reply_to).toMatchObject({
+            id: parent.id,
+            author_name: 'Bob',
+            body: 'jeff is right',
+            mine: false,
+        });
+    });
+
+    it('returns 404 for a parent in another episode', async () => {
+        const { post: parent } = await (await post('alice@example.com', 'ep 6 note', 6)).json();
+        const r = await post('alice@example.com', 'reply', 7, parent.id);
+        expect(r.status).toBe(404);
+    });
+
+    it('returns 404 for a parent the caller cannot see', async () => {
+        const { post: parent } = await (await post('bob@example.com', 'secret')).json();
+        const r = await post('alice@example.com', 'reply', 7, parent.id);
+        expect(r.status).toBe(404);
+    });
+
+    it('returns 404 for a parent that does not exist', async () => {
+        const r = await post('alice@example.com', 'reply', 7, 999999);
+        expect(r.status).toBe(404);
+    });
+
+    // The one case the locked form exists for: marking a season watched makes
+    // every episode readable without writing a reveals row, so unmarking it
+    // re-locks episodes the caller never explicitly revealed — while their own
+    // reply, and its now-unreadable parent id, remain.
+    it('hides a parent that became unreadable after an unmark', async () => {
+        const { post: parent } = await (await post('bob@example.com', 'the blindside')).json();
+        await watch('alice@example.com');
+        await post('alice@example.com', 'called it', 7, parent.id);
+        await req('DELETE', '/api/watched/45', { email: 'alice@example.com' });
+
+        const ep = await discussion('alice@example.com');
+        expect(ep.readable).toBe(false);
+        const reply = ep.posts.find((p) => p.body === 'called it');
+        expect(reply.reply_to).toEqual({ id: parent.id, locked: true });
+        expect(JSON.stringify(ep)).not.toContain('the blindside');
+    });
+
+    it('leaves a reply intact when its parent is deleted', async () => {
+        const { post: parent } = await (await post('alice@example.com', 'first')).json();
+        await post('alice@example.com', 'second', 7, parent.id);
+        const del = await req('DELETE', `/api/posts/${parent.id}`, { email: 'alice@example.com' });
+        expect(del.status).toBe(200);
+
+        const ep = await discussion('alice@example.com');
+        const reply = ep.posts.find((p) => p.body === 'second');
+        expect(reply).toBeDefined();
+        expect(reply.reply_to).toBeNull();
+    });
+
+    it('does not let a non-owner delete detach anything', async () => {
+        const { post: parent } = await (await post('bob@example.com', 'bob note')).json();
+        await reveal('alice@example.com');
+        await post('alice@example.com', 'alice reply', 7, parent.id);
+
+        const del = await req('DELETE', `/api/posts/${parent.id}`, { email: 'alice@example.com' });
+        expect(del.status).toBe(404);
+
+        const ep = await discussion('alice@example.com');
+        const reply = ep.posts.find((p) => p.body === 'alice reply');
+        expect(reply.reply_to.body).toBe('bob note');
+    });
+});
