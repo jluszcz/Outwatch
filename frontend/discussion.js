@@ -214,7 +214,10 @@ function EpisodeBoard({
         const saved = await onEdit(postId, body);
         // Stay in the editor on failure: the banner explains why, and the rewritten
         // text is still in the box rather than discarded.
-        if (saved) setEditingId(null);
+        // The functional update matters: the user may have cancelled this note's
+        // editor and opened a different one while this save was in flight, so a
+        // stale success must not close an editor it does not own.
+        if (saved) setEditingId((cur) => (cur === postId ? null : cur));
     };
 
     const summary =

@@ -87,10 +87,19 @@ function EditForm({ post, onSave, onCancel }) {
         }
     };
 
+    // A save in flight must finish before the user can back out — otherwise a
+    // "cancelled" edit that was already in flight lands anyway when the PATCH
+    // resolves, with nothing telling the user it happened. Matches the Save
+    // button, which is already disabled while busy.
+    const cancel = () => {
+        if (busy) return;
+        onCancel();
+    };
+
     // Matching PostForm's keys, plus Escape to back out.
     const keyDown = (e) => {
         if (e.key === 'Escape') {
-            onCancel();
+            cancel();
             return;
         }
         if (e.key !== 'Enter' || e.shiftKey) return;
@@ -110,7 +119,7 @@ function EditForm({ post, onSave, onCancel }) {
                 onKeyDown=${keyDown}
             ></textarea>
             <div class="post-edit-actions">
-                <button type="button" class="timer-btn subtle" onClick=${onCancel}>Cancel</button>
+                <button type="button" class="timer-btn subtle" onClick=${cancel}>Cancel</button>
                 <button
                     class="post-submit"
                     type="submit"
