@@ -3,7 +3,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'preact/hooks'
 import htm from 'htm';
 import { api } from './api.js';
 import { useRefreshGuard, useRefreshOnFocus } from './hooks.js';
-import { seasonLabel, orderPosts, formatOffset } from './utils.js';
+import { seasonLabel, orderPosts, formatOffset, quoteSnippet } from './utils.js';
 import { sessionOffsetSecs } from '../shared/session.js';
 import { PostList } from './post.js';
 
@@ -74,12 +74,12 @@ export function SeasonView({ seasonId }) {
             api(`/api/seasons/${seasonId}/episodes/${episode}/reveal`, { method: 'POST' }),
         );
 
-    const addPost = (episode, body) =>
+    const addPost = (episode, body, replyToId) =>
         mutate(() =>
             api(`/api/seasons/${seasonId}/episodes/${episode}/posts`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ body }),
+                body: JSON.stringify({ body, reply_to_post_id: replyToId }),
             }),
         );
 
@@ -174,6 +174,28 @@ function EpisodeBoard({
 }) {
     const placed = useMemo(() => orderPosts(ep.posts), [ep.posts]);
 
+    // Episode-scoped, so the chip and the note it points at cannot drift apart, and
+    // so one board's half-written reply does not follow you to another.
+    const [replyTo, setReplyTo] = useState(null);
+    // Owned here rather than inside PostForm so tapping Reply can focus the box.
+    const inputRef = useRef(null);
+
+    const startReply = (post) => {
+        setReplyTo({
+            id: post.id,
+            author_name: post.mine ? 'You' : post.author_name,
+            snippet: quoteSnippet(post.body),
+        });
+        // Raises the keyboard on a phone with the chip already in place.
+        inputRef.current?.focus();
+    };
+
+    const submitPost = async (body) => {
+        const posted = await onPost(ep.episode, body, replyTo?.id ?? null);
+        if (posted) setReplyTo(null);
+        return posted;
+    };
+
     const summary =
         ep.count === 0 ? 'no notes' : `${ep.count} ${ep.count === 1 ? 'note' : 'notes'}`;
     const others = ep.authors.filter((a) => !a.mine).map((a) => a.name);
@@ -228,7 +250,12 @@ function EpisodeBoard({
                                 </div>
                             `
                         }
-                        <${PostList} placed=${placed} meId=${meId} onDelete=${onDelete} />
+                        <${PostList}
+                            placed=${placed}
+                            meId=${meId}
+                            onReply=${startReply}
+                            onDelete=${onDelete}
+                        />
                         ${
                             !ep.readable &&
                             ep.count > ep.posts.length &&
@@ -236,7 +263,15 @@ function EpisodeBoard({
                                 — ${ep.count - ep.posts.length} notes hidden —
                             </div>`
                         }
-                        ${meId && html`<${PostForm} onPost=${(body) => onPost(ep.episode, body)} />`}
+                        ${
+                            meId &&
+                            html`<${PostForm}
+                                inputRef=${inputRef}
+                                replyTo=${replyTo}
+                                onCancelReply=${() => setReplyTo(null)}
+                                onPost=${submitPost}
+                            />`
+                        }
                     </div>
                 `
             }
@@ -287,10 +322,9 @@ function WatchTimer({ session, serverSkewMs, onAction }) {
 
 // Posting is not optimistic: the offset is assigned by the server from your
 // live session, so there is nothing correct to render until it answers.
-function PostForm({ onPost }) {
+function PostForm({ inputRef, replyTo, onCancelReply, onPost }) {
     const [body, setBody] = useState('');
     const [busy, setBusy] = useState(false);
-    const inputRef = useRef(null);
 
     // A textarea does not size itself to its content, so the height is driven
     // from scrollHeight. Resetting to 'auto' first is what lets the box shrink
@@ -355,6 +389,22 @@ function PostForm({ onPost }) {
     // double-post while the first is still going.
     return html`
         <form class="post-form" onSubmit=${submit}>
+            ${
+                replyTo &&
+                html`<div class="reply-chip">
+                    <span class="reply-chip-text"
+                        >↰ ${replyTo.author_name}: ${replyTo.snippet}</span
+                    >
+                    <button
+                        type="button"
+                        class="post-action"
+                        title="Cancel reply"
+                        onClick=${onCancelReply}
+                    >
+                        ×
+                    </button>
+                </div>`
+            }
             <textarea
                 ref=${inputRef}
                 class="post-input"

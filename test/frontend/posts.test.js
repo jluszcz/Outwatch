@@ -93,6 +93,23 @@ describe('orderPosts', () => {
         orderPosts(posts);
         expect(posts.map((p) => p.id)).toEqual(snapshot);
     });
+
+    // A reply is an ordinary note on the timeline: it sorts by its own offset, not
+    // next to the note it answers. This pins the not-threaded decision.
+    it('orders a reply by its own offset, not beside its parent', () => {
+        const posts = [
+            { id: 1, user_id: 'u1', offset_secs: 10, created_at: '2026-01-01T00:00:00Z' },
+            {
+                id: 2,
+                user_id: 'u2',
+                offset_secs: 900,
+                created_at: '2026-01-01T00:20:00Z',
+                reply_to_post_id: 1,
+            },
+            { id: 3, user_id: 'u1', offset_secs: 60, created_at: '2026-01-01T00:05:00Z' },
+        ];
+        expect(orderPosts(posts).map((p) => p.post.id)).toEqual([1, 3, 2]);
+    });
 });
 
 describe('formatOffset', () => {

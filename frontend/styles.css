@@ -563,6 +563,31 @@ tr.watched-all .check-cell input {
     flex-shrink: 0;
 }
 
+/* Reuses the .post-mine / .post-aN accent classes for its left border, so a
+   quote carries the colour of the person being quoted rather than the person
+   quoting them. */
+.post-quote {
+    border-left: 3px solid var(--border);
+    padding-left: 0.5rem;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+}
+
+.post-quote-author {
+    display: block;
+    font-weight: 600;
+}
+
+.post-quote-body {
+    display: block;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.post-quote-locked {
+    font-style: italic;
+}
+
 .post-action {
     background: none;
     border: none;
@@ -668,6 +693,32 @@ tr.watched-all .check-cell input {
     align-items: flex-end;
     gap: 0.5rem;
     margin-top: 0.75rem;
+    /* Lets the reply chip (flex-basis: 100%, below) take a full line of its
+       own above the textarea/button row, rather than restructuring the
+       markup into a wrapper. */
+    flex-wrap: wrap;
+}
+
+/* Sits inside .post-form, above the textarea. The snippet is already one line
+   (quoteSnippet), so this only has to keep an over-long one from stretching
+   the form. */
+.reply-chip {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    background: var(--surface-subtle);
+    border-radius: 0.4rem;
+    padding: 0.25rem 0.5rem;
+    margin-bottom: 0.35rem;
+    flex-basis: 100%;
+}
+
+.reply-chip-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .post-input {

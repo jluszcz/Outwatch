@@ -23,7 +23,7 @@ It is a sibling of the **Seen** project and follows the same stack and structure
     - `board.js` — `Header`, `Board` and its child components (the season × user grid)
     - `discussion.js` — `SeasonView`, `EpisodeBoard`, `WatchTimer`, and `PostForm`: the per-episode discussion board and its compose box + watch timer UI
     - `post.js` — The note renderer: `PostList` and its children, moved out of `discussion.js` so a quote block and a reaction bar have somewhere to live inside each note
-    - `utils.js` — Pure helpers (`seasonLabel`, `isFullyWatched`, `sortSeasons`, `sortBySeenCount`, `selectableSeasons`, `setWatched`, `clearsCurrentlyWatching`, `episodeNumbers`, `formatOffset`, `orderPosts`); shared with tests
+    - `utils.js` — Pure helpers (`seasonLabel`, `isFullyWatched`, `sortSeasons`, `sortBySeenCount`, `selectableSeasons`, `setWatched`, `clearsCurrentlyWatching`, `episodeNumbers`, `formatOffset`, `orderPosts`, `quoteSnippet`); shared with tests
     - `styles.css` — Theme tokens + layout
 - `shared/` — Code the Worker and the browser bundle both import, so the two never disagree
     - `session.js` — `sessionOffsetSecs`, the one watch-timer rule both sides must compute identically
@@ -293,6 +293,22 @@ names and emails out of source control. `seed.sql` holds only optional sample
   untimed note from an author who _did_ time other notes on the episode (their
   session went stale and they posted again later) is dropped to the tail
   sorted by wall-clock time, rather than given a fabricated offset.
+- A reply renders as a quote block (`Quote` in `post.js`) above the note's own
+  body, not as an indented thread — `orderPosts` is untouched by replies, so a
+  reply sits wherever its own watch offset places it on the shared timeline,
+  same as any other note. The quote takes the _quoted_ author's accent class,
+  not the replier's, since it's read as "this is what they said," and it
+  handles the server's three `reply_to` shapes: absent (no quote block), the
+  parent's live `{ author_name, body, ... }` (so an edit to the parent shows
+  through here — the reply stores an id, not a copy), and `{ id, locked: true }`
+  when the caller can no longer read the parent (the season was unmarked after
+  the reply was written) — that shape never carries a body, and the locked
+  stub must not expect one. `replyTo` (the reply target's id/author/snippet,
+  via `quoteSnippet`) is state owned by `EpisodeBoard`, not `SeasonView`: it's
+  episode-scoped, `EpisodeBoard` is the common parent of `PostList` (whose
+  reply button starts it) and `PostForm` (whose chip displays it and whose
+  submit clears it), and scoping it there keeps a half-written reply from
+  following you to a different episode.
 - The optional watch timer (`WatchTimer` in `discussion.js`, rule in
   `shared/session.js`) starts, pauses, and resumes per (user, episode); a
   session goes stale after three hours without a start/pause/resume/post, and
