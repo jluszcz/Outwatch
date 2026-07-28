@@ -18,8 +18,9 @@ It is a sibling of the **Seen** project and follows the same stack and structure
 - `frontend/` — Preact + htm frontend source
     - `script.js` — `App` component: board/season state, hash routing, optimistic mutations
     - `api.js` — `api()`, the shared fetch helper (throws with `.status` on a non-2xx response)
-    - `hooks.js` — `useTheme`, `useRefreshGuard`, `useHashRoute`, `useRefreshOnFocus`, `useAutoSize`
+    - `hooks.js` — `useTheme`, `useRefreshGuard`, `useSubmitGuard`, `useHashRoute`, `useRefreshOnFocus`, `useAutoSize`
     - `refresh-guard.js` — `createRefreshGuard`, the refetch-vs-mutation race rules as a plain state machine; `useRefreshGuard` is the wiring around it
+    - `submit-guard.js` — `createSubmitGuard`, the submit-once and cannot-cancel-in-flight rules as a plain state machine, shared by the compose box and the edit box; `useSubmitGuard` is the wiring around it
     - `board.js` — `Header`, `Board` and its child components (the season × user grid)
     - `discussion.js` — `SeasonView`, `EpisodeBoard`, `WatchTimer`, and `PostForm`: the per-episode discussion board and its compose box + watch timer UI
     - `post.js` — The note renderer: `PostList` and its children, moved out of `discussion.js` so a quote block and a reaction bar have somewhere to live inside each note
@@ -267,7 +268,12 @@ names and emails out of source control. `seed.sql` holds only optional sample
   and never restores it. `busy` gates the submit path instead, so Enter can't
   double-post. Because the box stays editable in flight, the success path clears
   only the text that actually posted (`current === trimmed`), preserving
-  anything typed on top of it.
+  anything typed on top of it. `PostForm` and `EditForm` are the app's two text
+  forms, and both get the submit-once rule (and, for `EditForm`, the
+  cannot-cancel-while-saving rule) from `useSubmitGuard` (`hooks.js`), wiring
+  around `createSubmitGuard` (`submit-guard.js`) — the same split as
+  `useRefreshGuard`/`refresh-guard.js`, so the rules are tested as a plain
+  factory rather than duplicated per form.
 - An open board reads controls → discussion → compose box: the
   `.episode-actions` row leads `.episode-body`, then the notes, then the
   `hidden-note` count, then `PostForm`. The controls sit above the list because
@@ -320,7 +326,10 @@ names and emails out of source control. `seed.sql` holds only optional sample
   editable per board at a time. The edit box shares `useAutoSize` (`hooks.js`)
   with `PostForm`'s compose box, extracted from `PostForm.fit` rather than
   duplicated, and stays enabled while saving for the same reason `PostForm`'s
-  does.
+  does. Escape and Cancel are both routed through `useSubmitGuard`'s
+  `canCancel()`, which is `false` while a save is in flight — a save already
+  sent can't be recalled, so letting the user back out would mean a late
+  success silently applies an edit they believe they discarded.
 - Reacting is one emoji picker button (`☺+`, second in the action row: `↰ ☺+ ✎
 ×`) plus a `ReactionBar` of chips (`post.js`), both driven by the four-emoji
   set in `shared/reactions.js` — the same module the Worker

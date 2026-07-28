@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'preact/hooks';
 import { createRefreshGuard } from './refresh-guard.js';
+import { createSubmitGuard } from './submit-guard.js';
 
 export function useTheme() {
     const [theme, setTheme] = useState(() => {
@@ -66,6 +67,37 @@ export function useRefreshGuard(fetcher, apply) {
     }, [guard, refresh]);
 
     return { refresh, beginMutation, endMutation };
+}
+
+// Wiring around createSubmitGuard: one guard per mounted form, kept for the
+// form's life. `busy` is component state purely so the button can render a
+// spinner — the guard, not the state, decides whether a submit or a cancel is
+// allowed, so the rules stay in one testable place.
+export function useSubmitGuard() {
+    const guardRef = useRef(null);
+    if (guardRef.current === null) guardRef.current = createSubmitGuard();
+    const guard = guardRef.current;
+    const [busy, setBusy] = useState(false);
+
+    // Resolves whatever `action` resolves, or false when the guard refused —
+    // callers distinguish "posted" from "not posted" on that.
+    const run = useCallback(
+        async (text, action) => {
+            if (!guard.canSubmit(text) || !guard.begin()) return false;
+            setBusy(true);
+            try {
+                return await action(text.trim());
+            } finally {
+                guard.end();
+                setBusy(false);
+            }
+        },
+        [guard],
+    );
+
+    const canCancel = useCallback(() => guard.canCancel(), [guard]);
+
+    return { busy, run, canCancel };
 }
 
 // A textarea does not size itself to its content, so the height is driven from

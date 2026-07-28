@@ -2,7 +2,7 @@ import { h } from 'preact';
 import { useState, useRef, useEffect } from 'preact/hooks';
 import htm from 'htm';
 import { authorAccent, formatOffsetShort } from './utils.js';
-import { useAutoSize } from './hooks.js';
+import { useAutoSize, useSubmitGuard } from './hooks.js';
 import { REACTIONS } from '../shared/reactions.js';
 
 const html = htm.bind(h);
@@ -80,7 +80,7 @@ function Quote({ quote }) {
 // bring it back. `busy` gates the submit path instead.
 function EditForm({ post, onSave, onCancel }) {
     const [body, setBody] = useState(post.body);
-    const [busy, setBusy] = useState(false);
+    const { busy, run, canCancel } = useSubmitGuard();
     const ref = useRef(null);
     useAutoSize(ref, body);
 
@@ -88,14 +88,7 @@ function EditForm({ post, onSave, onCancel }) {
 
     const save = async (e) => {
         e.preventDefault();
-        const trimmed = body.trim();
-        if (!trimmed || busy) return;
-        setBusy(true);
-        try {
-            await onSave(post.id, trimmed);
-        } finally {
-            setBusy(false);
-        }
+        await run(body, (trimmed) => onSave(post.id, trimmed));
     };
 
     // A save in flight must finish before the user can back out — otherwise a
@@ -103,8 +96,7 @@ function EditForm({ post, onSave, onCancel }) {
     // resolves, with nothing telling the user it happened. Matches the Save
     // button, which is already disabled while busy.
     const cancel = () => {
-        if (busy) return;
-        onCancel();
+        if (canCancel()) onCancel();
     };
 
     // Matching PostForm's keys, plus Escape to back out.

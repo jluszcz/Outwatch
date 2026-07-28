@@ -2,7 +2,7 @@ import { h } from 'preact';
 import { useState, useEffect, useMemo, useCallback, useRef } from 'preact/hooks';
 import htm from 'htm';
 import { api } from './api.js';
-import { useRefreshGuard, useRefreshOnFocus, useAutoSize } from './hooks.js';
+import { useRefreshGuard, useRefreshOnFocus, useAutoSize, useSubmitGuard } from './hooks.js';
 import { seasonLabel, orderPosts, formatOffset, quoteSnippet } from './utils.js';
 import { sessionOffsetSecs } from '../shared/session.js';
 import { PostList } from './post.js';
@@ -375,27 +375,18 @@ function WatchTimer({ session, serverSkewMs, onAction }) {
 // live session, so there is nothing correct to render until it answers.
 function PostForm({ inputRef, replyTo, onCancelReply, onPost }) {
     const [body, setBody] = useState('');
-    const [busy, setBusy] = useState(false);
+    const { busy, run } = useSubmitGuard();
 
     useAutoSize(inputRef, body);
 
     const submit = async (e) => {
         e.preventDefault();
         const trimmed = body.trim();
-        if (!trimmed || busy) return;
-        setBusy(true);
-        try {
-            // Only clear the box on success — a failed post already shows the
-            // error banner, and wiping what the user just typed on top of that
-            // would silently discard it.
-            const posted = await onPost(trimmed);
-            // The box stays editable during the flight, so it may no longer hold
-            // what was submitted: clear only the text that actually posted, and
-            // leave anything typed on top of it alone.
-            if (posted) setBody((current) => (current === trimmed ? '' : current));
-        } finally {
-            setBusy(false);
-        }
+        const posted = await run(body, () => onPost(trimmed));
+        // The box stays editable during the flight, so it may no longer hold
+        // what was submitted: clear only the text that actually posted, and
+        // leave anything typed on top of it alone.
+        if (posted) setBody((current) => (current === trimmed ? '' : current));
     };
 
     // Enter still posts, the way it did when this was an <input>. Shift+Enter
