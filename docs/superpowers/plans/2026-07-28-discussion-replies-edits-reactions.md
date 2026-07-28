@@ -1914,3 +1914,211 @@ After Task 8, before opening a PR:
 - [ ] Apply the migration locally and click through the feature end to end: `npx wrangler d1 migrations apply <database> --local`
 - [ ] Re-read `CLAUDE.md`'s schema, API, and Frontend sections against the finished code — eight tasks each touched it, so this is where drift shows up
 - [ ] Delete nothing from `docs/superpowers/specs/` — the spec stays as the record of why
+
+---
+
+### Task 9: Extract the submit-once rules
+
+Added after Task 7's review. `PostForm` and `EditForm` each hand-roll the same
+two rules with a local `busy` flag and a `try/finally`, and Task 7's review
+found a real race in the second of them — Escape and Cancel fired while a save
+was in flight, so a late success applied an edit the user believed they had
+discarded. The re-reviewer's observation: this is exactly the kind of logic
+this codebase already extracts into a plain, unit-testable factory, which is
+what `refresh-guard.js` is and why it exists. Its absence here is plausibly why
+the race went unnoticed.
+
+This task extracts those rules and does nothing else. No behaviour changes.
+
+**Files:**
+
+- Create: `frontend/submit-guard.js`
+- Modify: `frontend/hooks.js`, `frontend/post.js`, `frontend/discussion.js`
+- Test: `test/frontend/submit-guard.test.js`
+
+**Interfaces:**
+
+- Produces:
+    - `createSubmitGuard()` → `{ canSubmit(text), canCancel(), begin(), end() }`
+    - `useSubmitGuard()` in `hooks.js` → `{ busy, run(text, action), canCancel() }`
+
+- [ ] **Step 1: Write the failing tests**
+
+Create `test/frontend/submit-guard.test.js`:
+
+```js
+import { describe, it, expect } from 'vitest';
+import { createSubmitGuard } from '../../frontend/submit-guard.js';
+
+describe('createSubmitGuard', () => {
+    it('allows a submit with text and nothing in flight', () => {
+        expect(createSubmitGuard().canSubmit('hello')).toBe(true);
+    });
+
+    it('refuses an empty or whitespace-only submit', () => {
+        const guard = createSubmitGuard();
+        expect(guard.canSubmit('')).toBe(false);
+        expect(guard.canSubmit('   ')).toBe(false);
+    });
+
+    it('refuses a second submit while one is in flight', () => {
+        const guard = createSubmitGuard();
+        expect(guard.begin()).toBe(true);
+        expect(guard.canSubmit('hello')).toBe(false);
+        expect(guard.begin()).toBe(false);
+    });
+
+    it('allows a submit again once the first settles', () => {
+        const guard = createSubmitGuard();
+        guard.begin();
+        guard.end();
+        expect(guard.canSubmit('hello')).toBe(true);
+    });
+
+    // The Task 7 race: a request already sent cannot be recalled, so letting
+    // the user abandon the form means a late success applies an edit they
+    // believe they discarded, with nothing on screen to say so.
+    it('refuses to cancel while a submit is in flight', () => {
+        const guard = createSubmitGuard();
+        expect(guard.canCancel()).toBe(true);
+        guard.begin();
+        expect(guard.canCancel()).toBe(false);
+        guard.end();
+        expect(guard.canCancel()).toBe(true);
+    });
+});
+```
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+Run: `npx vitest run test/frontend/submit-guard.test.js`
+Expected: FAIL — the module does not exist.
+
+- [ ] **Step 3: Write the guard**
+
+Create `frontend/submit-guard.js`:
+
+```js
+// The submit-once rules shared by the compose box and the edit box, as a plain
+// factory so they can be driven directly by a test — the same shape, and for
+// the same reason, as createRefreshGuard in refresh-guard.js. Both rules were
+// learned from bugs:
+//
+//   - A submit may not start while one is in flight. Enter can be pressed
+//     twice before the first request answers, and a double-posted note is
+//     worse than a dropped keystroke.
+//   - A form may not be abandoned while a submit is in flight. The request is
+//     already gone; letting the user cancel it means a late success applies an
+//     edit they believe they discarded, with nothing on screen to say so.
+//
+// The guard is the authority on `busy`; useSubmitGuard mirrors it into
+// component state only so a spinner can render, exactly as useRefreshGuard
+// holds its guard in a ref while the component holds the data.
+export function createSubmitGuard() {
+    let busy = false;
+
+    return {
+        // Trimmed, because the trimmed text is what actually gets sent — a box
+        // holding only spaces has nothing to submit.
+        canSubmit: (text) => !busy && text.trim().length > 0,
+        canCancel: () => !busy,
+        begin() {
+            if (busy) return false;
+            busy = true;
+            return true;
+        },
+        end() {
+            busy = false;
+        },
+    };
+}
+```
+
+- [ ] **Step 4: Run the tests to verify they pass**
+
+Run: `npx vitest run test/frontend/submit-guard.test.js`
+Expected: PASS
+
+- [ ] **Step 5: Add the hook**
+
+In `frontend/hooks.js`, importing `createSubmitGuard` from `./submit-guard.js`:
+
+```js
+// Wiring around createSubmitGuard: one guard per mounted form, kept for the
+// form's life. `busy` is component state purely so the button can render a
+// spinner — the guard, not the state, decides whether a submit or a cancel is
+// allowed, so the rules stay in one testable place.
+export function useSubmitGuard() {
+    const guardRef = useRef(null);
+    if (guardRef.current === null) guardRef.current = createSubmitGuard();
+    const guard = guardRef.current;
+    const [busy, setBusy] = useState(false);
+
+    // Resolves whatever `action` resolves, or false when the guard refused —
+    // callers distinguish "posted" from "not posted" on that.
+    const run = useCallback(
+        async (text, action) => {
+            if (!guard.canSubmit(text) || !guard.begin()) return false;
+            setBusy(true);
+            try {
+                return await action(text.trim());
+            } finally {
+                guard.end();
+                setBusy(false);
+            }
+        },
+        [guard],
+    );
+
+    const canCancel = useCallback(() => guard.canCancel(), [guard]);
+
+    return { busy, run, canCancel };
+}
+```
+
+- [ ] **Step 6: Use it in both forms**
+
+In `EditForm` (`frontend/post.js`), replace the local `busy` state, the `save`
+body's `try/finally`, and the `cancel` helper's `if (busy) return` with the
+hook. `save` becomes a call to `run(body, (trimmed) => onSave(post.id, trimmed))`,
+and `cancel` becomes `if (canCancel()) onCancel()`.
+
+In `PostForm` (`frontend/discussion.js`), replace its local `busy` state and its
+`submit` body's `try/finally` the same way. `PostForm` has no cancel, so it uses
+only `busy` and `run`. Its success path is unchanged and still clears only the
+text that actually posted:
+
+```js
+const submit = async (e) => {
+    e.preventDefault();
+    const trimmed = body.trim();
+    const posted = await run(body, () => onPost(trimmed));
+    // The box stays editable during the flight, so it may no longer hold what
+    // was submitted: clear only the text that actually posted, and leave
+    // anything typed on top of it alone.
+    if (posted) setBody((current) => (current === trimmed ? '' : current));
+};
+```
+
+Neither textarea gains a `disabled` attribute — that is still the thing this
+codebase must not do, for the phone-keyboard reason both forms already comment.
+
+- [ ] **Step 7: Run the gates and verify**
+
+Run: `npm run build && npm test && npm run lint && npm run format:check`
+Expected: PASS.
+
+Then in a browser: post a note, edit a note, and confirm both still behave
+exactly as before — spinner while in flight, Enter cannot double-submit, Escape
+and Cancel ignored during a save, the compose box cleared only on success.
+
+- [ ] **Step 8: Update CLAUDE.md and commit**
+
+Add `frontend/submit-guard.js` to the "Repository Structure" list beside
+`refresh-guard.js`, and note in the Frontend section that both text forms share
+the submit-once and cannot-cancel-in-flight rules from it.
+
+```bash
+git add frontend/ test/frontend/ CLAUDE.md
+git commit -m "refactor(frontend): extract the submit-once rules from both forms"
+```
