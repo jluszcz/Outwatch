@@ -94,6 +94,15 @@ export function SeasonView({ seasonId }) {
             }),
         );
 
+    const setReaction = (postId, emoji, on) =>
+        mutate(() =>
+            api(`/api/posts/${postId}/reactions`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ emoji, on }),
+            }),
+        );
+
     // pause/resume 409 once the session has gone stale server-side (see
     // shared/session.js) — that's not an app error, it's the expected outcome
     // of waiting too long, so it's suppressed here rather than surfaced as a
@@ -161,6 +170,7 @@ export function SeasonView({ seasonId }) {
                             onPost=${addPost}
                             onDelete=${removePost}
                             onEdit=${editPost}
+                            onReact=${setReaction}
                             onTimer=${setTimer}
                         />`,
                 )}
@@ -181,6 +191,7 @@ function EpisodeBoard({
     onPost,
     onDelete,
     onEdit,
+    onReact,
     onTimer,
 }) {
     const placed = useMemo(() => orderPosts(ep.posts), [ep.posts]);
@@ -191,6 +202,9 @@ function EpisodeBoard({
     // Episode-scoped for the same reason as replyTo — one note editable per
     // board at a time, by construction.
     const [editingId, setEditingId] = useState(null);
+    // Which post's picker is open, or null for none — one at a time, same as
+    // editingId, and episode-scoped for the same reason.
+    const [pickerFor, setPickerFor] = useState(null);
     // Owned here rather than inside PostForm so tapping Reply can focus the box.
     const inputRef = useRef(null);
 
@@ -218,6 +232,12 @@ function EpisodeBoard({
         // editor and opened a different one while this save was in flight, so a
         // stale success must not close an editor it does not own.
         if (saved) setEditingId((cur) => (cur === postId ? null : cur));
+    };
+
+    // Choosing an emoji closes the picker, whether it added or removed one.
+    const react = (postId, emoji, on) => {
+        setPickerFor(null);
+        return onReact(postId, emoji, on);
     };
 
     const summary =
@@ -283,6 +303,9 @@ function EpisodeBoard({
                             onStartEdit=${setEditingId}
                             onCancelEdit=${() => setEditingId(null)}
                             onSaveEdit=${saveEdit}
+                            pickerFor=${pickerFor}
+                            onTogglePicker=${(id) => setPickerFor((cur) => (cur === id ? null : id))}
+                            onReact=${react}
                         />
                         ${
                             !ep.readable &&

@@ -321,6 +321,28 @@ names and emails out of source control. `seed.sql` holds only optional sample
   with `PostForm`'s compose box, extracted from `PostForm.fit` rather than
   duplicated, and stays enabled while saving for the same reason `PostForm`'s
   does.
+- Reacting is one emoji picker button (`☺+`, third in the action row: `↰ ☺+ ✎
+×`) plus a `ReactionBar` of chips (`post.js`), both driven by the four-emoji
+  set in `shared/reactions.js` — the same module the Worker
+  validates against, so the picker can never offer an emoji the server would
+  reject. A note's `reactions` array arrives from the server already in set
+  order with counts and names resolved, so the client only draws it; `mine`
+  fills a chip in and is what tapping it toggles. Reactions are per
+  individual, not per column, matching the `reactions` table's key — both
+  halves of a shared login react separately, and a note's author reacting to
+  their own note is allowed. `PUT /api/posts/:post_id/reactions` takes an
+  explicit `on` boolean rather than being a toggle, so the client always
+  computes it from what the server last said (`!r.mine` for a chip, the
+  picker's own `chosen` set for a picker button) instead of flipping a local
+  value — idempotent in both directions, so a double tap or a retried request
+  can't desync from the server. The picker (`EmojiPicker` in `post.js`) is
+  inline inside `.post-content`, below the note, not a popover: nothing to
+  clip inside a scrolling board, and its 44px touch targets fall out of a CSS
+  grid rather than fighting absolute positioning. `pickerFor` is state owned
+  by `EpisodeBoard`, for the same episode-scoped, one-at-a-time reason as
+  `replyTo` and `editingId`; choosing an emoji closes the picker unconditionally,
+  whether the mutation that follows succeeds or not, so unlike `saveEdit` there
+  is no response-driven close for a late answer to race against.
 - The optional watch timer (`WatchTimer` in `discussion.js`, rule in
   `shared/session.js`) starts, pauses, and resumes per (user, episode); a
   session goes stale after three hours without a start/pause/resume/post, and

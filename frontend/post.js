@@ -3,6 +3,7 @@ import { useState, useRef, useEffect } from 'preact/hooks';
 import htm from 'htm';
 import { authorAccent, formatOffsetShort } from './utils.js';
 import { useAutoSize } from './hooks.js';
+import { REACTIONS } from '../shared/reactions.js';
 
 const html = htm.bind(h);
 
@@ -22,6 +23,9 @@ export function PostList({
     onStartEdit,
     onCancelEdit,
     onSaveEdit,
+    pickerFor,
+    onTogglePicker,
+    onReact,
 }) {
     if (placed.length === 0) return html`<div class="no-posts">Nothing here yet.</div>`;
     return html`
@@ -38,6 +42,9 @@ export function PostList({
                         onStartEdit=${onStartEdit}
                         onCancelEdit=${onCancelEdit}
                         onSaveEdit=${onSaveEdit}
+                        pickerOpen=${pickerFor === entry.post.id}
+                        onTogglePicker=${onTogglePicker}
+                        onReact=${onReact}
                     />`,
             )}
         </ol>
@@ -133,11 +140,69 @@ function EditForm({ post, onSave, onCancel }) {
     `;
 }
 
+// A note's existing reactions. The server sends them in set order with the
+// counts and names already resolved, so this only draws them. `mine` fills the
+// chip in and is what tapping it toggles.
+function ReactionBar({ post, onReact }) {
+    return html`
+        <div class="reaction-bar">
+            ${post.reactions.map(
+                (r) => html`
+                    <button
+                        key=${r.emoji}
+                        class=${'reaction-chip' + (r.mine ? ' mine' : '')}
+                        aria-pressed=${r.mine}
+                        title=${r.names.join(', ')}
+                        onClick=${() => onReact(post.id, r.emoji, !r.mine)}
+                    >
+                        <span aria-hidden="true">${r.emoji}</span>${r.count}
+                    </button>
+                `,
+            )}
+        </div>
+    `;
+}
+
+// Inline below the note rather than an absolutely positioned popover: nothing
+// to clip inside a scrolling board, and the 44px targets fall out of the grid.
+function EmojiPicker({ post, onReact }) {
+    const chosen = new Set(post.reactions.filter((r) => r.mine).map((r) => r.emoji));
+    return html`
+        <div class="emoji-picker">
+            ${REACTIONS.map(
+                ({ emoji, label }) => html`
+                    <button
+                        key=${emoji}
+                        class="emoji-btn"
+                        aria-label=${label}
+                        aria-pressed=${chosen.has(emoji)}
+                        onClick=${() => onReact(post.id, emoji, !chosen.has(emoji))}
+                    >
+                        ${emoji}
+                    </button>
+                `,
+            )}
+        </div>
+    `;
+}
+
 // One note. The time, author, and action row sit on the note's first line; the
 // quote block, body, and reactions stack inside .post-content, so a plain note
 // still reads as a single line on a wide screen while anything richer grows
 // downward instead of sideways.
-function Post({ entry, meId, onReply, onDelete, editing, onStartEdit, onCancelEdit, onSaveEdit }) {
+function Post({
+    entry,
+    meId,
+    onReply,
+    onDelete,
+    editing,
+    onStartEdit,
+    onCancelEdit,
+    onSaveEdit,
+    pickerOpen,
+    onTogglePicker,
+    onReact,
+}) {
     const { post, offset, inferred, tail } = entry;
     return html`
         <li class=${'post' + accentClass(post)}>
@@ -166,6 +231,8 @@ function Post({ entry, meId, onReply, onDelete, editing, onStartEdit, onCancelEd
                           />`
                         : html`<span class="post-body">${post.body}</span>`
                 }
+                ${post.reactions.length > 0 && html`<${ReactionBar} post=${post} onReact=${onReact} />`}
+                ${pickerOpen && html`<${EmojiPicker} post=${post} onReact=${onReact} />`}
             </div>
             ${
                 meId &&
@@ -176,6 +243,14 @@ function Post({ entry, meId, onReply, onDelete, editing, onStartEdit, onCancelEd
                         onClick=${() => onReply(post)}
                     >
                         ↰
+                    </button>
+                    <button
+                        class="post-action"
+                        title="React to this note"
+                        aria-expanded=${pickerOpen}
+                        onClick=${() => onTogglePicker(post.id)}
+                    >
+                        ☺+
                     </button>
                     ${
                         post.mine &&
