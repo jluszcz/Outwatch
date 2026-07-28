@@ -27,7 +27,7 @@ Three additions to the discussion feature, all attaching to the note:
    in a quote block above your own.
 2. **Editing** — an inline textarea in place of the note's body, with the same
    ownership rule as deleting.
-3. **Reactions** — eight fixed emoji, applied per individual, several allowed per
+3. **Reactions** — four fixed emoji, applied per individual, several allowed per
    person per note.
 
 Everything stays on the one synced timeline. Nothing here changes the spoiler
@@ -40,7 +40,7 @@ In scope:
 
 - Replying to any note visible to you in the same episode, at any depth.
 - Editing your own note's body, with an `edited` marker.
-- Reacting to any visible note, including your own, with any of eight emoji.
+- Reacting to any visible note, including your own, with any of four emoji.
 - Extraction of note rendering out of `discussion.js` into `frontend/post.js`.
 
 Out of scope:
@@ -105,19 +105,16 @@ offers a button the server rejects.
 export const REACTIONS = [
     { emoji: '👍', label: 'Thumbs up' },
     { emoji: '👎', label: 'Thumbs down' },
-    { emoji: '❤️', label: 'Heart' },
     { emoji: '🤣', label: 'Laughing' },
     { emoji: '😮', label: 'Shocked' },
-    { emoji: '🐍', label: 'Snake' },
-    { emoji: '🔥', label: 'Fire' },
-    { emoji: '🤔', label: 'Thinking' },
 ];
 ```
 
 The array's order is the picker's order and the display order of a note's
 reaction chips. `label` is the accessible name on each picker button. Adding a
-ninth is a one-line change in one file; the stylesheet's picker grid is
-`repeat(4, …)` and wraps on its own.
+fifth is a one-line change in one file; the stylesheet's picker grid is
+`repeat(4, …)`, so four sit on one row and a fifth wraps onto a second without
+any other change.
 
 ## API
 
@@ -179,10 +176,12 @@ const reactionUpdate = z.object({
 });
 ```
 
-An emoji outside the set is a `400` — including a near-miss such as a bare `❤`
-without its U+FE0F variation selector. The comparison is exact rather than
+An emoji outside the set is a `400`. The comparison is exact rather than
 normalized, which is safe because the picker renders from the same array it
-validates against, so the client can only ever send a member of the set.
+validates against, so the client can only ever send a member of the set. It is
+worth knowing this is exact matching before the set grows: every emoji in it
+today is a single codepoint, but `❤️` is two (U+2764 U+FE0F), and adding it would
+mean a bare `❤` is a different string and a `400`.
 
 The target post must be visible to the caller, else
 `404 { error: 'Unknown post' }`. Reacting to your own note is allowed.
@@ -192,9 +191,11 @@ double tap cannot flip the state twice and a retry after a dropped response is
 harmless. This is why the request carries an explicit `on` rather than being a
 toggle.
 
-The emoji travels in the body rather than the path (`PUT …/reactions/❤️`) because
-❤️ is two codepoints (U+2764 U+FE0F) and routing it through a percent-encoded path
-param invites normalization bugs for no benefit.
+The emoji travels in the body rather than the path (`PUT …/reactions/👍`) because
+every one of these is an astral character that a path param carries only
+percent-encoded, and any later addition with a variation selector or a ZWJ
+sequence would compound that. Keeping it in the body means the route is
+indifferent to what the set contains.
 
 ### `DELETE /api/posts/:post_id`
 
@@ -370,7 +371,7 @@ and surfaces on the existing error banner with the typed text preserved, which i
  ┃ Carol
  ┃ Jeff's reaction here is incredible
  Totally agree, that face
- 🤣 2   🐍 1
+ 🤣 2   👍 1
 ```
 
 - The quote block (`.post-quote`) renders `reply_to.author_name` above
@@ -391,7 +392,7 @@ and surfaces on the existing error banner with the typed text preserved, which i
 
 ### The picker
 
-`☺+` toggles `pickerFor`, opening a two-row, four-column grid of buttons
+`☺+` toggles `pickerFor`, opening a single row of four buttons
 **inline below the note** rather than as an absolutely positioned popover — no
 clipping inside a scrolling board, and 44px targets fall out of the grid without
 fighting the layout. `aria-expanded` on `☺+`; each picker button takes its
