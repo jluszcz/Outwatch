@@ -503,7 +503,26 @@ git commit -m "feat(api): let a note quote another note in the same episode"
 **Interfaces:**
 
 - Consumes: `postBody` schema and `posts.edited_at` from Tasks 1–2.
-- Produces: `PATCH /api/posts/:post_id` with body `{ body }` → `{ success: true, post_id, edited_at }`.
+- Produces:
+    - `PATCH /api/posts/:post_id` with body `{ body }` → `{ success: true, post_id, edited_at }`.
+    - Module-scope test helpers `postNote`, `revealEpisode`, `watchSeason`, `episodeView` in `test/worker/discussion.test.js`, used by Task 4.
+
+- [ ] **Step 0: Hoist and rename Task 2's test helpers**
+
+Task 2 defined `post`, `reveal`, `watch`, and `discussion` **inside** its `describe('quote replies', …)` block, because `test/worker/discussion.test.js` already had module-scope helpers named `post(email, episode, body)` and `discussion(email)` with different signatures and return types. Tasks 3 and 4 need those helpers too, and duplicating them per block would be verbatim duplication of a logic block.
+
+Move Task 2's four helpers out of the `describe` block to module scope, copying their bodies **verbatim** as Task 2 committed them and changing only their names:
+
+| Task 2 name (block-scoped) | New module-scope name |
+| -------------------------- | --------------------- |
+| `post`                     | `postNote`            |
+| `reveal`                   | `revealEpisode`       |
+| `watch`                    | `watchSeason`         |
+| `discussion`               | `episodeView`         |
+
+Add a comment above the moved block saying why the names differ. Leave the two pre-existing module-scope helpers (`post`, `discussion`, defined around line 177) exactly as they are — roughly 30 call sites in the older suites depend on them.
+
+Run `npx vitest run test/worker/discussion.test.js` after the move: all Task 2 tests must still pass, unchanged in behaviour. This is a rename, not a rewrite.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -512,14 +531,14 @@ Append to `test/worker/discussion.test.js`:
 ```js
 describe('PATCH /api/posts/:post_id', () => {
     it('rewrites the body and stamps edited_at without moving the note', async () => {
-        const { post: p } = await (await post('alice@example.com', 'typo hree')).json();
+        const { post: p } = await (await postNote('alice@example.com', 'typo hree')).json();
         const r = await req('PATCH', `/api/posts/${p.id}`, {
             body: { body: 'typo here' },
             email: 'alice@example.com',
         });
         expect(r.status).toBe(200);
 
-        const ep = await discussion('alice@example.com');
+        const ep = await episodeView('alice@example.com');
         const edited = ep.posts.find((x) => x.id === p.id);
         expect(edited.body).toBe('typo here');
         expect(edited.edited_at).not.toBeNull();
@@ -528,13 +547,13 @@ describe('PATCH /api/posts/:post_id', () => {
     });
 
     it('is null on edited_at until the note is edited', async () => {
-        await post('alice@example.com', 'untouched');
-        const ep = await discussion('alice@example.com');
+        await postNote('alice@example.com', 'untouched');
+        const ep = await episodeView('alice@example.com');
         expect(ep.posts[0].edited_at).toBeNull();
     });
 
     it('refuses a note written by the other individual in the same column', async () => {
-        const { post: p } = await (await post('bob@example.com', 'bob wrote this')).json();
+        const { post: p } = await (await postNote('bob@example.com', 'bob wrote this')).json();
         const r = await req('PATCH', `/api/posts/${p.id}`, {
             body: { body: 'carol rewrote it' },
             email: 'carol@example.com',
@@ -558,7 +577,7 @@ describe('PATCH /api/posts/:post_id', () => {
     });
 
     it('returns 400 for an empty body and one over 2000 characters', async () => {
-        const { post: p } = await (await post('alice@example.com', 'note')).json();
+        const { post: p } = await (await postNote('alice@example.com', 'note')).json();
         for (const body of ['', '   ', 'x'.repeat(2001)]) {
             const r = await req('PATCH', `/api/posts/${p.id}`, {
                 body: { body },
@@ -577,15 +596,15 @@ describe('PATCH /api/posts/:post_id', () => {
     });
 
     it('shows an edited parent through to a reply that quotes it', async () => {
-        const { post: parent } = await (await post('bob@example.com', 'before')).json();
-        await reveal('alice@example.com');
-        await post('alice@example.com', 'quoting', 7, parent.id);
+        const { post: parent } = await (await postNote('bob@example.com', 'before')).json();
+        await revealEpisode('alice@example.com');
+        await postNote('alice@example.com', 'quoting', 7, parent.id);
         await req('PATCH', `/api/posts/${parent.id}`, {
             body: { body: 'after' },
             email: 'bob@example.com',
         });
 
-        const ep = await discussion('alice@example.com');
+        const ep = await episodeView('alice@example.com');
         const reply = ep.posts.find((x) => x.body === 'quoting');
         expect(reply.reply_to.body).toBe('after');
     });
@@ -691,45 +710,45 @@ async function react(email, postId, emoji, on) {
 
 describe('PUT /api/posts/:post_id/reactions', () => {
     it('adds a reaction and is idempotent', async () => {
-        const { post: p } = await (await post('alice@example.com', 'note')).json();
+        const { post: p } = await (await postNote('alice@example.com', 'note')).json();
         expect((await react('alice@example.com', p.id, '👍', true)).status).toBe(200);
         await react('alice@example.com', p.id, '👍', true);
 
-        const ep = await discussion('alice@example.com');
+        const ep = await episodeView('alice@example.com');
         expect(ep.posts[0].reactions).toEqual([
             { emoji: '👍', count: 1, mine: true, names: ['Alice'] },
         ]);
     });
 
     it('removes a reaction, and removing an absent one is a no-op', async () => {
-        const { post: p } = await (await post('alice@example.com', 'note')).json();
+        const { post: p } = await (await postNote('alice@example.com', 'note')).json();
         await react('alice@example.com', p.id, '👍', true);
         await react('alice@example.com', p.id, '👍', false);
         expect((await react('alice@example.com', p.id, '👍', false)).status).toBe(200);
 
-        const ep = await discussion('alice@example.com');
+        const ep = await episodeView('alice@example.com');
         expect(ep.posts[0].reactions).toEqual([]);
     });
 
     it('lets one person apply several different emoji, in set order', async () => {
-        const { post: p } = await (await post('alice@example.com', 'note')).json();
+        const { post: p } = await (await postNote('alice@example.com', 'note')).json();
         await react('alice@example.com', p.id, '😮', true);
         await react('alice@example.com', p.id, '👍', true);
 
-        const ep = await discussion('alice@example.com');
+        const ep = await episodeView('alice@example.com');
         expect(ep.posts[0].reactions.map((r) => r.emoji)).toEqual(['👍', '😮']);
     });
 
     // Reactions are the individual's, so the two halves of a shared column count
     // separately — unlike the watched checkbox they sit beside.
     it('counts both halves of a shared column separately', async () => {
-        const { post: p } = await (await post('alice@example.com', 'note')).json();
-        await reveal('bob@example.com');
-        await reveal('carol@example.com');
+        const { post: p } = await (await postNote('alice@example.com', 'note')).json();
+        await revealEpisode('bob@example.com');
+        await revealEpisode('carol@example.com');
         await react('bob@example.com', p.id, '🤣', true);
         await react('carol@example.com', p.id, '🤣', true);
 
-        const ep = await discussion('alice@example.com');
+        const ep = await episodeView('alice@example.com');
         const [chip] = ep.posts[0].reactions;
         expect(chip.count).toBe(2);
         expect(chip.names.sort()).toEqual(['Bob', 'Carol']);
@@ -737,19 +756,19 @@ describe('PUT /api/posts/:post_id/reactions', () => {
     });
 
     it('allows reacting to your own note', async () => {
-        const { post: p } = await (await post('alice@example.com', 'note')).json();
+        const { post: p } = await (await postNote('alice@example.com', 'note')).json();
         expect((await react('alice@example.com', p.id, '🤣', true)).status).toBe(200);
     });
 
     it('returns 400 for an emoji outside the set', async () => {
-        const { post: p } = await (await post('alice@example.com', 'note')).json();
+        const { post: p } = await (await postNote('alice@example.com', 'note')).json();
         for (const emoji of ['❤️', '🐍', 'x', '']) {
             expect((await react('alice@example.com', p.id, emoji, true)).status).toBe(400);
         }
     });
 
     it('returns 404 for a post the caller cannot see', async () => {
-        const { post: p } = await (await post('bob@example.com', 'hidden')).json();
+        const { post: p } = await (await postNote('bob@example.com', 'hidden')).json();
         expect((await react('alice@example.com', p.id, '👍', true)).status).toBe(404);
     });
 
@@ -758,17 +777,17 @@ describe('PUT /api/posts/:post_id/reactions', () => {
     });
 
     it('serializes no reactions for a foreign post on a locked board', async () => {
-        const { post: p } = await (await post('bob@example.com', 'locked body')).json();
+        const { post: p } = await (await postNote('bob@example.com', 'locked body')).json();
         await react('bob@example.com', p.id, '👍', true);
 
-        const ep = await discussion('alice@example.com');
+        const ep = await episodeView('alice@example.com');
         expect(ep.readable).toBe(false);
         expect(ep.posts).toHaveLength(0);
         expect(JSON.stringify(ep)).not.toContain('👍');
     });
 
     it('takes a post reactions with it when the post is deleted', async () => {
-        const { post: p } = await (await post('alice@example.com', 'note')).json();
+        const { post: p } = await (await postNote('alice@example.com', 'note')).json();
         await react('alice@example.com', p.id, '👍', true);
         await req('DELETE', `/api/posts/${p.id}`, { email: 'alice@example.com' });
 
@@ -781,7 +800,7 @@ describe('PUT /api/posts/:post_id/reactions', () => {
     });
 
     it('leaves reactions alone when a non-owner delete is refused', async () => {
-        const { post: p } = await (await post('bob@example.com', 'bob note')).json();
+        const { post: p } = await (await postNote('bob@example.com', 'bob note')).json();
         await react('bob@example.com', p.id, '👍', true);
         expect(
             (await req('DELETE', `/api/posts/${p.id}`, { email: 'alice@example.com' })).status,
