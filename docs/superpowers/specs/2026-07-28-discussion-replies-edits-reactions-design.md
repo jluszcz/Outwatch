@@ -217,7 +217,7 @@ If the final statement reports `changes === 0` — the row vanished between the
 select and the batch — the route returns `404`, not a false success.
 
 Deleting a note therefore leaves its replies in place as ordinary notes with no
-quote block. Delete is the author's explicit *unsay it*; a `[deleted]` ghost
+quote block. Delete is the author's explicit _unsay it_; a `[deleted]` ghost
 would preserve the presence of the thing they removed. The cost is a reply that
 reads slightly orphaned, which is acceptable for an action this rare.
 
@@ -237,11 +237,11 @@ Each serialized post gains three fields:
 
 `reply_to` has exactly three forms:
 
-| Condition                          | Serialized as                                     |
-| ---------------------------------- | ------------------------------------------------- |
-| `reply_to_post_id IS NULL`         | `null`                                            |
-| parent visible to the caller       | `{ id, author_name, author_index, body }`         |
-| parent not visible to the caller   | `{ id, locked: true }` — **no body in the response** |
+| Condition                        | Serialized as                                        |
+| -------------------------------- | ---------------------------------------------------- |
+| `reply_to_post_id IS NULL`       | `null`                                               |
+| parent visible to the caller     | `{ id, author_name, author_index, body }`            |
+| parent not visible to the caller | `{ id, locked: true }` — **no body in the response** |
 
 The parent's `author_name` and `author_index` come from the same `attribute()`
 helper the post itself uses, so a quote block can take the quoted author's accent

@@ -24,21 +24,21 @@
 
 ## File Structure
 
-| File | Responsibility |
-| --- | --- |
-| `migrations/0007_replies_edits_reactions.sql` (create) | The two `posts` columns and the `reactions` table |
-| `shared/reactions.js` (create) | `REACTIONS` — the valid emoji set, imported by Worker and browser |
-| `src/index.js` (modify) | `visiblePost()`, reply validation, `PATCH`, `PUT …/reactions`, richer discussion serialization, delete cleanup |
-| `frontend/post.js` (create) | `PostList`, `Post`, `Quote`, `ReactionBar`, `EmojiPicker`, `EditForm` |
-| `frontend/discussion.js` (modify) | `SeasonView` mutations, `EpisodeBoard` state, `PostForm` reply chip |
-| `frontend/hooks.js` (modify) | `useAutoSize` — extracted from `PostForm.fit()` |
-| `frontend/utils.js` (modify) | `quoteSnippet` |
-| `frontend/styles.css` (modify) | Quote block, action row, reaction chips, picker, edit form |
-| `test/worker/discussion.test.js` (modify) | Replies, edits, reactions, delete cleanup |
-| `test/worker/migrations.test.js` (modify) | Migration 0007 shape |
-| `test/frontend/utils.test.js` (modify) | `quoteSnippet` |
-| `test/frontend/posts.test.js` (modify) | Reply ordering |
-| `CLAUDE.md` (modify) | Schema, routes, frontend notes — updated in the task that changes each |
+| File                                                   | Responsibility                                                                                                 |
+| ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
+| `migrations/0007_replies_edits_reactions.sql` (create) | The two `posts` columns and the `reactions` table                                                              |
+| `shared/reactions.js` (create)                         | `REACTIONS` — the valid emoji set, imported by Worker and browser                                              |
+| `src/index.js` (modify)                                | `visiblePost()`, reply validation, `PATCH`, `PUT …/reactions`, richer discussion serialization, delete cleanup |
+| `frontend/post.js` (create)                            | `PostList`, `Post`, `Quote`, `ReactionBar`, `EmojiPicker`, `EditForm`                                          |
+| `frontend/discussion.js` (modify)                      | `SeasonView` mutations, `EpisodeBoard` state, `PostForm` reply chip                                            |
+| `frontend/hooks.js` (modify)                           | `useAutoSize` — extracted from `PostForm.fit()`                                                                |
+| `frontend/utils.js` (modify)                           | `quoteSnippet`                                                                                                 |
+| `frontend/styles.css` (modify)                         | Quote block, action row, reaction chips, picker, edit form                                                     |
+| `test/worker/discussion.test.js` (modify)              | Replies, edits, reactions, delete cleanup                                                                      |
+| `test/worker/migrations.test.js` (modify)              | Migration 0007 shape                                                                                           |
+| `test/frontend/utils.test.js` (modify)                 | `quoteSnippet`                                                                                                 |
+| `test/frontend/posts.test.js` (modify)                 | Reply ordering                                                                                                 |
+| `CLAUDE.md` (modify)                                   | Schema, routes, frontend notes — updated in the task that changes each                                         |
 
 ## Two refinements to the approved spec
 
@@ -783,9 +783,9 @@ describe('PUT /api/posts/:post_id/reactions', () => {
     it('leaves reactions alone when a non-owner delete is refused', async () => {
         const { post: p } = await (await post('bob@example.com', 'bob note')).json();
         await react('bob@example.com', p.id, '👍', true);
-        expect((await req('DELETE', `/api/posts/${p.id}`, { email: 'alice@example.com' })).status).toBe(
-            404,
-        );
+        expect(
+            (await req('DELETE', `/api/posts/${p.id}`, { email: 'alice@example.com' })).status,
+        ).toBe(404);
 
         const { results } = await env.DB.prepare(
             'SELECT COUNT(*) AS n FROM reactions WHERE post_id = ?',
@@ -856,37 +856,41 @@ Add the route above `app.patch('/api/posts/:post_id', …)`:
 // double tap cannot flip the state twice, and a retry after a dropped response
 // is harmless. The emoji travels in the body rather than the path because every
 // one of them is an astral character a path param carries only percent-encoded.
-app.put('/api/posts/:post_id/reactions', zValidator('json', reactionUpdate, onInvalid), async (c) => {
-    const me = await callerUser(c);
-    if (!me) return c.json({ error: 'Your account is not on the watch list' }, 403);
+app.put(
+    '/api/posts/:post_id/reactions',
+    zValidator('json', reactionUpdate, onInvalid),
+    async (c) => {
+        const me = await callerUser(c);
+        if (!me) return c.json({ error: 'Your account is not on the watch list' }, 403);
 
-    const postId = Number(c.req.param('post_id'));
-    if (!Number.isInteger(postId) || postId <= 0) {
-        return c.json({ error: 'post_id must be a positive integer' }, 400);
-    }
+        const postId = Number(c.req.param('post_id'));
+        if (!Number.isInteger(postId) || postId <= 0) {
+            return c.json({ error: 'post_id must be a positive integer' }, 400);
+        }
 
-    // Same gate, same 404: you cannot react to a note you cannot read.
-    const post = await visiblePost(c, postId, me);
-    if (!post) return c.json({ error: 'Unknown post' }, 404);
+        // Same gate, same 404: you cannot react to a note you cannot read.
+        const post = await visiblePost(c, postId, me);
+        if (!post) return c.json({ error: 'Unknown post' }, 404);
 
-    const { emoji, on } = c.req.valid('json');
-    if (on) {
-        await c.env.DB.prepare(
-            `INSERT OR IGNORE INTO reactions (post_id, email, emoji, created_at)
+        const { emoji, on } = c.req.valid('json');
+        if (on) {
+            await c.env.DB.prepare(
+                `INSERT OR IGNORE INTO reactions (post_id, email, emoji, created_at)
              VALUES (?, ?, ?, ?)`,
-        )
-            .bind(postId, me.email, emoji, new Date().toISOString())
-            .run();
-    } else {
-        await c.env.DB.prepare(
-            'DELETE FROM reactions WHERE post_id = ? AND email = ? AND emoji = ?',
-        )
-            .bind(postId, me.email, emoji)
-            .run();
-    }
+            )
+                .bind(postId, me.email, emoji, new Date().toISOString())
+                .run();
+        } else {
+            await c.env.DB.prepare(
+                'DELETE FROM reactions WHERE post_id = ? AND email = ? AND emoji = ?',
+            )
+                .bind(postId, me.email, emoji)
+                .run();
+        }
 
-    return c.json({ success: true, post_id: postId, emoji, on });
-});
+        return c.json({ success: true, post_id: postId, emoji, on });
+    },
+);
 ```
 
 - [ ] **Step 5: Serialize reactions**
@@ -1003,7 +1007,12 @@ export function PostList({ placed, meId, onDelete }) {
         <ol class="posts">
             ${placed.map(
                 (entry) =>
-                    html`<${Post} key=${entry.post.id} entry=${entry} meId=${meId} onDelete=${onDelete} />`,
+                    html`<${Post}
+                        key=${entry.post.id}
+                        entry=${entry}
+                        meId=${meId}
+                        onDelete=${onDelete}
+                    />`,
             )}
         </ol>
     `;
@@ -1101,10 +1110,10 @@ In `frontend/styles.css`, replace the `.post-delete` rule with:
 In the `@media (max-width: 640px)` block, replace the `.post-body` rule with `.post-content`:
 
 ```css
-    .post-content {
-        flex-basis: 100%;
-        order: 1;
-    }
+.post-content {
+    flex-basis: 100%;
+    order: 1;
+}
 ```
 
 and replace the `.post-delete` rule's selector with `.post-action` (keeping its comment and its 32px sizing). In the `@media (hover: hover)` block, replace `.post-delete:hover` with `.post-action:hover`.
@@ -1183,7 +1192,13 @@ Append to `test/frontend/posts.test.js` (adjust the import line if `orderPosts` 
 it('orders a reply by its own offset, not beside its parent', () => {
     const posts = [
         { id: 1, user_id: 'u1', offset_secs: 10, created_at: '2026-01-01T00:00:00Z' },
-        { id: 2, user_id: 'u2', offset_secs: 900, created_at: '2026-01-01T00:20:00Z', reply_to_post_id: 1 },
+        {
+            id: 2,
+            user_id: 'u2',
+            offset_secs: 900,
+            created_at: '2026-01-01T00:20:00Z',
+            reply_to_post_id: 1,
+        },
         { id: 3, user_id: 'u1', offset_secs: 60, created_at: '2026-01-01T00:05:00Z' },
     ];
     expect(orderPosts(posts).map((p) => p.post.id)).toEqual([1, 3, 2]);
@@ -1553,12 +1568,10 @@ In `Post`, swap the body for the form while editing, show the edited marker, and
 
 ```js
 <div class="post-content">
-    ${post.reply_to && html`<${Quote} quote=${post.reply_to} />`}
-    ${
-        editing
-            ? html`<${EditForm} post=${post} onSave=${onSaveEdit} onCancel=${onCancelEdit} />`
-            : html`<span class="post-body">${post.body}</span>`
-    }
+    ${post.reply_to && html`<${Quote} quote=${post.reply_to} />`}$
+    {editing
+        ? html`<${EditForm} post=${post} onSave=${onSaveEdit} onCancel=${onCancelEdit} />`
+        : html`<span class="post-body">${post.body}</span>`}
 </div>
 ```
 
@@ -1835,23 +1848,23 @@ Add to `frontend/styles.css` beside the other post rules:
 In the `@media (max-width: 640px)` block, add 44px targets:
 
 ```css
-    .emoji-btn {
-        min-width: 44px;
-        min-height: 44px;
-    }
+.emoji-btn {
+    min-width: 44px;
+    min-height: 44px;
+}
 
-    .reaction-chip {
-        min-height: 32px;
-    }
+.reaction-chip {
+    min-height: 32px;
+}
 ```
 
 In the `@media (hover: hover)` block:
 
 ```css
-    .reaction-chip:hover,
-    .emoji-btn:hover {
-        background: var(--surface-hover);
-    }
+.reaction-chip:hover,
+.emoji-btn:hover {
+    background: var(--surface-hover);
+}
 ```
 
 - [ ] **Step 4: Run the gates**
