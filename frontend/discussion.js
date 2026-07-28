@@ -3,8 +3,9 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'preact/hooks'
 import htm from 'htm';
 import { api } from './api.js';
 import { useRefreshGuard, useRefreshOnFocus } from './hooks.js';
-import { seasonLabel, orderPosts, formatOffset, formatOffsetShort, authorAccent } from './utils.js';
+import { seasonLabel, orderPosts, formatOffset } from './utils.js';
 import { sessionOffsetSecs } from '../shared/session.js';
+import { PostList } from './post.js';
 
 const html = htm.bind(h);
 
@@ -227,7 +228,7 @@ function EpisodeBoard({
                                 </div>
                             `
                         }
-                        <${PostList} placed=${placed} onDelete=${onDelete} />
+                        <${PostList} placed=${placed} meId=${meId} onDelete=${onDelete} />
                         ${
                             !ep.readable &&
                             ep.count > ep.posts.length &&
@@ -281,44 +282,6 @@ function WatchTimer({ session, serverSkewMs, onAction }) {
             </button>
             <button class="timer-btn subtle" onClick=${() => onAction('start')}>Restart</button>
         </div>
-    `;
-}
-
-function PostList({ placed, onDelete }) {
-    if (placed.length === 0) return html`<div class="no-posts">Nothing here yet.</div>`;
-    return html`
-        <ol class="posts">
-            ${placed.map(({ post, offset, inferred, tail }) => {
-                // 'mine' | 1..N | null — null leaves the note unstriped rather
-                // than inventing a colour for an author who left the roster.
-                const accent = authorAccent(post);
-                const accentClass =
-                    accent === 'mine' ? ' post-mine' : accent ? ` post-a${accent}` : '';
-                return html`
-                    <li key=${post.id} class=${'post' + accentClass}>
-                        <span class="post-time" title=${new Date(post.created_at).toLocaleString()}>
-                            ${
-                                tail
-                                    ? new Date(post.created_at).toLocaleDateString()
-                                    : `${inferred ? '~' : ''}${formatOffsetShort(offset)}`
-                            }
-                        </span>
-                        <span class="post-author">${post.mine ? 'You' : post.author_name}</span>
-                        <span class="post-body">${post.body}</span>
-                        ${
-                            post.mine &&
-                            html`<button
-                                class="post-delete"
-                                title="Delete this note"
-                                onClick=${() => onDelete(post.id)}
-                            >
-                                ×
-                            </button>`
-                        }
-                    </li>
-                `;
-            })}
-        </ol>
     `;
 }
 

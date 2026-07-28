@@ -21,7 +21,8 @@ It is a sibling of the **Seen** project and follows the same stack and structure
     - `hooks.js` — `useTheme`, `useRefreshGuard`, `useHashRoute`, `useRefreshOnFocus`
     - `refresh-guard.js` — `createRefreshGuard`, the refetch-vs-mutation race rules as a plain state machine; `useRefreshGuard` is the wiring around it
     - `board.js` — `Header`, `Board` and its child components (the season × user grid)
-    - `discussion.js` — `SeasonView` and the per-episode discussion board + watch timer UI
+    - `discussion.js` — `SeasonView`, `EpisodeBoard`, `WatchTimer`, and `PostForm`: the per-episode discussion board and its compose box + watch timer UI
+    - `post.js` — The note renderer: `PostList` and its children, moved out of `discussion.js` so a quote block and a reaction bar have somewhere to live inside each note
     - `utils.js` — Pure helpers (`seasonLabel`, `isFullyWatched`, `sortSeasons`, `sortBySeenCount`, `selectableSeasons`, `setWatched`, `clearsCurrentlyWatching`, `episodeNumbers`, `formatOffset`, `orderPosts`); shared with tests
     - `styles.css` — Theme tokens + layout
 - `shared/` — Code the Worker and the browser bundle both import, so the two never disagree

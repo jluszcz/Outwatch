@@ -543,12 +543,34 @@ tr.watched-all .check-cell input {
     overflow-wrap: anywhere;
 }
 
-.post-delete {
+/* The note's content column: quote block, body, reactions, and the picker,
+   stacked. `.post` stays a baseline-aligned row of time / author / this /
+   actions, so a plain note still reads as one line on a wide screen while a
+   quoted or reacted-to note grows downward rather than sideways. min-width: 0
+   lets a long unbroken run wrap instead of stretching the row. */
+.post-content {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    min-width: 0;
+    flex: 1;
+}
+
+.post-actions {
     margin-left: auto;
+    display: flex;
+    gap: 0.15rem;
+    flex-shrink: 0;
+}
+
+.post-action {
     background: none;
     border: none;
     color: var(--text-faint);
     cursor: pointer;
+    padding: 0 0.15rem;
+    font-size: 0.9rem;
+    line-height: 1;
 }
 
 .no-posts,
@@ -855,7 +877,7 @@ tr.watched-all .check-cell input {
         min-width: 0;
     }
 
-    .post-body {
+    .post-content {
         flex-basis: 100%;
         order: 1;
     }
@@ -896,7 +918,7 @@ tr.watched-all .check-cell input {
 
     /* Deliberately smaller than 44px: this deletes a note and sits inline with
        notes you scroll past, so it should be reachable but not effortless. */
-    .post-delete {
+    .post-action {
         min-width: 32px;
         min-height: 32px;
         font-size: 1.1rem;
@@ -958,7 +980,7 @@ tr.watched-all .check-cell input {
         color: var(--text);
     }
 
-    .post-delete:hover {
+    .post-action:hover {
         color: var(--red);
     }
 }
