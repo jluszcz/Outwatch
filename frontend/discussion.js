@@ -2,7 +2,7 @@ import { h } from 'preact';
 import { useState, useEffect, useMemo, useCallback, useRef } from 'preact/hooks';
 import htm from 'htm';
 import { api } from './api.js';
-import { useRefreshGuard, useRefreshOnFocus } from './hooks.js';
+import { useRefreshGuard, useRefreshOnFocus, useAutoSize } from './hooks.js';
 import { seasonLabel, orderPosts, formatOffset, quoteSnippet } from './utils.js';
 import { sessionOffsetSecs } from '../shared/session.js';
 import { PostList } from './post.js';
@@ -85,6 +85,15 @@ export function SeasonView({ seasonId }) {
 
     const removePost = (postId) => mutate(() => api(`/api/posts/${postId}`, { method: 'DELETE' }));
 
+    const editPost = (postId, body) =>
+        mutate(() =>
+            api(`/api/posts/${postId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ body }),
+            }),
+        );
+
     // pause/resume 409 once the session has gone stale server-side (see
     // shared/session.js) — that's not an app error, it's the expected outcome
     // of waiting too long, so it's suppressed here rather than surfaced as a
@@ -151,6 +160,7 @@ export function SeasonView({ seasonId }) {
                             onReveal=${reveal}
                             onPost=${addPost}
                             onDelete=${removePost}
+                            onEdit=${editPost}
                             onTimer=${setTimer}
                         />`,
                 )}
@@ -170,6 +180,7 @@ function EpisodeBoard({
     onReveal,
     onPost,
     onDelete,
+    onEdit,
     onTimer,
 }) {
     const placed = useMemo(() => orderPosts(ep.posts), [ep.posts]);
@@ -177,6 +188,9 @@ function EpisodeBoard({
     // Episode-scoped, so the chip and the note it points at cannot drift apart, and
     // so one board's half-written reply does not follow you to another.
     const [replyTo, setReplyTo] = useState(null);
+    // Episode-scoped for the same reason as replyTo — one note editable per
+    // board at a time, by construction.
+    const [editingId, setEditingId] = useState(null);
     // Owned here rather than inside PostForm so tapping Reply can focus the box.
     const inputRef = useRef(null);
 
@@ -194,6 +208,13 @@ function EpisodeBoard({
         const posted = await onPost(ep.episode, body, replyTo?.id ?? null);
         if (posted) setReplyTo(null);
         return posted;
+    };
+
+    const saveEdit = async (postId, body) => {
+        const saved = await onEdit(postId, body);
+        // Stay in the editor on failure: the banner explains why, and the rewritten
+        // text is still in the box rather than discarded.
+        if (saved) setEditingId(null);
     };
 
     const summary =
@@ -255,6 +276,10 @@ function EpisodeBoard({
                             meId=${meId}
                             onReply=${startReply}
                             onDelete=${onDelete}
+                            editingId=${editingId}
+                            onStartEdit=${setEditingId}
+                            onCancelEdit=${() => setEditingId(null)}
+                            onSaveEdit=${saveEdit}
                         />
                         ${
                             !ep.readable &&
@@ -326,33 +351,7 @@ function PostForm({ inputRef, replyTo, onCancelReply, onPost }) {
     const [body, setBody] = useState('');
     const [busy, setBusy] = useState(false);
 
-    // A textarea does not size itself to its content, so the height is driven
-    // from scrollHeight. Resetting to 'auto' first is what lets the box shrink
-    // again after a delete — scrollHeight never reports less than the height
-    // already set.
-    const fit = useCallback(() => {
-        const el = inputRef.current;
-        if (!el) return;
-        el.style.height = 'auto';
-        const style = getComputedStyle(el);
-        // scrollHeight leaves out the border, which box-sizing: border-box
-        // counts inside the height, so skipping this clips the last line.
-        const border = parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
-        el.style.height = `${el.scrollHeight + border}px`;
-    }, []);
-
-    useEffect(fit, [body, fit]);
-
-    // The same text rewraps onto a different number of lines when the box gets
-    // narrower or wider, so height has to be recomputed on a rotation or a
-    // window resize too — not only when the text changes. The box's width here
-    // is a function of the viewport alone, so the window event is enough and a
-    // ResizeObserver (which would also have to guard against re-firing on the
-    // height changes made above) buys nothing.
-    useEffect(() => {
-        window.addEventListener('resize', fit);
-        return () => window.removeEventListener('resize', fit);
-    }, [fit]);
+    useAutoSize(inputRef, body);
 
     const submit = async (e) => {
         e.preventDefault();

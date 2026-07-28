@@ -598,6 +598,23 @@ tr.watched-all .check-cell input {
     line-height: 1;
 }
 
+.post-edited {
+    color: var(--text-faint);
+    font-size: 0.75rem;
+}
+
+.post-edit {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.post-edit-actions {
+    display: flex;
+    gap: 0.4rem;
+    justify-content: flex-end;
+}
+
 .no-posts,
 .hidden-note {
     color: var(--text-muted);

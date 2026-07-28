@@ -18,7 +18,7 @@ It is a sibling of the **Seen** project and follows the same stack and structure
 - `frontend/` — Preact + htm frontend source
     - `script.js` — `App` component: board/season state, hash routing, optimistic mutations
     - `api.js` — `api()`, the shared fetch helper (throws with `.status` on a non-2xx response)
-    - `hooks.js` — `useTheme`, `useRefreshGuard`, `useHashRoute`, `useRefreshOnFocus`
+    - `hooks.js` — `useTheme`, `useRefreshGuard`, `useHashRoute`, `useRefreshOnFocus`, `useAutoSize`
     - `refresh-guard.js` — `createRefreshGuard`, the refetch-vs-mutation race rules as a plain state machine; `useRefreshGuard` is the wiring around it
     - `board.js` — `Header`, `Board` and its child components (the season × user grid)
     - `discussion.js` — `SeasonView`, `EpisodeBoard`, `WatchTimer`, and `PostForm`: the per-episode discussion board and its compose box + watch timer UI
@@ -309,6 +309,18 @@ names and emails out of source control. `seed.sql` holds only optional sample
   reply button starts it) and `PostForm` (whose chip displays it and whose
   submit clears it), and scoping it there keeps a half-written reply from
   following you to a different episode.
+- Editing a note is inline (`EditForm` in `post.js`): the ✎ button on one of
+  your own notes, shown via the server-computed `mine` flag, swaps the body for
+  a textarea with Save and Cancel in place, so the surrounding conversation
+  stays visible while you rewrite. `PATCH /api/posts/:post_id` never touches
+  `created_at`, `offset_secs`, or `reply_to_post_id`, so a saved edit keeps the
+  note's position on the shared watch-offset timeline and only its body and an
+  `edited_at` marker (`· edited`) change. `editingId` is state owned by
+  `EpisodeBoard`, for the same reason `replyTo` is — episode-scoped, one note
+  editable per board at a time. The edit box shares `useAutoSize` (`hooks.js`)
+  with `PostForm`'s compose box, extracted from `PostForm.fit` rather than
+  duplicated, and stays enabled while saving for the same reason `PostForm`'s
+  does.
 - The optional watch timer (`WatchTimer` in `discussion.js`, rule in
   `shared/session.js`) starts, pauses, and resumes per (user, episode); a
   session goes stale after three hours without a start/pause/resume/post, and
