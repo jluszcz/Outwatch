@@ -48,6 +48,8 @@ const postCreate = z.object({
         .nullish(),
 });
 
+const postEdit = z.object({ body: postBody });
+
 app.onError((err, c) => {
     // An HTTPException is an intentional HTTP error (e.g. Hono's 400 for a
     // body that fails JSON.parse) — keep its status instead of collapsing it
@@ -569,6 +571,38 @@ app.post('/api/seasons/:season_id/episodes/:episode/reveal', async (c) => {
         .run();
 
     return c.json({ success: true, season_id: season.id, episode });
+});
+
+// Editing a note changes its body and nothing else: created_at and offset_secs
+// are frozen, so the note holds its place on the timeline however often it is
+// rewritten, and reply_to_post_id is frozen so an edit cannot re-point a quote.
+// Season-agnostic like the delete route — a post id alone identifies the row.
+// Ownership is the same predicate delete uses: the individual who wrote it, or
+// the column for a note predating individual attribution. Not-yours and
+// not-real answer 404 alike.
+app.patch('/api/posts/:post_id', zValidator('json', postEdit, onInvalid), async (c) => {
+    const me = await callerUser(c);
+    if (!me) return c.json({ error: 'Your account is not on the watch list' }, 403);
+
+    const postId = Number(c.req.param('post_id'));
+    if (!Number.isInteger(postId) || postId <= 0) {
+        return c.json({ error: 'post_id must be a positive integer' }, 400);
+    }
+
+    const { body } = c.req.valid('json');
+    const editedAt = new Date().toISOString();
+
+    const { meta } = await c.env.DB.prepare(
+        `UPDATE posts SET body = ?, edited_at = ?
+         WHERE id = ? AND user_id = ? AND (author_email = ? OR author_email IS NULL)`,
+    )
+        .bind(body, editedAt, postId, me.id, me.email)
+        .run();
+    if (meta.changes === 0) return c.json({ error: 'Unknown post' }, 404);
+
+    // The client refetches the whole discussion regardless, so this is a
+    // receipt rather than a payload.
+    return c.json({ success: true, post_id: postId, edited_at: editedAt });
 });
 
 // Season-agnostic: a post id alone identifies the row, so this doesn't go

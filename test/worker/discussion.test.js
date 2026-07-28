@@ -638,42 +638,41 @@ describe('POST /api/seasons/:season_id/episodes/:episode/timer', () => {
     });
 });
 
-// `post`, `reveal`, and `discussion` shadow the module-level helpers of the
-// same name above (which predate replies and have narrower signatures the
-// rest of the file already depends on) — scoped to this describe block only,
-// per the brief, so later tasks in this plan can define their own local
-// versions rather than fight over one shared shape.
+// postNote, revealEpisode, watchSeason, and episodeView were `post`, `reveal`,
+// `watch`, and `discussion` inside this describe block, scoped there because
+// they collided with the narrower, older module-level `post`/`discussion`
+// helpers above (used by ~30 call sites in the earlier suites). Hoisted to
+// module scope, under these names, so Tasks 3 and 4 can share them instead of
+// redefining the same block per task.
+async function postNote(email, body, episode = 7, replyTo = undefined) {
+    const r = await req('POST', `/api/seasons/45/episodes/${episode}/posts`, {
+        body: replyTo === undefined ? { body } : { body, reply_to_post_id: replyTo },
+        email,
+    });
+    return r;
+}
+
+async function revealEpisode(email, episode = 7) {
+    return req('POST', `/api/seasons/45/episodes/${episode}/reveal`, { email });
+}
+
+async function watchSeason(email) {
+    return req('POST', '/api/watched', { body: { season_id: 45 }, email });
+}
+
+async function episodeView(email, episode = 7) {
+    const { episodes } = await (await req('GET', '/api/seasons/45/discussion', { email })).json();
+    return episodes.find((e) => e.episode === episode);
+}
+
 describe('quote replies', () => {
-    async function post(email, body, episode = 7, replyTo = undefined) {
-        const r = await req('POST', `/api/seasons/45/episodes/${episode}/posts`, {
-            body: replyTo === undefined ? { body } : { body, reply_to_post_id: replyTo },
-            email,
-        });
-        return r;
-    }
-
-    async function reveal(email, episode = 7) {
-        return req('POST', `/api/seasons/45/episodes/${episode}/reveal`, { email });
-    }
-
-    async function watch(email) {
-        return req('POST', '/api/watched', { body: { season_id: 45 }, email });
-    }
-
-    async function discussion(email, episode = 7) {
-        const { episodes } = await (
-            await req('GET', '/api/seasons/45/discussion', { email })
-        ).json();
-        return episodes.find((e) => e.episode === episode);
-    }
-
     it('stores the parent and serializes it with its body', async () => {
-        const { post: parent } = await (await post('bob@example.com', 'jeff is right')).json();
-        await reveal('alice@example.com');
-        const r = await post('alice@example.com', 'agreed', 7, parent.id);
+        const { post: parent } = await (await postNote('bob@example.com', 'jeff is right')).json();
+        await revealEpisode('alice@example.com');
+        const r = await postNote('alice@example.com', 'agreed', 7, parent.id);
         expect(r.status).toBe(201);
 
-        const ep = await discussion('alice@example.com');
+        const ep = await episodeView('alice@example.com');
         const reply = ep.posts.find((p) => p.body === 'agreed');
         expect(reply.reply_to).toMatchObject({
             id: parent.id,
@@ -684,19 +683,19 @@ describe('quote replies', () => {
     });
 
     it('returns 404 for a parent in another episode', async () => {
-        const { post: parent } = await (await post('alice@example.com', 'ep 6 note', 6)).json();
-        const r = await post('alice@example.com', 'reply', 7, parent.id);
+        const { post: parent } = await (await postNote('alice@example.com', 'ep 6 note', 6)).json();
+        const r = await postNote('alice@example.com', 'reply', 7, parent.id);
         expect(r.status).toBe(404);
     });
 
     it('returns 404 for a parent the caller cannot see', async () => {
-        const { post: parent } = await (await post('bob@example.com', 'secret')).json();
-        const r = await post('alice@example.com', 'reply', 7, parent.id);
+        const { post: parent } = await (await postNote('bob@example.com', 'secret')).json();
+        const r = await postNote('alice@example.com', 'reply', 7, parent.id);
         expect(r.status).toBe(404);
     });
 
     it('returns 404 for a parent that does not exist', async () => {
-        const r = await post('alice@example.com', 'reply', 7, 999999);
+        const r = await postNote('alice@example.com', 'reply', 7, 999999);
         expect(r.status).toBe(404);
     });
 
@@ -705,12 +704,12 @@ describe('quote replies', () => {
     // re-locks episodes the caller never explicitly revealed — while their own
     // reply, and its now-unreadable parent id, remain.
     it('hides a parent that became unreadable after an unmark', async () => {
-        const { post: parent } = await (await post('bob@example.com', 'the blindside')).json();
-        await watch('alice@example.com');
-        await post('alice@example.com', 'called it', 7, parent.id);
+        const { post: parent } = await (await postNote('bob@example.com', 'the blindside')).json();
+        await watchSeason('alice@example.com');
+        await postNote('alice@example.com', 'called it', 7, parent.id);
         await req('DELETE', '/api/watched/45', { email: 'alice@example.com' });
 
-        const ep = await discussion('alice@example.com');
+        const ep = await episodeView('alice@example.com');
         expect(ep.readable).toBe(false);
         const reply = ep.posts.find((p) => p.body === 'called it');
         expect(reply.reply_to).toEqual({ id: parent.id, locked: true });
@@ -718,27 +717,108 @@ describe('quote replies', () => {
     });
 
     it('leaves a reply intact when its parent is deleted', async () => {
-        const { post: parent } = await (await post('alice@example.com', 'first')).json();
-        await post('alice@example.com', 'second', 7, parent.id);
+        const { post: parent } = await (await postNote('alice@example.com', 'first')).json();
+        await postNote('alice@example.com', 'second', 7, parent.id);
         const del = await req('DELETE', `/api/posts/${parent.id}`, { email: 'alice@example.com' });
         expect(del.status).toBe(200);
 
-        const ep = await discussion('alice@example.com');
+        const ep = await episodeView('alice@example.com');
         const reply = ep.posts.find((p) => p.body === 'second');
         expect(reply).toBeDefined();
         expect(reply.reply_to).toBeNull();
     });
 
     it('does not let a non-owner delete detach anything', async () => {
-        const { post: parent } = await (await post('bob@example.com', 'bob note')).json();
-        await reveal('alice@example.com');
-        await post('alice@example.com', 'alice reply', 7, parent.id);
+        const { post: parent } = await (await postNote('bob@example.com', 'bob note')).json();
+        await revealEpisode('alice@example.com');
+        await postNote('alice@example.com', 'alice reply', 7, parent.id);
 
         const del = await req('DELETE', `/api/posts/${parent.id}`, { email: 'alice@example.com' });
         expect(del.status).toBe(404);
 
-        const ep = await discussion('alice@example.com');
+        const ep = await episodeView('alice@example.com');
         const reply = ep.posts.find((p) => p.body === 'alice reply');
         expect(reply.reply_to.body).toBe('bob note');
+    });
+});
+
+describe('PATCH /api/posts/:post_id', () => {
+    it('rewrites the body and stamps edited_at without moving the note', async () => {
+        const { post: p } = await (await postNote('alice@example.com', 'typo hree')).json();
+        const r = await req('PATCH', `/api/posts/${p.id}`, {
+            body: { body: 'typo here' },
+            email: 'alice@example.com',
+        });
+        expect(r.status).toBe(200);
+
+        const ep = await episodeView('alice@example.com');
+        const edited = ep.posts.find((x) => x.id === p.id);
+        expect(edited.body).toBe('typo here');
+        expect(edited.edited_at).not.toBeNull();
+        expect(edited.created_at).toBe(p.created_at);
+        expect(edited.offset_secs).toBe(p.offset_secs);
+    });
+
+    it('is null on edited_at until the note is edited', async () => {
+        await postNote('alice@example.com', 'untouched');
+        const ep = await episodeView('alice@example.com');
+        expect(ep.posts[0].edited_at).toBeNull();
+    });
+
+    it('refuses a note written by the other individual in the same column', async () => {
+        const { post: p } = await (await postNote('bob@example.com', 'bob wrote this')).json();
+        const r = await req('PATCH', `/api/posts/${p.id}`, {
+            body: { body: 'carol rewrote it' },
+            email: 'carol@example.com',
+        });
+        expect(r.status).toBe(404);
+    });
+
+    // A note predating individual attribution belongs to the column, exactly as
+    // the delete rule has it.
+    it('allows the column to edit a note with no recorded author', async () => {
+        await env.DB.exec(
+            'INSERT INTO posts (season_id, episode, user_id, body, created_at) ' +
+                "VALUES (45, 7, 'user-bob', 'legacy note', '2026-01-01T00:00:00.000Z')",
+        );
+        const row = await env.DB.prepare("SELECT id FROM posts WHERE body = 'legacy note'").first();
+        const r = await req('PATCH', `/api/posts/${row.id}`, {
+            body: { body: 'legacy note, fixed' },
+            email: 'carol@example.com',
+        });
+        expect(r.status).toBe(200);
+    });
+
+    it('returns 400 for an empty body and one over 2000 characters', async () => {
+        const { post: p } = await (await postNote('alice@example.com', 'note')).json();
+        for (const body of ['', '   ', 'x'.repeat(2001)]) {
+            const r = await req('PATCH', `/api/posts/${p.id}`, {
+                body: { body },
+                email: 'alice@example.com',
+            });
+            expect(r.status).toBe(400);
+        }
+    });
+
+    it('returns 404 for a post that does not exist', async () => {
+        const r = await req('PATCH', '/api/posts/999999', {
+            body: { body: 'nope' },
+            email: 'alice@example.com',
+        });
+        expect(r.status).toBe(404);
+    });
+
+    it('shows an edited parent through to a reply that quotes it', async () => {
+        const { post: parent } = await (await postNote('bob@example.com', 'before')).json();
+        await revealEpisode('alice@example.com');
+        await postNote('alice@example.com', 'quoting', 7, parent.id);
+        await req('PATCH', `/api/posts/${parent.id}`, {
+            body: { body: 'after' },
+            email: 'bob@example.com',
+        });
+
+        const ep = await episodeView('alice@example.com');
+        const reply = ep.posts.find((x) => x.body === 'quoting');
+        expect(reply.reply_to.body).toBe('after');
     });
 });
