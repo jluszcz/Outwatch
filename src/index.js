@@ -312,8 +312,11 @@ app.post(
 // The roster seen as individuals rather than as columns: one entry per login,
 // ordered so it does not depend on who is asking. That ordering is what makes
 // an author's accent slot stable — a person keeps the same colour across
-// reloads and across everyone's screens. `name` falls back to the column's own
-// name, which is what a solo column and a not-yet-named roster entry get.
+// reloads and across everyone's screens, for as long as the roster's shape
+// doesn't change; adding or removing an entry that sorts earlier reshuffles
+// every index after it, which is rare and only costs a colour. `name` falls
+// back to the column's own name, which is what a solo column and a
+// not-yet-named roster entry get.
 async function rosterPeople(c) {
     const { results } = await c.env.DB.prepare(
         `SELECT user_emails.email AS email, user_emails.name AS person_name,
@@ -417,7 +420,13 @@ app.get('/api/seasons/:season_id/discussion', async (c) => {
         // who has watched which season, so this reveals nothing new — and it
         // tells you whether opening the board is worth it. Deduped on the author
         // key rather than the display name, so two people who share a first name
-        // still list twice.
+        // still list twice. The key mixes two spaces — author_email when a note
+        // has one, user_id when it doesn't — so until the one-time backfill
+        // attributes every pre-existing note, a household with both an old and a
+        // new note lists twice (once as the column, once as the individual).
+        // Self-healing once the backfill lands, and the conservative choice
+        // given the data: there is no way to tell from a NULL author_email alone
+        // whether it's the same person as a later attributed one.
         const authors = [];
         const seenAuthors = new Set();
         for (const p of all) {
