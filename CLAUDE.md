@@ -43,6 +43,7 @@ It is a sibling of the **Seen** project and follows the same stack and structure
     - `0004_email_nocase.sql` — rebuilds `user_emails` with `COLLATE NOCASE` emails
     - `0005_discussions.sql` — adds `seasons.episode_count`; creates `posts`, `reveals`, `watch_sessions`
     - `0006_individual_authors.sql` — adds `user_emails.name` and `posts.author_email`
+    - `0007_replies_edits_reactions.sql` — adds `posts.reply_to_post_id` and `posts.edited_at`; creates `reactions`
 - `roster.sql` — real roster: `users` (names) + `user_emails` (emails), with generic `user-N` ids (gitignored; template in `roster.example.sql`)
 - `test/` — Tests
     - `test/worker/` — Worker API tests (`@cloudflare/vitest-pool-workers`)
@@ -155,9 +156,10 @@ Never bypass either with `--no-verify`.
 - `user_emails` — `email` PK, `user_id`, `name` (added in `0006`, the individual's byline on a discussion note; `NULL` falls back to the column's `users.name`); maps each Access login email to a column (couples have two rows)
 - `seasons` — `id` (the season number), `subtitle` (may be empty), `wikipedia_url`, `episode_count` (added in `0005`, from Wikipedia's episode table, excluding the reunion special)
 - `watched` — `(user_id, season_id)` PK + `created_at`; presence = watched
-- `posts` — one row per discussion note: `id`, `season_id`, `episode`, `user_id`, `body`, `created_at`, `offset_secs` (the writer's watch-timer offset at post time, frozen, `NULL` if no timer was running), `author_email` (added in `0006`, `REFERENCES user_emails (email)`; who wrote the note, `NULL` on notes predating individual attribution, which fall back to the column for both the byline and the delete rule)
+- `posts` — one row per discussion note: `id`, `season_id`, `episode`, `user_id`, `body`, `created_at`, `offset_secs` (the writer's watch-timer offset at post time, frozen, `NULL` if no timer was running), `author_email` (added in `0006`, `REFERENCES user_emails (email)`; who wrote the note, `NULL` on notes predating individual attribution, which fall back to the column for both the byline and the delete rule), `reply_to_post_id` (added in `0007`, `REFERENCES posts (id)`; the note being answered, `NULL` for an ordinary note or a reply whose parent was deleted), `edited_at` (added in `0007`, `NULL` on a note never edited)
 - `reveals` — `(user_id, season_id, episode)` PK + `created_at`; presence = that user opened that episode's board for reading (one-way — there is no re-lock)
 - `watch_sessions` — `(user_id, season_id, episode)` PK, `elapsed_secs`, `running_since` (`NULL` while paused), `last_activity_at`; a running or paused watch timer, stale after three hours of inactivity
+- `reactions` — `(post_id, email, emoji)` PK + `created_at`; presence = that individual put that emoji on that note. Keyed on the email, not the column, so both halves of a shared column react separately
 
 Seasons (migration `0002`) are seeded reference data, present in every
 environment after `migrations apply`. The roster (`users` + `user_emails`)
