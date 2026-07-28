@@ -838,6 +838,28 @@ describe('PATCH /api/posts/:post_id', () => {
         const reply = ep.posts.find((x) => x.body === 'quoting');
         expect(reply.reply_to.body).toBe('after');
     });
+
+    // reply_to_post_id is named alongside created_at and offset_secs as frozen
+    // by an edit — an edit that re-pointed a quote would silently rewrite which
+    // note it answers.
+    it('keeps reply_to_post_id frozen across an edit of the reply itself', async () => {
+        const { post: parent } = await (await postNote('bob@example.com', 'the blindside')).json();
+        await revealEpisode('alice@example.com');
+        const { post: reply } = await (
+            await postNote('alice@example.com', 'called it', 7, parent.id)
+        ).json();
+
+        const r = await req('PATCH', `/api/posts/${reply.id}`, {
+            body: { body: 'called it, obviously' },
+            email: 'alice@example.com',
+        });
+        expect(r.status).toBe(200);
+
+        const ep = await episodeView('alice@example.com');
+        const edited = ep.posts.find((x) => x.id === reply.id);
+        expect(edited.body).toBe('called it, obviously');
+        expect(edited.reply_to).toMatchObject({ id: parent.id, body: 'the blindside' });
+    });
 });
 
 async function react(email, postId, emoji, on) {

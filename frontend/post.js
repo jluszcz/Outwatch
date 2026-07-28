@@ -141,7 +141,12 @@ function EditForm({ post, onSave, onCancel }) {
 // chip in and is what tapping it toggles. The bar still renders for a viewer
 // with no `meId` — the counts and names are information they're entitled to
 // see — but each chip is disabled, since reacting, like every other control in
-// the action row, requires being on the roster.
+// the action row, requires being on the roster. Defensive rather than reachable:
+// a caller with no roster row gets `readable === false` for every episode and an
+// empty `visible` array server-side, so no post — and so no chip — is ever
+// serialized to them in the first place. That also means the usual "browsers
+// suppress `title` on a disabled element" concern for the `title` above never
+// arises in practice, since there is no rendered, disabled chip for it to apply to.
 function ReactionBar({ post, meId, onReact }) {
     return html`
         <div class="reaction-bar">
@@ -244,17 +249,19 @@ function Post({
                     <button
                         class="post-action"
                         title="Reply to this note"
+                        aria-label="Reply to this note"
                         onClick=${() => onReply(post)}
                     >
-                        ↰
+                        <span aria-hidden="true">↰</span>
                     </button>
                     <button
                         class="post-action"
                         title="React to this note"
+                        aria-label="React to this note"
                         aria-expanded=${pickerOpen}
                         onClick=${() => onTogglePicker(post.id)}
                     >
-                        ☺+
+                        <span aria-hidden="true">☺+</span>
                     </button>
                     ${
                         post.mine &&
@@ -262,19 +269,21 @@ function Post({
                         html`<button
                             class="post-action"
                             title="Edit this note"
+                            aria-label="Edit this note"
                             onClick=${() => onStartEdit(post.id)}
                         >
-                            ✎
+                            <span aria-hidden="true">✎</span>
                         </button>`
                     }
                     ${
                         post.mine &&
                         html`<button
-                            class="post-action"
+                            class="post-action post-action-delete"
                             title="Delete this note"
+                            aria-label="Delete this note"
                             onClick=${() => onDelete(post.id)}
                         >
-                            ×
+                            <span aria-hidden="true">×</span>
                         </button>`
                     }
                 </div>`

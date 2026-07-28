@@ -495,30 +495,6 @@ tr.watched-all .check-cell input {
     padding-left: 0.6rem;
 }
 
-.post-mine {
-    border-left-color: var(--blue);
-}
-
-.post-a1 {
-    border-left-color: var(--author-1);
-}
-
-.post-a2 {
-    border-left-color: var(--author-2);
-}
-
-.post-a3 {
-    border-left-color: var(--author-3);
-}
-
-.post-a4 {
-    border-left-color: var(--author-4);
-}
-
-.post-a5 {
-    border-left-color: var(--author-5);
-}
-
 .post-time {
     font-variant-numeric: tabular-nums;
     color: var(--text-muted);
@@ -586,6 +562,38 @@ tr.watched-all .check-cell input {
 
 .post-quote-locked {
     font-style: italic;
+}
+
+/* Shared by .post's own stripe and .post-quote's: both set border-left as a
+   shorthand, and a shorthand resets every longhand it doesn't mention —
+   including border-left-color. This block MUST stay positioned after every
+   rule above that sets border-left as a shorthand (.post, .post-quote), or
+   the shorthand would run after these color-only rules and reset the colour
+   right back to transparent/var(--border). CLAUDE.md documents the same
+   shorthand-after-color hazard for the @media (max-width: 640px) block
+   further down; this is the same trap outside a media query. */
+.post-mine {
+    border-left-color: var(--blue);
+}
+
+.post-a1 {
+    border-left-color: var(--author-1);
+}
+
+.post-a2 {
+    border-left-color: var(--author-2);
+}
+
+.post-a3 {
+    border-left-color: var(--author-3);
+}
+
+.post-a4 {
+    border-left-color: var(--author-4);
+}
+
+.post-a5 {
+    border-left-color: var(--author-5);
 }
 
 .post-action {
@@ -1101,7 +1109,14 @@ tr.watched-all .check-cell input {
         color: var(--text);
     }
 
+    /* Generic hover for the non-destructive action-row buttons (reply, react,
+       edit, and the reply chip's cancel); .post-action-delete:hover below
+       overrides it for the one button that should read as destructive. */
     .post-action:hover {
+        color: var(--text);
+    }
+
+    .post-action-delete:hover {
         color: var(--red);
     }
 

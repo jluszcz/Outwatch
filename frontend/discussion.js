@@ -201,6 +201,15 @@ function EpisodeBoard({
     const [replyTo, setReplyTo] = useState(null);
     // Episode-scoped for the same reason as replyTo — one note editable per
     // board at a time, by construction.
+    //
+    // Passed to PostList below as onStartEdit=${setEditingId} — a raw setter,
+    // not a call guarded by EditForm's canCancel(). So clicking the ✎ on a
+    // different note unmounts an in-flight EditForm instead of being blocked
+    // while its save is still in flight. That's mild, and in fact correct: the
+    // user already pressed Save, so letting that save land is the right
+    // outcome, not a bug. canCancel() only guards backing out via Cancel or
+    // Escape — i.e. not saving at all — it isn't meant to, and doesn't, cover
+    // navigating away to edit something else instead.
     const [editingId, setEditingId] = useState(null);
     // Which post's picker is open, or null for none — one at a time, same as
     // editingId, and episode-scoped for the same reason.
@@ -415,9 +424,10 @@ function PostForm({ inputRef, replyTo, onCancelReply, onPost }) {
                         type="button"
                         class="post-action"
                         title="Cancel reply"
+                        aria-label="Cancel reply"
                         onClick=${onCancelReply}
                     >
-                        ×
+                        <span aria-hidden="true">×</span>
                     </button>
                 </div>`
             }
