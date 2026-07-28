@@ -17,6 +17,7 @@ Built on Cloudflare Workers with a D1 SQLite database, behind Cloudflare Access.
 - Fully-watched seasons gray out and sink to the bottom
 - Per-episode discussion boards, write-only until you open them
 - Light/dark theme toggle
+- Installs to a phone home screen as a standalone app, with its own icon
 - Zero-code authentication via Cloudflare Access
 
 ## Discussion Boards
@@ -38,6 +39,44 @@ watching at different paces don't spoil each other.
   instead of by when they happened to be typed. Pausing or resuming fails
   (409) if the timer was never started, or if it was but has gone three
   hours idle and is now considered stale — either way you start a new one.
+
+## Home Screen Icon
+
+The site is installable: add it to a phone's home screen and it launches
+standalone, with its own icon and no browser chrome. There is deliberately no
+service worker — every load still hits the network, because a cached, stale
+board is worse than a spinner for a tracker whose whole point is showing what
+everyone else has done.
+
+One caveat, inherent to Cloudflare Access rather than to the manifest: an
+installed app on iOS gets its own cookie storage, separate from Safari's. The
+first launch from the home screen therefore runs the Access login flow again,
+and may bounce out to Safari and back before landing in the app. It is a
+one-time cost per install.
+
+### Regenerating the icons
+
+`assets/icon-source.png` is the original artwork; every other icon is derived
+from it with macOS's built-in `sips` and committed. Regenerate only if the
+artwork changes:
+
+```bash
+sips -s format png -Z 512 assets/icon-source.png --out public/icon-512.png
+sips -s format png -Z 192 assets/icon-source.png --out public/icon-192.png
+sips -s format png -Z 180 assets/icon-source.png --out public/apple-touch-icon.png
+sips -s format png -Z 32  assets/icon-source.png --out public/favicon-32.png
+
+# maskable: shrink to 80%, then pad back out, so Android's circular crop only
+# ever removes padding. The pad matches the artwork's black background.
+sips -s format png -Z 410 assets/icon-source.png --out /tmp/icon-410.png
+sips --padToHeightWidth 512 512 --padColor 000000 /tmp/icon-410.png --out public/icon-maskable-512.png
+```
+
+There is no build step for this — the icons are committed, so CI never needs an
+image toolchain. The source sits in `assets/` rather than `public/` because
+everything under `public/` is uploaded as a Workers static asset and answerable
+at its own URL; the original is 1.8 MiB that no page links to, so there is no
+reason to serve it.
 
 ## Stack
 

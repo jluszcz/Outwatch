@@ -28,7 +28,11 @@ It is a sibling of the **Seen** project and follows the same stack and structure
     - `session.js` — `sessionOffsetSecs`, the one watch-timer rule both sides must compute identically
 - `public/` — Served static assets
     - `index.html` — App shell that loads the bundled script
+    - `manifest.json` — Web app manifest; makes the site installable to a home screen
+    - `icon-512.png`, `icon-192.png`, `icon-maskable-512.png`, `apple-touch-icon.png`, `favicon-32.png` — icons generated from `assets/icon-source.png` by `sips` (see README) and committed, unlike the build output below
     - `script.js`, `script.js.map`, `styles.css`, `styles.css.map` — build output (gitignored)
+- `assets/` — Committed source material that is deliberately **not** served
+    - `icon-source.png` — Original icon artwork, kept so the icons can be regenerated. It lives here rather than in `public/` because `[assets] directory = "public"` uploads every file under `public/` as a Workers static asset with its own URL, and nothing links to the 1.8 MiB original
 - `src/` — Cloudflare Workers backend
     - `index.js` — Hono app + API for the board, watched state, and per-episode discussions
     - `access.js` — `accessTokenEmail`, Cloudflare Access JWT verification (signature, issuer, audience, expiry); the only source of caller identity in production
@@ -287,6 +291,14 @@ names and emails out of source control. `seed.sql` holds only optional sample
   `shared/session.js`) starts, pauses, and resumes per (user, episode); a
   session goes stale after three hours without a start/pause/resume/post, and
   `pause`/`resume` on a stale session 409 without writing.
+- The manifest link in `index.html` carries `crossorigin="use-credentials"`,
+  which is load-bearing behind Cloudflare Access: a manifest is fetched without
+  credentials by default, so Access would redirect it to a login page, the
+  browser would fail to parse HTML as JSON, and the install would silently
+  never be offered. There is deliberately no service worker — a cached board is
+  a stale board — and deliberately no `viewport-fit=cover`, since iOS insets a
+  standalone app clear of the notch on its own and opting in would mean
+  threading `env(safe-area-inset-*)` through `styles.css` for nothing.
 
 ## Rules
 
