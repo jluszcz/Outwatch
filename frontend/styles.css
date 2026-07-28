@@ -43,6 +43,10 @@
     --author-3: light-dark(#7e22ce, #c084fc);
     --author-4: light-dark(#0e7490, #22d3ee);
     --author-5: light-dark(#be123c, #fb7185);
+    /* The height of a reveal/timer control, and so of the row that holds them.
+       Pinned rather than left to the tallest child, because that row loses its
+       tallest child the moment you reveal an episode. */
+    --control-height: 2rem;
 }
 
 html[data-theme='light'] {
@@ -555,8 +559,33 @@ tr.watched-all .check-cell input {
     padding: 0.25rem 0;
 }
 
+/* The reveal button and the watch timer share one line. The row carries the
+   height itself instead of inheriting it from whichever child is tallest: the
+   reveal button IS that child, and it disappears on reveal, so a content-sized
+   row would shrink by a few pixels at the exact moment the user clicked — and
+   the timer would jump up under their cursor. */
+.episode-actions {
+    display: flex;
+    align-items: center;
+    /* wrap-reverse, not wrap: only genuinely narrow widths can't fit "Show
+       discussion" and the whole timer on one line, and there the reversed
+       cross axis puts the wrapped-off timer *above* the button rather than
+       below it — so revealing still removes the button from under the timer
+       and the timer stays put. Width-driven rather than breakpoint-driven,
+       so anything wide enough for one line keeps one line. */
+    flex-wrap: wrap-reverse;
+    gap: 0.5rem;
+    min-height: var(--control-height);
+    /* No top margin: the row leads the body, so .episode-body's padding-top is
+       already the gap above it. */
+    margin: 0 0 0.75rem;
+}
+
 .reveal-btn {
-    margin: 0.5rem 0;
+    /* inline-flex so the text stays centred once min-height exceeds it. */
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--control-height);
     padding: 0.35rem 0.75rem;
     background: var(--surface-accent);
     border: 1px solid var(--border);
@@ -570,7 +599,9 @@ tr.watched-all .check-cell input {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    margin-top: 0.75rem;
+    /* Pushes the timer to the right edge of .episode-actions — and keeps it
+       there when the reveal button is gone and it is the only child. */
+    margin-left: auto;
 }
 
 .timer-chip {
@@ -637,6 +668,15 @@ tr.watched-all .check-cell input {
 }
 
 .post-submit {
+    /* Sized for the wider "Posting…" label up front. Without this the button
+       grows when a post starts, the textarea beside it (flex: 1) shrinks to
+       match, and the text you just submitted rewraps and changes the form's
+       height — a lurch, at the exact moment the UI should look steady. */
+    min-width: 6.5rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
     padding: 0.4rem 0.9rem;
     background: var(--surface-accent);
     border: 1px solid var(--border);
@@ -649,6 +689,36 @@ tr.watched-all .check-cell input {
 .post-submit:disabled {
     opacity: 0.5;
     cursor: default;
+}
+
+/* An in-flight post is reporting progress, not refusing input, so it keeps full
+   contrast — the plain :disabled rule would fade the one thing you're waiting on
+   to 50%. Out-specifies that rule on its own, independent of source order. */
+.post-submit:disabled[aria-busy='true'] {
+    opacity: 1;
+}
+
+.spinner {
+    width: 0.75em;
+    height: 0.75em;
+    flex: none;
+    border: 2px solid currentColor;
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* Still a ring, just not a spinning one — the label carries the message. */
+@media (prefers-reduced-motion: reduce) {
+    .spinner {
+        animation: none;
+    }
 }
 
 /* This block sits at the very end of the un-gated rules, after every base
