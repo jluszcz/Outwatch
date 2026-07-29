@@ -212,6 +212,12 @@ names and emails out of source control. `seed.sql` holds only optional sample
   `@media (hover: hover)` and ungated `:active` blocks that follow it need no
   such care: every selector in them carries a pseudo-class, which
   out-specifies the mobile block's overlapping rules regardless of order.
+  A base rule that needs to hold at _both_ sizes can sidestep the ordering
+  question entirely by expressing itself relative to whatever the mobile
+  block sets rather than restating an absolute: `.post-action-edit > span`
+  and `.post-action-delete > span` size their glyphs in `em`, so they ride
+  the `1.1rem` the mobile block gives `.post-action` instead of needing a
+  duplicate `rem` rule down there.
 - Below `640px` that block switches the layout to a phone variant: the season
   column pins to the left of `.table-wrapper` while the checkbox columns
   scroll under it (pinning only engages once the grid overflows the wrapper,

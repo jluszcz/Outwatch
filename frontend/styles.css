@@ -606,6 +606,23 @@ tr.watched-all .check-cell input {
     line-height: 1;
 }
 
+/* Optical sizing, not box sizing: all four action buttons share .post-action's
+   font-size, but at 0.9rem the four glyphs draw wildly different amounts of ink
+   (measured height in px: ↰ 12.7, ☺ 10.3, ✎ 8.6, × 6.9), so ✎ and × read as
+   smaller buttons than their neighbours. These multipliers land both near 11px,
+   inside the band the other two already occupy. Scaling the glyph in em rather
+   than setting the button's font-size is what makes this survive the
+   `@media (max-width: 640px)` block below, which raises .post-action to 1.1rem:
+   an em multiplier rides whatever font-size wins, while a second rem rule here
+   would lose to it on source order (equal specificity, and it comes later). */
+.post-action-edit > span {
+    font-size: 1.25em;
+}
+
+.post-action-delete > span {
+    font-size: 1.5em;
+}
+
 .post-edited {
     color: var(--text-faint);
     font-size: 0.75rem;
