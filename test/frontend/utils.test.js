@@ -11,6 +11,7 @@ import {
     setWatched,
     clearsCurrentlyWatching,
     quoteSnippet,
+    bodyAfterPost,
 } from '../../frontend/utils.js';
 
 // ---------------------------------------------------------------------------
@@ -327,5 +328,27 @@ describe('quoteSnippet', () => {
 
     it('does not add an ellipsis at exactly the limit', () => {
         expect(quoteSnippet('x'.repeat(60))).toBe('x'.repeat(60));
+    });
+});
+
+// ---------------------------------------------------------------------------
+// bodyAfterPost
+// ---------------------------------------------------------------------------
+
+describe('bodyAfterPost', () => {
+    it('clears the box when it still holds what was posted', () => {
+        expect(bodyAfterPost('a thought', 'a thought')).toBe('');
+    });
+
+    it('clears a note posted with surrounding whitespace', () => {
+        // The regression this exists for: the body goes out trimmed, but the box
+        // holds the raw text, and a phone's predictive keyboard puts a space
+        // after every accepted word. Comparing the box against the trimmed text
+        // never matched, so the note stayed in the box after it posted.
+        expect(bodyAfterPost('a thought ', 'a thought ')).toBe('');
+    });
+
+    it('keeps text typed on top of the note while it was in flight', () => {
+        expect(bodyAfterPost('a thought and more', 'a thought')).toBe('a thought and more');
     });
 });

@@ -273,8 +273,13 @@ names and emails out of source control. `seed.sql` holds only optional sample
   focused textarea blurs it, which on a phone tears down the keyboard mid-post
   and never restores it. `busy` gates the submit path instead, so Enter can't
   double-post. Because the box stays editable in flight, the success path clears
-  only the text that actually posted (`current === trimmed`), preserving
-  anything typed on top of it. `PostForm` and `EditForm` are the app's two text
+  only the text that actually posted (`bodyAfterPost` in `utils.js`), preserving
+  anything typed on top of it. That comparison is against the **raw** box
+  contents captured at submit time, not the trimmed body the API received:
+  comparing against the trimmed form matched nothing whenever the note had
+  surrounding whitespace — a trailing space is what a phone's predictive
+  keyboard leaves after each accepted word — so the note posted and then sat in
+  the box looking unposted. `PostForm` and `EditForm` are the app's two text
   forms, and both get the submit-once rule (and, for `EditForm`, the
   cannot-cancel-while-saving rule) from `useSubmitGuard` (`hooks.js`), wiring
   around `createSubmitGuard` (`submit-guard.js`) — the same split as

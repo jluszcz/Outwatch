@@ -3,7 +3,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'preact/hooks'
 import htm from 'htm';
 import { api } from './api.js';
 import { useRefreshGuard, useRefreshOnFocus, useAutoSize, useSubmitGuard } from './hooks.js';
-import { seasonLabel, orderPosts, formatOffset, quoteSnippet } from './utils.js';
+import { seasonLabel, orderPosts, formatOffset, quoteSnippet, bodyAfterPost } from './utils.js';
 import { sessionOffsetSecs } from '../shared/session.js';
 import { PostList } from './post.js';
 
@@ -390,12 +390,13 @@ function PostForm({ inputRef, replyTo, onCancelReply, onPost }) {
 
     const submit = async (e) => {
         e.preventDefault();
-        const trimmed = body.trim();
-        const posted = await run(body, () => onPost(trimmed));
+        const posted = await run(body, (trimmed) => onPost(trimmed));
         // The box stays editable during the flight, so it may no longer hold
-        // what was submitted: clear only the text that actually posted, and
-        // leave anything typed on top of it alone.
-        if (posted) setBody((current) => (current === trimmed ? '' : current));
+        // what was submitted: bodyAfterPost clears only the text that actually
+        // posted, and leaves anything typed on top of it alone. It compares
+        // against the raw `body` captured by this render, not the trimmed text
+        // that was sent — see utils.js for why the difference bit.
+        if (posted) setBody((current) => bodyAfterPost(current, body));
     };
 
     // Enter still posts, the way it did when this was an <input>. Shift+Enter
