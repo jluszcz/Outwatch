@@ -177,3 +177,19 @@ export function quoteSnippet(body, max = 60) {
     const flat = body.replace(/\s+/g, ' ').trim();
     return flat.length > max ? `${flat.slice(0, max)}…` : flat;
 }
+
+// What the compose box should hold once a post has succeeded. The box stays
+// editable while the request is in flight (disabling a focused textarea blurs
+// it, which tears down a phone keyboard mid-post), so by the time the server
+// answers it may hold something the user typed on top of the note — clear it
+// only when it still holds exactly what went out, and leave anything newer
+// alone.
+//
+// `sent` is the raw contents of the box at submit time, deliberately not the
+// trimmed body the API received. Comparing against the trimmed form silently
+// failed for every note with surrounding whitespace — a trailing space is what
+// a phone's predictive keyboard leaves after each accepted word — so the note
+// posted and then sat in the box looking unposted.
+export function bodyAfterPost(current, sent) {
+    return current === sent ? '' : current;
+}
