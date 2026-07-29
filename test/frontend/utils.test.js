@@ -10,6 +10,7 @@ import {
     selectableSeasons,
     setWatched,
     clearsCurrentlyWatching,
+    quoteSnippet,
 } from '../../frontend/utils.js';
 
 // ---------------------------------------------------------------------------
@@ -298,5 +299,33 @@ describe('clearsCurrentlyWatching', () => {
 
     it('is false when the user is missing', () => {
         expect(clearsCurrentlyWatching(undefined, 7, true)).toBe(false);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// quoteSnippet
+// ---------------------------------------------------------------------------
+
+describe('quoteSnippet', () => {
+    it('leaves a short single-line body alone', () => {
+        expect(quoteSnippet('short note')).toBe('short note');
+    });
+
+    it('collapses newlines and runs of whitespace to single spaces', () => {
+        expect(quoteSnippet('first line\n\nsecond   line')).toBe('first line second line');
+    });
+
+    it('trims surrounding whitespace', () => {
+        expect(quoteSnippet('  padded  ')).toBe('padded');
+    });
+
+    it('truncates a long body with an ellipsis', () => {
+        const snippet = quoteSnippet('x'.repeat(200));
+        expect(snippet).toHaveLength(61);
+        expect(snippet.endsWith('…')).toBe(true);
+    });
+
+    it('does not add an ellipsis at exactly the limit', () => {
+        expect(quoteSnippet('x'.repeat(60))).toBe('x'.repeat(60));
     });
 });

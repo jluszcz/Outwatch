@@ -169,3 +169,11 @@ export function orderPosts(posts) {
         return a.created - b.created;
     });
 }
+
+// A note reduced to one line for the reply chip: newlines and runs of
+// whitespace collapse to single spaces so a multi-line note cannot make the
+// compose box grow, and anything past `max` is cut with an ellipsis.
+export function quoteSnippet(body, max = 60) {
+    const flat = body.replace(/\s+/g, ' ').trim();
+    return flat.length > max ? `${flat.slice(0, max)}…` : flat;
+}

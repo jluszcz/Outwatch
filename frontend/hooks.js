@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'preact/hooks';
 import { createRefreshGuard } from './refresh-guard.js';
+import { createSubmitGuard } from './submit-guard.js';
 
 export function useTheme() {
     const [theme, setTheme] = useState(() => {
@@ -66,6 +67,67 @@ export function useRefreshGuard(fetcher, apply) {
     }, [guard, refresh]);
 
     return { refresh, beginMutation, endMutation };
+}
+
+// Wiring around createSubmitGuard: one guard per mounted form, kept for the
+// form's life. `busy` is component state purely so the button can render a
+// spinner — the guard, not the state, decides whether a submit or a cancel is
+// allowed, so the rules stay in one testable place.
+export function useSubmitGuard() {
+    const guardRef = useRef(null);
+    if (guardRef.current === null) guardRef.current = createSubmitGuard();
+    const guard = guardRef.current;
+    const [busy, setBusy] = useState(false);
+
+    // Resolves whatever `action` resolves, or false when the guard refused —
+    // callers distinguish "posted" from "not posted" on that.
+    const run = useCallback(
+        async (text, action) => {
+            if (!guard.canSubmit(text) || !guard.begin()) return false;
+            setBusy(true);
+            try {
+                return await action(text.trim());
+            } finally {
+                guard.end();
+                setBusy(false);
+            }
+        },
+        [guard],
+    );
+
+    const canCancel = useCallback(() => guard.canCancel(), [guard]);
+
+    return { busy, run, canCancel };
+}
+
+// A textarea does not size itself to its content, so the height is driven from
+// scrollHeight. Resetting to 'auto' first is what lets the box shrink again
+// after a delete — scrollHeight never reports less than the height already set.
+//
+// The same text rewraps onto a different number of lines when the box gets
+// narrower or wider, so the height is recomputed on a rotation or a window
+// resize too, not only when the text changes. The box's width is a function of
+// the viewport alone, so the window event is enough and a ResizeObserver (which
+// would also have to avoid re-firing on the height changes made here) buys
+// nothing.
+export function useAutoSize(ref, value) {
+    const fit = useCallback(() => {
+        const el = ref.current;
+        if (!el) return;
+        el.style.height = 'auto';
+        const style = getComputedStyle(el);
+        // scrollHeight leaves out the border, which box-sizing: border-box
+        // counts inside the height, so skipping this clips the last line.
+        const border = parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
+        el.style.height = `${el.scrollHeight + border}px`;
+    }, [ref]);
+
+    useEffect(fit, [value, fit]);
+
+    useEffect(() => {
+        window.addEventListener('resize', fit);
+        return () => window.removeEventListener('resize', fit);
+    }, [fit]);
 }
 
 // The app has exactly one route beyond the board, so a hash and a listener beat

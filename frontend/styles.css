@@ -495,30 +495,6 @@ tr.watched-all .check-cell input {
     padding-left: 0.6rem;
 }
 
-.post-mine {
-    border-left-color: var(--blue);
-}
-
-.post-a1 {
-    border-left-color: var(--author-1);
-}
-
-.post-a2 {
-    border-left-color: var(--author-2);
-}
-
-.post-a3 {
-    border-left-color: var(--author-3);
-}
-
-.post-a4 {
-    border-left-color: var(--author-4);
-}
-
-.post-a5 {
-    border-left-color: var(--author-5);
-}
-
 .post-time {
     font-variant-numeric: tabular-nums;
     color: var(--text-muted);
@@ -543,12 +519,152 @@ tr.watched-all .check-cell input {
     overflow-wrap: anywhere;
 }
 
-.post-delete {
+/* The note's content column: quote block, body, reactions, and the picker,
+   stacked. `.post` stays a baseline-aligned row of time / author / this /
+   actions, so a plain note still reads as one line on a wide screen while a
+   quoted or reacted-to note grows downward rather than sideways. min-width: 0
+   lets a long unbroken run wrap instead of stretching the row. */
+.post-content {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    min-width: 0;
+    flex: 1;
+}
+
+.post-actions {
     margin-left: auto;
+    display: flex;
+    gap: 0.15rem;
+    flex-shrink: 0;
+}
+
+/* Reuses the .post-mine / .post-aN accent classes for its left border, so a
+   quote carries the colour of the person being quoted rather than the person
+   quoting them. */
+.post-quote {
+    border-left: 3px solid var(--border);
+    padding-left: 0.5rem;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+}
+
+.post-quote-author {
+    display: block;
+    font-weight: 600;
+}
+
+.post-quote-body {
+    display: block;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.post-quote-locked {
+    font-style: italic;
+}
+
+/* Shared by .post's own stripe and .post-quote's: both set border-left as a
+   shorthand, and a shorthand resets every longhand it doesn't mention —
+   including border-left-color. This block MUST stay positioned after every
+   rule above that sets border-left as a shorthand (.post, .post-quote), or
+   the shorthand would run after these color-only rules and reset the colour
+   right back to transparent/var(--border). CLAUDE.md documents the same
+   shorthand-after-color hazard for the @media (max-width: 640px) block
+   further down; this is the same trap outside a media query. */
+.post-mine {
+    border-left-color: var(--blue);
+}
+
+.post-a1 {
+    border-left-color: var(--author-1);
+}
+
+.post-a2 {
+    border-left-color: var(--author-2);
+}
+
+.post-a3 {
+    border-left-color: var(--author-3);
+}
+
+.post-a4 {
+    border-left-color: var(--author-4);
+}
+
+.post-a5 {
+    border-left-color: var(--author-5);
+}
+
+.post-action {
     background: none;
     border: none;
     color: var(--text-faint);
     cursor: pointer;
+    padding: 0 0.15rem;
+    font-size: 0.9rem;
+    line-height: 1;
+}
+
+.post-edited {
+    color: var(--text-faint);
+    font-size: 0.75rem;
+}
+
+.post-edit {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.post-edit-actions {
+    display: flex;
+    gap: 0.4rem;
+    justify-content: flex-end;
+}
+
+.reaction-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+}
+
+.reaction-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: none;
+    color: var(--text-subtle);
+    font-size: 0.8rem;
+    padding: 0.1rem 0.45rem;
+    cursor: pointer;
+    font-variant-numeric: tabular-nums;
+}
+
+.reaction-chip.mine {
+    border-color: var(--blue);
+    color: var(--blue);
+}
+
+/* repeat(4, auto) puts the current set on one row; a fifth emoji wraps onto a
+   second without any other change. */
+.emoji-picker {
+    display: grid;
+    grid-template-columns: repeat(4, auto);
+    justify-content: start;
+    gap: 0.25rem;
+}
+
+.emoji-btn {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 0.4rem;
+    cursor: pointer;
+    font-size: 1.1rem;
+    padding: 0.15rem 0.35rem;
+    line-height: 1.2;
 }
 
 .no-posts,
@@ -646,6 +762,32 @@ tr.watched-all .check-cell input {
     align-items: flex-end;
     gap: 0.5rem;
     margin-top: 0.75rem;
+    /* Lets the reply chip (flex-basis: 100%, below) take a full line of its
+       own above the textarea/button row, rather than restructuring the
+       markup into a wrapper. */
+    flex-wrap: wrap;
+}
+
+/* Sits inside .post-form, above the textarea. The snippet is already one line
+   (quoteSnippet), so this only has to keep an over-long one from stretching
+   the form. */
+.reply-chip {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    background: var(--surface-subtle);
+    border-radius: 0.4rem;
+    padding: 0.25rem 0.5rem;
+    margin-bottom: 0.35rem;
+    flex-basis: 100%;
+}
+
+.reply-chip-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .post-input {
@@ -855,7 +997,7 @@ tr.watched-all .check-cell input {
         min-width: 0;
     }
 
-    .post-body {
+    .post-content {
         flex-basis: 100%;
         order: 1;
     }
@@ -896,10 +1038,19 @@ tr.watched-all .check-cell input {
 
     /* Deliberately smaller than 44px: this deletes a note and sits inline with
        notes you scroll past, so it should be reachable but not effortless. */
-    .post-delete {
+    .post-action {
         min-width: 32px;
         min-height: 32px;
         font-size: 1.1rem;
+    }
+
+    .emoji-btn {
+        min-width: 44px;
+        min-height: 44px;
+    }
+
+    .reaction-chip {
+        min-height: 32px;
     }
 
     /* Safari zooms the page in when a control under 16px takes focus, and does
@@ -958,8 +1109,20 @@ tr.watched-all .check-cell input {
         color: var(--text);
     }
 
-    .post-delete:hover {
+    /* Generic hover for the non-destructive action-row buttons (reply, react,
+       edit, and the reply chip's cancel); .post-action-delete:hover below
+       overrides it for the one button that should read as destructive. */
+    .post-action:hover {
+        color: var(--text);
+    }
+
+    .post-action-delete:hover {
         color: var(--red);
+    }
+
+    .reaction-chip:hover,
+    .emoji-btn:hover {
+        background: var(--surface-hover);
     }
 }
 

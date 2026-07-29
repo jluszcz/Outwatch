@@ -2,9 +2,10 @@ import { h } from 'preact';
 import { useState, useEffect, useMemo, useCallback, useRef } from 'preact/hooks';
 import htm from 'htm';
 import { api } from './api.js';
-import { useRefreshGuard, useRefreshOnFocus } from './hooks.js';
-import { seasonLabel, orderPosts, formatOffset, formatOffsetShort, authorAccent } from './utils.js';
+import { useRefreshGuard, useRefreshOnFocus, useAutoSize, useSubmitGuard } from './hooks.js';
+import { seasonLabel, orderPosts, formatOffset, quoteSnippet } from './utils.js';
 import { sessionOffsetSecs } from '../shared/session.js';
+import { PostList } from './post.js';
 
 const html = htm.bind(h);
 
@@ -73,16 +74,34 @@ export function SeasonView({ seasonId }) {
             api(`/api/seasons/${seasonId}/episodes/${episode}/reveal`, { method: 'POST' }),
         );
 
-    const addPost = (episode, body) =>
+    const addPost = (episode, body, replyToId) =>
         mutate(() =>
             api(`/api/seasons/${seasonId}/episodes/${episode}/posts`, {
                 method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ body, reply_to_post_id: replyToId }),
+            }),
+        );
+
+    const removePost = (postId) => mutate(() => api(`/api/posts/${postId}`, { method: 'DELETE' }));
+
+    const editPost = (postId, body) =>
+        mutate(() =>
+            api(`/api/posts/${postId}`, {
+                method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ body }),
             }),
         );
 
-    const removePost = (postId) => mutate(() => api(`/api/posts/${postId}`, { method: 'DELETE' }));
+    const setReaction = (postId, emoji, on) =>
+        mutate(() =>
+            api(`/api/posts/${postId}/reactions`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ emoji, on }),
+            }),
+        );
 
     // pause/resume 409 once the session has gone stale server-side (see
     // shared/session.js) — that's not an app error, it's the expected outcome
@@ -150,6 +169,8 @@ export function SeasonView({ seasonId }) {
                             onReveal=${reveal}
                             onPost=${addPost}
                             onDelete=${removePost}
+                            onEdit=${editPost}
+                            onReact=${setReaction}
                             onTimer=${setTimer}
                         />`,
                 )}
@@ -169,9 +190,64 @@ function EpisodeBoard({
     onReveal,
     onPost,
     onDelete,
+    onEdit,
+    onReact,
     onTimer,
 }) {
     const placed = useMemo(() => orderPosts(ep.posts), [ep.posts]);
+
+    // Episode-scoped, so the chip and the note it points at cannot drift apart, and
+    // so one board's half-written reply does not follow you to another.
+    const [replyTo, setReplyTo] = useState(null);
+    // Episode-scoped for the same reason as replyTo — one note editable per
+    // board at a time, by construction.
+    //
+    // Passed to PostList below as onStartEdit=${setEditingId} — a raw setter,
+    // not a call guarded by EditForm's canCancel(). So clicking the ✎ on a
+    // different note unmounts an in-flight EditForm instead of being blocked
+    // while its save is still in flight. That's mild, and in fact correct: the
+    // user already pressed Save, so letting that save land is the right
+    // outcome, not a bug. canCancel() only guards backing out via Cancel or
+    // Escape — i.e. not saving at all — it isn't meant to, and doesn't, cover
+    // navigating away to edit something else instead.
+    const [editingId, setEditingId] = useState(null);
+    // Which post's picker is open, or null for none — one at a time, same as
+    // editingId, and episode-scoped for the same reason.
+    const [pickerFor, setPickerFor] = useState(null);
+    // Owned here rather than inside PostForm so tapping Reply can focus the box.
+    const inputRef = useRef(null);
+
+    const startReply = (post) => {
+        setReplyTo({
+            id: post.id,
+            author_name: post.mine ? 'You' : post.author_name,
+            snippet: quoteSnippet(post.body),
+        });
+        // Raises the keyboard on a phone with the chip already in place.
+        inputRef.current?.focus();
+    };
+
+    const submitPost = async (body) => {
+        const posted = await onPost(ep.episode, body, replyTo?.id ?? null);
+        if (posted) setReplyTo(null);
+        return posted;
+    };
+
+    const saveEdit = async (postId, body) => {
+        const saved = await onEdit(postId, body);
+        // Stay in the editor on failure: the banner explains why, and the rewritten
+        // text is still in the box rather than discarded.
+        // The functional update matters: the user may have cancelled this note's
+        // editor and opened a different one while this save was in flight, so a
+        // stale success must not close an editor it does not own.
+        if (saved) setEditingId((cur) => (cur === postId ? null : cur));
+    };
+
+    // Choosing an emoji closes the picker, whether it added or removed one.
+    const react = (postId, emoji, on) => {
+        setPickerFor(null);
+        return onReact(postId, emoji, on);
+    };
 
     const summary =
         ep.count === 0 ? 'no notes' : `${ep.count} ${ep.count === 1 ? 'note' : 'notes'}`;
@@ -227,7 +303,19 @@ function EpisodeBoard({
                                 </div>
                             `
                         }
-                        <${PostList} placed=${placed} onDelete=${onDelete} />
+                        <${PostList}
+                            placed=${placed}
+                            meId=${meId}
+                            onReply=${startReply}
+                            onDelete=${onDelete}
+                            editingId=${editingId}
+                            onStartEdit=${setEditingId}
+                            onCancelEdit=${() => setEditingId(null)}
+                            onSaveEdit=${saveEdit}
+                            pickerFor=${pickerFor}
+                            onTogglePicker=${(id) => setPickerFor((cur) => (cur === id ? null : id))}
+                            onReact=${react}
+                        />
                         ${
                             !ep.readable &&
                             ep.count > ep.posts.length &&
@@ -235,7 +323,15 @@ function EpisodeBoard({
                                 — ${ep.count - ep.posts.length} notes hidden —
                             </div>`
                         }
-                        ${meId && html`<${PostForm} onPost=${(body) => onPost(ep.episode, body)} />`}
+                        ${
+                            meId &&
+                            html`<${PostForm}
+                                inputRef=${inputRef}
+                                replyTo=${replyTo}
+                                onCancelReply=${() => setReplyTo(null)}
+                                onPost=${submitPost}
+                            />`
+                        }
                     </div>
                 `
             }
@@ -284,96 +380,22 @@ function WatchTimer({ session, serverSkewMs, onAction }) {
     `;
 }
 
-function PostList({ placed, onDelete }) {
-    if (placed.length === 0) return html`<div class="no-posts">Nothing here yet.</div>`;
-    return html`
-        <ol class="posts">
-            ${placed.map(({ post, offset, inferred, tail }) => {
-                // 'mine' | 1..N | null — null leaves the note unstriped rather
-                // than inventing a colour for an author who left the roster.
-                const accent = authorAccent(post);
-                const accentClass =
-                    accent === 'mine' ? ' post-mine' : accent ? ` post-a${accent}` : '';
-                return html`
-                    <li key=${post.id} class=${'post' + accentClass}>
-                        <span class="post-time" title=${new Date(post.created_at).toLocaleString()}>
-                            ${
-                                tail
-                                    ? new Date(post.created_at).toLocaleDateString()
-                                    : `${inferred ? '~' : ''}${formatOffsetShort(offset)}`
-                            }
-                        </span>
-                        <span class="post-author">${post.mine ? 'You' : post.author_name}</span>
-                        <span class="post-body">${post.body}</span>
-                        ${
-                            post.mine &&
-                            html`<button
-                                class="post-delete"
-                                title="Delete this note"
-                                onClick=${() => onDelete(post.id)}
-                            >
-                                ×
-                            </button>`
-                        }
-                    </li>
-                `;
-            })}
-        </ol>
-    `;
-}
-
 // Posting is not optimistic: the offset is assigned by the server from your
 // live session, so there is nothing correct to render until it answers.
-function PostForm({ onPost }) {
+function PostForm({ inputRef, replyTo, onCancelReply, onPost }) {
     const [body, setBody] = useState('');
-    const [busy, setBusy] = useState(false);
-    const inputRef = useRef(null);
+    const { busy, run } = useSubmitGuard();
 
-    // A textarea does not size itself to its content, so the height is driven
-    // from scrollHeight. Resetting to 'auto' first is what lets the box shrink
-    // again after a delete — scrollHeight never reports less than the height
-    // already set.
-    const fit = useCallback(() => {
-        const el = inputRef.current;
-        if (!el) return;
-        el.style.height = 'auto';
-        const style = getComputedStyle(el);
-        // scrollHeight leaves out the border, which box-sizing: border-box
-        // counts inside the height, so skipping this clips the last line.
-        const border = parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
-        el.style.height = `${el.scrollHeight + border}px`;
-    }, []);
-
-    useEffect(fit, [body, fit]);
-
-    // The same text rewraps onto a different number of lines when the box gets
-    // narrower or wider, so height has to be recomputed on a rotation or a
-    // window resize too — not only when the text changes. The box's width here
-    // is a function of the viewport alone, so the window event is enough and a
-    // ResizeObserver (which would also have to guard against re-firing on the
-    // height changes made above) buys nothing.
-    useEffect(() => {
-        window.addEventListener('resize', fit);
-        return () => window.removeEventListener('resize', fit);
-    }, [fit]);
+    useAutoSize(inputRef, body);
 
     const submit = async (e) => {
         e.preventDefault();
         const trimmed = body.trim();
-        if (!trimmed || busy) return;
-        setBusy(true);
-        try {
-            // Only clear the box on success — a failed post already shows the
-            // error banner, and wiping what the user just typed on top of that
-            // would silently discard it.
-            const posted = await onPost(trimmed);
-            // The box stays editable during the flight, so it may no longer hold
-            // what was submitted: clear only the text that actually posted, and
-            // leave anything typed on top of it alone.
-            if (posted) setBody((current) => (current === trimmed ? '' : current));
-        } finally {
-            setBusy(false);
-        }
+        const posted = await run(body, () => onPost(trimmed));
+        // The box stays editable during the flight, so it may no longer hold
+        // what was submitted: clear only the text that actually posted, and
+        // leave anything typed on top of it alone.
+        if (posted) setBody((current) => (current === trimmed ? '' : current));
     };
 
     // Enter still posts, the way it did when this was an <input>. Shift+Enter
@@ -392,6 +414,23 @@ function PostForm({ onPost }) {
     // double-post while the first is still going.
     return html`
         <form class="post-form" onSubmit=${submit}>
+            ${
+                replyTo &&
+                html`<div class="reply-chip">
+                    <span class="reply-chip-text"
+                        >↰ ${replyTo.author_name}: ${replyTo.snippet}</span
+                    >
+                    <button
+                        type="button"
+                        class="post-action"
+                        title="Cancel reply"
+                        aria-label="Cancel reply"
+                        onClick=${onCancelReply}
+                    >
+                        <span aria-hidden="true">×</span>
+                    </button>
+                </div>`
+            }
             <textarea
                 ref=${inputRef}
                 class="post-input"
