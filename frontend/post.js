@@ -267,7 +267,7 @@ function Post({
                         post.mine &&
                         !editing &&
                         html`<button
-                            class="post-action"
+                            class="post-action post-action-edit"
                             title="Edit this note"
                             aria-label="Edit this note"
                             onClick=${() => onStartEdit(post.id)}
