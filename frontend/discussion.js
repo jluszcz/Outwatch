@@ -2,7 +2,7 @@ import { h } from 'preact';
 import { useState, useEffect, useMemo, useCallback, useRef } from 'preact/hooks';
 import htm from 'htm';
 import { api } from './api.js';
-import { useRefreshGuard, useRefreshOnFocus, useAutoSize, useSubmitGuard } from './hooks.js';
+import { useRefreshGuard, useRefreshOnFocus, useSubmitGuard } from './hooks.js';
 import { seasonLabel, orderPosts, formatOffset, quoteSnippet, bodyAfterPost } from './utils.js';
 import { sessionOffsetSecs } from '../shared/session.js';
 import { PostList } from './post.js';
@@ -386,8 +386,6 @@ function PostForm({ inputRef, replyTo, onCancelReply, onPost }) {
     const [body, setBody] = useState('');
     const { busy, run } = useSubmitGuard();
 
-    useAutoSize(inputRef, body);
-
     const submit = async (e) => {
         e.preventDefault();
         const posted = await run(body, (trimmed) => onPost(trimmed));
@@ -413,6 +411,10 @@ function PostForm({ inputRef, replyTo, onCancelReply, onPost }) {
     // down mid-post and does not bring it back — you tap the box again for every
     // note. `busy` gates the submit path instead, so a second Enter can't
     // double-post while the first is still going.
+    //
+    // The box sizes itself to its text through .post-input-wrap's CSS replica
+    // (styles.css), which renders `data-value` — so that attribute has to carry
+    // the same text the textarea does, or the box stops tracking what you type.
     return html`
         <form class="post-form" onSubmit=${submit}>
             ${
@@ -432,16 +434,18 @@ function PostForm({ inputRef, replyTo, onCancelReply, onPost }) {
                     </button>
                 </div>`
             }
-            <textarea
-                ref=${inputRef}
-                class="post-input"
-                rows="1"
-                maxlength="2000"
-                placeholder="Write a note…"
-                value=${body}
-                onInput=${(e) => setBody(e.target.value)}
-                onKeyDown=${keyDown}
-            ></textarea>
+            <div class="post-input-wrap" data-value=${body}>
+                <textarea
+                    ref=${inputRef}
+                    class="post-input"
+                    rows="1"
+                    maxlength="2000"
+                    placeholder="Write a note…"
+                    value=${body}
+                    onInput=${(e) => setBody(e.target.value)}
+                    onKeyDown=${keyDown}
+                ></textarea>
+            </div>
             <button
                 class="post-submit"
                 type="submit"

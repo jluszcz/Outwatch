@@ -906,23 +906,79 @@ tr.watched-all .check-cell input {
     white-space: nowrap;
 }
 
-.post-input {
+/* The compose and edit boxes size themselves to their text with no JS: the
+   textarea and an invisible ::after replica of the same text share one grid
+   cell, so the row is as tall as the text and the textarea stretches to fill it.
+
+   This replaced a hook (useAutoSize) that set the textarea to `height: auto`
+   and read scrollHeight back. Those two reads forced a layout in which the box
+   was collapsed to one line and the document was correspondingly shorter, and
+   on iOS — where this is the last element on the page and the caret is pinned
+   above the keyboard — Safari clamped the scroll offset to that shorter
+   document and then scrolled the caret back into view, once per keystroke. The
+   result was a page that shook while you typed. Nothing here is ever collapsed
+   and nothing is measured, so there is no such moment; sizing on a rotation or
+   a resize also comes free, since the replica rewraps with the box rather than
+   needing a window listener to notice. */
+.post-input-wrap {
+    display: grid;
+    /* Caps the visible box. The row itself keeps growing past this, because the
+       replica does, so the textarea needs the same cap again below to stop
+       stretching into it — this one clamps the wrapper, that one clamps the
+       control. Deliberately no `overflow` here: the overflowing replica is
+       `visibility: hidden`, so it neither paints nor takes a tap, while hiding
+       it would clip the textarea's focus ring and make the wrapper a scroll
+       container of its own. */
+    max-height: 9rem;
+}
+
+/* Scoped to .post-form rather than set on .post-input-wrap itself: there the
+   wrapper is the flex item beside the Post button and has to take the leftover
+   width, and a textarea's intrinsic width comes from `cols`, which can exceed
+   the form at narrow widths — flex items refuse to shrink below that without
+   min-width: 0. In .post-edit, a *column* flex container, the same `flex: 1`
+   would instead set a zero flex-basis on the wrapper's height, which is not
+   what any of this is for. */
+.post-form > .post-input-wrap {
     flex: 1;
-    /* A textarea's intrinsic width comes from `cols`, which can exceed the form
-       at narrow widths; flex items refuse to shrink below that without this. */
     min-width: 0;
-    /* The height is managed in PostForm, so a drag handle would only fight it.
+}
+
+/* The replica. The trailing space is load-bearing: text ending in a newline has
+   to occupy the empty last line, and without it that line is dropped and the
+   box fails to grow when you press Shift+Enter at the end. */
+.post-input-wrap::after {
+    content: attr(data-value) ' ';
+    visibility: hidden;
+}
+
+/* The two boxes have to break lines at exactly the same points, or they
+   disagree about the line count and the box comes out a line short or a line
+   tall. Everything that decides where a line breaks therefore lives on the
+   pair, never on the textarea alone — including in the `max-width: 640px`
+   block, which raises the font-size. */
+.post-input,
+.post-input-wrap::after {
+    grid-area: 1 / 1;
+    padding: 0.4rem 0.6rem;
+    border: 1px solid transparent;
+    font: inherit;
+    font-size: 0.9rem;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+}
+
+.post-input {
+    /* The height comes from the grid row, so a drag handle would only fight it.
        Growth stops at max-height and the box scrolls from there. */
     resize: none;
     overflow-y: auto;
     max-height: 9rem;
-    padding: 0.4rem 0.6rem;
     background: var(--surface);
-    border: 1px solid var(--border);
+    /* Set after the shared `border` shorthand above, which would reset it. */
+    border-color: var(--border);
     border-radius: 6px;
     color: var(--text);
-    font: inherit;
-    font-size: 0.9rem;
 }
 
 .post-submit {
@@ -1135,8 +1191,16 @@ tr.watched-all .check-cell input {
 
     .reveal-btn,
     .post-submit,
-    .post-input,
     .timer-btn {
+        min-height: 44px;
+    }
+
+    /* The compose box gets its touch target on the replica rather than on the
+       textarea: the replica sizes the grid row, and the textarea stretches into
+       it. A min-height on the textarea alone would make the control taller than
+       the row it sits in, leaving the wrapper — and so the form's layout —
+       measuring the shorter of the two. */
+    .post-input-wrap::after {
         min-height: 44px;
     }
 
@@ -1247,6 +1311,7 @@ tr.watched-all .check-cell input {
        base rule in the file, so plain, equal-specificity selectors win on
        source order alone. */
     .post-input,
+    .post-input-wrap::after,
     .nw-select {
         font-size: 16px;
     }

@@ -2,7 +2,7 @@ import { h } from 'preact';
 import { useState, useRef, useEffect } from 'preact/hooks';
 import htm from 'htm';
 import { authorAccent, formatOffsetShort } from './utils.js';
-import { useAutoSize, useIsDark, useSubmitGuard } from './hooks.js';
+import { useIsDark, useSubmitGuard } from './hooks.js';
 import { Icon } from './icons.js';
 import { REACTIONS } from '../shared/reactions.js';
 
@@ -83,7 +83,6 @@ function EditForm({ post, onSave, onCancel }) {
     const [body, setBody] = useState(post.body);
     const { busy, run, canCancel } = useSubmitGuard();
     const ref = useRef(null);
-    useAutoSize(ref, body);
 
     useEffect(() => ref.current?.focus(), []);
 
@@ -111,17 +110,22 @@ function EditForm({ post, onSave, onCancel }) {
         save(e);
     };
 
+    // Same box as PostForm's, sized by .post-input-wrap's CSS replica: the
+    // wrapper's `data-value` is what that replica renders, so it has to carry
+    // the same text the textarea does.
     return html`
         <form class="post-edit" onSubmit=${save}>
-            <textarea
-                ref=${ref}
-                class="post-input"
-                rows="1"
-                maxlength="2000"
-                value=${body}
-                onInput=${(e) => setBody(e.target.value)}
-                onKeyDown=${keyDown}
-            ></textarea>
+            <div class="post-input-wrap" data-value=${body}>
+                <textarea
+                    ref=${ref}
+                    class="post-input"
+                    rows="1"
+                    maxlength="2000"
+                    value=${body}
+                    onInput=${(e) => setBody(e.target.value)}
+                    onKeyDown=${keyDown}
+                ></textarea>
+            </div>
             <div class="post-edit-actions">
                 <button type="button" class="timer-btn subtle" onClick=${cancel}>Cancel</button>
                 <button

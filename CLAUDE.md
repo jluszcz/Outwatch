@@ -19,7 +19,7 @@ It is a sibling of the **Seen** project and follows the same stack and structure
     - `CLAUDE.md` — The frontend's conventions and gotchas; loads only when working on files under `frontend/`, keeping them out of every unrelated session's context
     - `script.js` — `App` component: board/season state, hash routing, optimistic mutations
     - `api.js` — `api()`, the shared fetch helper (throws with `.status` on a non-2xx response)
-    - `hooks.js` — `useTheme`, `useIsDark`, `useRefreshGuard`, `useSubmitGuard`, `useHashRoute`, `useRefreshOnFocus`, `useAutoSize`
+    - `hooks.js` — `useTheme`, `useIsDark`, `useRefreshGuard`, `useSubmitGuard`, `useHashRoute`, `useRefreshOnFocus`
     - `refresh-guard.js` — `createRefreshGuard`, the refetch-vs-mutation race rules as a plain state machine; `useRefreshGuard` is the wiring around it
     - `submit-guard.js` — `createSubmitGuard`, the submit-once and cannot-cancel-in-flight rules as a plain state machine, shared by the compose box and the edit box; `useSubmitGuard` is the wiring around it
     - `board.js` — `Header`, `Board` and its child components (the season × user grid)
