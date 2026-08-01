@@ -16,6 +16,7 @@ Built on Cloudflare Workers with a D1 SQLite database, behind Cloudflare Access.
 - Discussion notes are bylined to the individual who wrote them, so a shared column speaks with two voices
 - Fully-watched seasons gray out and sink to the bottom
 - Per-episode discussion boards, write-only until you open them
+- Notes can be replied to and reacted to, and rewritten or deleted by whoever wrote them
 - Light/dark theme toggle
 - Installs to a phone home screen as a standalone app, with its own icon
 - Zero-code authentication via Cloudflare Access
@@ -39,6 +40,16 @@ watching at different paces don't spoil each other.
   instead of by when they happened to be typed. Pausing or resuming fails
   (409) if the timer was never started, or if it was but has gone three
   hours idle and is now considered stale — either way you start a new one.
+- **Replies, reactions, and edits.** A note can answer another note on the same
+  episode, and it renders as a quote block above the reply rather than as an
+  indented thread — a reply keeps its own place on the watch-offset timeline.
+  Anyone who can see a note can put one of a small set of emoji on it;
+  reactions are per person rather than per column, so both halves of a shared
+  login count separately. You can rewrite or delete your own notes. An edit
+  changes only the body and marks the note edited, leaving its position on the
+  timeline alone; a delete detaches any reply to it rather than leaving a
+  `[deleted]` tombstone, since deleting is an author's "unsay it" and a
+  tombstone preserves what they removed.
 
 ## Home Screen Icon
 
@@ -229,7 +240,9 @@ never trusted — see [Authentication](#authentication).
 | `POST`   | `/api/watched`                                     | Mark the caller as having watched a season (`{ season_id }`)                                                                                                                                                                     |
 | `DELETE` | `/api/watched/:season_id`                          | Unmark the caller for a season                                                                                                                                                                                                   |
 | `PUT`    | `/api/currently-watching`                          | Set the caller's currently-watching season, or clear it (`{ season_id }`, nullable)                                                                                                                                              |
-| `POST`   | `/api/seasons/:season_id/episodes/:episode/posts`  | Add a discussion note, stamped with the caller's live watch-timer offset and their author email (`{ body }`)                                                                                                                     |
+| `POST`   | `/api/seasons/:season_id/episodes/:episode/posts`  | Add a discussion note, stamped with the caller's live watch-timer offset and their author email (`{ body, reply_to_post_id? }`)                                                                                                  |
+| `PATCH`  | `/api/posts/:post_id`                              | Rewrite one of the caller's own notes and mark it edited (`{ body }`); never touches its timestamp, watch offset, or reply target, so an edit cannot move it on the timeline                                                     |
+| `PUT`    | `/api/posts/:post_id/reactions`                    | Add or remove one emoji on a note the caller can see (`{ emoji, on }`); idempotent in both directions and attributed to the individual rather than their column                                                                  |
 | `GET`    | `/api/seasons/:season_id/discussion`               | Per-episode discussion state for a season, gated by the spoiler rule; each post carries its byline and the caller's own ownership flag, and each episode's `authors` names its bylined individuals — emails are never serialized |
 | `POST`   | `/api/seasons/:season_id/episodes/:episode/reveal` | Open one episode's discussion board for reading (permanent)                                                                                                                                                                      |
 | `DELETE` | `/api/posts/:post_id`                              | Delete one of the caller's own discussion notes, scoped to the individual author; a note from before individual attribution stays deletable by the column                                                                        |
@@ -278,16 +291,34 @@ Primary key is `(user_id, season_id)`.
 
 **`posts`** — one row per discussion note
 
-| Column         | Type       | Notes                                                                                              |
-| -------------- | ---------- | -------------------------------------------------------------------------------------------------- |
-| `id`           | INTEGER PK | Autoincrement                                                                                      |
-| `season_id`    | INTEGER    | References `seasons.id`                                                                            |
-| `episode`      | INTEGER    | Episode number within the season                                                                   |
-| `user_id`      | TEXT       | References `users.id`; the note's column (the individual author, when known, is `author_email`)    |
-| `body`         | TEXT       | Note text                                                                                          |
-| `created_at`   | TEXT       | ISO timestamp                                                                                      |
-| `offset_secs`  | INTEGER    | Author's watch-timer offset at post time; `NULL` if no timer was running                           |
-| `author_email` | TEXT       | References `user_emails.email`; who wrote the note. NULL on notes predating individual attribution |
+| Column             | Type       | Notes                                                                                                                                                |
+| ------------------ | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`               | INTEGER PK | Autoincrement                                                                                                                                        |
+| `season_id`        | INTEGER    | References `seasons.id`                                                                                                                              |
+| `episode`          | INTEGER    | Episode number within the season                                                                                                                     |
+| `user_id`          | TEXT       | References `users.id`; the note's column (the individual author, when known, is `author_email`)                                                      |
+| `body`             | TEXT       | Note text                                                                                                                                            |
+| `created_at`       | TEXT       | ISO timestamp                                                                                                                                        |
+| `offset_secs`      | INTEGER    | Author's watch-timer offset at post time; `NULL` if no timer was running                                                                             |
+| `author_email`     | TEXT       | References `user_emails.email`; who wrote the note. NULL on notes predating individual attribution                                                   |
+| `reply_to_post_id` | INTEGER    | References `posts.id`; the note being answered. NULL for an ordinary note, and for a reply whose parent was later deleted. Added in migration `0007` |
+| `edited_at`        | TEXT       | ISO timestamp of the last rewrite; NULL on a note never edited. Added in migration `0007`                                                            |
+
+A reply is always in the same season and episode as the note it answers — the
+API enforces that at write time, so no read path re-checks it.
+
+**`reactions`** — one row per (note, person, emoji); presence means that person put that emoji on that note (migration `0007`)
+
+| Column       | Type    | Notes                                                        |
+| ------------ | ------- | ------------------------------------------------------------ |
+| `post_id`    | INTEGER | References `posts.id`                                        |
+| `email`      | TEXT    | References `user_emails.email`; `COLLATE NOCASE`, never NULL |
+| `emoji`      | TEXT    | One of the emoji in `shared/reactions.js`                    |
+| `created_at` | TEXT    | ISO timestamp                                                |
+
+Primary key is `(post_id, email, emoji)`. Keyed on the email rather than a
+column, so both halves of a shared login react separately — the same call as a
+note's byline, and the opposite of the column-level watched checkbox.
 
 **`reveals`** — presence means that user opened that episode's board for reading (one-way)
 
