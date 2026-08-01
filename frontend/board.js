@@ -17,7 +17,7 @@ const html = htm.bind(h);
 
 // How long a jumped-to row stays lit. Long enough to find the row after the
 // scroll settles, short enough that it is gone before you act on it.
-const FLASH_MS = 1600;
+const FLASH_MS = 2500;
 
 const prefersReducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
