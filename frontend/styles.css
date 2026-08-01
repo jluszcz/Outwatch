@@ -840,13 +840,13 @@ tr.flash td {
     color: var(--blue);
 }
 
-/* The emoji row at the top of the ⋯ menu. 1fr columns spread the current set
-   evenly across whatever width the menu has — the dropdown's min-width on a
-   pointer device, the full screen on a phone — and a fifth emoji wraps onto a
-   second row without any other change. */
+/* The quick row at the top of the ⋯ menu: four emoji plus the ＋ that opens the
+   full picker. 1fr columns spread all five evenly across whatever width the
+   menu has — the dropdown's min-width on a pointer device, the full screen on a
+   phone. Adding or removing a quick-row emoji means changing this count. */
 .emoji-picker {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(5, 1fr);
     gap: 0.25rem;
 }
 
@@ -858,6 +858,118 @@ tr.flash td {
     font-size: 1.1rem;
     padding: 0.15rem 0.35rem;
     line-height: 1.2;
+}
+
+/* ＋ is a fullwidth plus (U+FF0B) so it fills the cell like the emoji beside
+   it; a plain + at this size reads as a stray tick mark in the row. Muted
+   because it opens a picker rather than applying a reaction. */
+.emoji-more {
+    color: var(--text-subtle);
+}
+
+/* The full picker, which replaces the menu's body when ＋ is pressed. Height is
+   capped so the sheet or dropdown stays a panel rather than growing to ~1900
+   buttons tall, and the grid scrolls inside it. */
+.emoji-full {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    min-width: 15rem;
+}
+
+/* Back sits beside the search field rather than on a row of its own: the
+   dropdown is short and a dedicated row costs a band of emoji on a phone. */
+.emoji-head {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.emoji-back {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    background: none;
+    border: none;
+    border-radius: 0.35rem;
+    color: var(--text-subtle);
+    cursor: pointer;
+    font-size: 1rem;
+    padding: 0.25rem;
+}
+
+.emoji-search {
+    flex: 1;
+    min-width: 0;
+    box-sizing: border-box;
+    border: 1px solid var(--border);
+    border-radius: 0.4rem;
+    background: var(--surface);
+    color: var(--text);
+    font: inherit;
+    font-size: 0.9rem;
+    padding: 0.3rem 0.5rem;
+}
+
+/* `height`, not `max-height`: the box has to be the same size whether it is
+   holding all 1914 emoji or the four that match "cat". Under a max-height the
+   filtered grid is shorter than the cap, so the container becomes content-sized
+   and the whole panel collapses as you type — and on a phone, where the sheet
+   is pinned to the bottom edge and grows upward, collapsing walks the results
+   down toward the keyboard instead of leaving them where your eye already is.
+   `flex: none` keeps .emoji-full's flex column from shrinking it back.
+
+   The scroll container is also the containment context for the per-group
+   content-visibility below, so it has to be the element carrying the height. */
+.emoji-scroll {
+    overflow-y: auto;
+    height: 15rem;
+    flex: none;
+    overscroll-behavior: contain;
+}
+
+/* Roughly 1900 buttons render at once. content-visibility lets the browser skip
+   layout and paint for the groups scrolled out of view, which is what makes
+   that affordable without a windowing library or a scroll listener —
+   contain-intrinsic-size supplies a placeholder height so the scrollbar does
+   not jump as groups are skipped and rendered. The size is a rough per-group
+   estimate, not a measurement; being wrong only costs a little scrollbar drift.
+   Browsers without content-visibility simply render everything, which is
+   correct but slower — the same degrade-rather-than-depend call the menu's
+   position-try-fallbacks makes. */
+.emoji-group {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 12rem;
+}
+
+.emoji-group-title {
+    position: sticky;
+    top: 0;
+    margin: 0;
+    padding: 0.25rem 0;
+    background: var(--surface);
+    color: var(--text-muted);
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+/* auto-fill rather than a fixed count: the picker is one width in a dropdown
+   and another across a phone, and this fills whichever it gets. */
+.emoji-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(2rem, 1fr));
+    gap: 0.15rem;
+}
+
+.emoji-empty {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    font-style: italic;
+    margin: 0;
+    padding: 0.5rem 0;
 }
 
 .no-posts,
@@ -1443,8 +1555,18 @@ tr.flash td {
        source order alone. */
     .post-input,
     .post-input-wrap::after,
-    .nw-select {
+    .nw-select,
+    .emoji-search {
         font-size: 16px;
+    }
+
+    /* The full picker gets more of the sheet than it gets of a dropdown: the
+       sheet is already the width of the phone, and a taller grid is the
+       difference between scrolling past two rows at a time and browsing. Sized
+       in vh rather than rem so it cannot outgrow the viewport it sits in, and a
+       fixed height rather than a cap for the reason the base rule gives. */
+    .emoji-scroll {
+        height: 45vh;
     }
 }
 
@@ -1455,8 +1577,23 @@ tr.flash td {
    specificity), though nothing in that block sets these properties today. */
 @media (pointer: coarse) {
     .post-menu-item,
-    .emoji-btn {
+    .emoji-btn,
+    .emoji-back {
         min-height: 44px;
+    }
+
+    /* The back button is the picker's only way out that is not a reaction, so
+       it gets a finger-sized width too — the icon alone is ~16px. */
+    .emoji-back {
+        min-width: 44px;
+    }
+
+    /* The full picker's tracks have to carry the same 44px floor the mobile
+       block puts on .emoji-btn's min-width, or auto-fill sizes the columns from
+       the base rule's 2rem and every button overflows its own track. The two
+       numbers are one decision; keep them together. */
+    .emoji-grid {
+        grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
     }
 
     /* The jump button reaches 44px through an invisible extender rather than by
@@ -1533,7 +1670,8 @@ tr.flash td {
     }
 
     .reaction-chip:hover,
-    .emoji-btn:hover {
+    .emoji-btn:hover,
+    .emoji-back:hover {
         background: var(--surface-hover);
     }
 

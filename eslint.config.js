@@ -22,7 +22,7 @@ export default [
         languageOptions: { globals: {} },
     },
     {
-        files: ['build.js', 'eslint.config.js', 'vitest.config.mjs'],
+        files: ['build.js', 'generate-emoji-data.js', 'eslint.config.js', 'vitest.config.mjs'],
         languageOptions: { globals: globals.node },
     },
     {

@@ -5,7 +5,7 @@ const html = htm.bind(h);
 
 // Path data copied from Bootstrap Icons v1.13.1 (MIT), which is not an npm
 // dependency here: the package ships ~2,000 SVGs and a webfont, and this app
-// draws six glyphs. Inlining them keeps the bundle self-contained and makes a
+// draws seven glyphs. Inlining them keeps the bundle self-contained and makes a
 // refresh a copy-paste from https://github.com/twbs/icons/tree/main/icons.
 //
 // Each entry holds a list of path `d` strings, because some icons are more than
@@ -29,6 +29,15 @@ export const ICONS = {
     x: {
         outline: [
             'M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8z',
+        ],
+        fill: null,
+    },
+    // bi-chevron-left — the full emoji picker's way back to the menu's actions.
+    // No fill variant: Bootstrap ships no -fill chevron, and it is a single
+    // stroke anyway, so there is nothing for the dark-mode swap to thicken.
+    chevronLeft: {
+        outline: [
+            'M11.354 1.646a.5.5 0 0 1 0 .708L5.707 8l5.647 5.646a.5.5 0 0 1-.708.708l-6-6a.5.5 0 0 1 0-.708l6-6a.5.5 0 0 1 .708 0z',
         ],
         fill: null,
     },
