@@ -37,12 +37,20 @@
        --surface either way. They are decoration, not text, so they only need
        to be distinguishable from each other rather than hit a text contrast
        ratio. --blue is deliberately absent: it is reserved for your own notes,
-       matching the accent your board column already uses. */
-    --author-1: light-dark(#c2410c, #fb923c);
-    --author-2: light-dark(#15803d, #4ade80);
-    --author-3: light-dark(#7e22ce, #c084fc);
-    --author-4: light-dark(#0e7490, #22d3ee);
-    --author-5: light-dark(#be123c, #fb7185);
+       matching the accent your board column already uses.
+
+       The five are spread across the hue wheel rather than picked for looks,
+       because --blue sits among them and every pair has to be told apart at a
+       3px stripe. An earlier set put a teal at 193 (19 from --blue) and a
+       crimson at 344 (38 from its own orange), and both pairs read as the same
+       colour in a list. Orange and gold, 20 apart, are the tightest pair left
+       and lean on lightness rather than hue to separate; with six colours on a
+       wheel some pair has to be adjacent. */
+    --author-1: light-dark(#ea580c, #fb923c); /* orange, hue 25 */
+    --author-2: light-dark(#15803d, #4ade80); /* green, hue 142 */
+    --author-3: light-dark(#9333ea, #c084fc); /* purple, hue 272 */
+    --author-4: light-dark(#db2777, #f472b6); /* pink, hue 333 */
+    --author-5: light-dark(#a16207, #eab308); /* gold, hue 45 */
     /* The height of a reveal/timer control, and so of the row that holds them.
        Pinned rather than left to the tallest child, because that row loses its
        tallest child the moment you reveal an episode. */
@@ -580,9 +588,19 @@ tr.flash td {
     min-width: 2.5rem;
 }
 
+/* Wide enough to hold the roster's longest name, so every note's body starts
+   at the same x rather than at wherever that note's author's name happened to
+   end. A six-character name measures around 56px at this size and weight, so
+   64px clears it with slack to spare — 3.6rem also cleared it, by under 2px,
+   which is inside the margin by which Safari, Chrome, and iOS disagree about
+   the width of the same string. A name longer than the gutter pushes its own
+   body right, which is what every note did before this rule — so the failure
+   mode of a new, longer name is the old behaviour on one row, not a broken
+   layout. */
 .post-author {
     color: var(--text-subtle);
     font-weight: 600;
+    min-width: 4rem;
 }
 
 .post-body {
@@ -798,9 +816,16 @@ tr.flash td {
     display: none;
 }
 
+/* Renders inside .post-body, trailing the note's last line. It used to sit on
+   the meta line between the author and the content, where — being present on
+   some notes and not others — it pushed every edited note's body right and
+   undid .post-author's gutter. The margin supplies the gap: .post-body is
+   `pre-wrap`, so a leading space in the markup would be preserved literally
+   and would also give the marker somewhere to wrap away from the body. */
 .post-edited {
     color: var(--text-faint);
     font-size: 0.75rem;
+    margin-left: 0.35rem;
 }
 
 .post-edit {
@@ -1375,7 +1400,11 @@ tr.flash td {
         flex-wrap: wrap;
     }
 
-    .post-time {
+    /* Both gutters collapse here: the body is on its own row below the meta
+       line, so a fixed author column would only open dead space between the
+       offset and the name rather than lining anything up. */
+    .post-time,
+    .post-author {
         min-width: 0;
     }
 

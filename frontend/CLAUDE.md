@@ -201,6 +201,30 @@ of the root `CLAUDE.md` so it loads only when working on these files.
   untimed note from an author who _did_ time other notes on the episode (their
   session went stale and they posted again later) is dropped to the tail
   sorted by wall-clock time, rather than given a fabricated offset.
+- A note's meta line is two fixed-width gutters — a `2.5rem` `.post-time` then a
+  `4rem` `.post-author` — so every body in a board starts at the same x
+  instead of at wherever that note's author's name happened to end. `4rem` holds
+  a six-character name (~56px) with room over it; the tighter `3.6rem` that also
+  fit was inside the margin by which browsers disagree about the width of one
+  string.
+  Both are plain `min-width` values rather than a grid: the roster is under five
+  people whose names are known, and CSS subgrid would buy an auto-sized column
+  at the cost of rewriting the phone layout, which drops the body to its own row
+  with `flex-basis: 100%` and has no grid equivalent. A name wider than the
+  gutter pushes its own body right and leaves every other note aligned — the old
+  behaviour on one row, not a broken layout. The `max-width: 640px` block zeroes
+  both, since down there the body is already on its own row and a gutter would
+  only open dead space between the offset and the name. Nothing optional may
+  join that line; see the `· edited` note in the editing bullet below.
+- The stripe colours (`--author-1..5` plus `--blue` for your own notes) are
+  spread across the hue wheel rather than chosen for looks, because `--blue`
+  sits among them and all six have to be told apart at a 3px stripe. An earlier
+  set paired a teal 19° from `--blue` and a crimson 38° from its own orange, and
+  each pair read as one colour in a list. Orange (25°) and gold (45°) are the
+  tightest pair left and separate on lightness instead; with six colours on a
+  wheel some pair has to be adjacent. Changing one value is enough — the quote
+  block reuses the same `.post-aN` classes for its border, and `authorAccent`
+  only picks the slot.
 - A reply renders as a quote block (`Quote` in `post.js`) above the note's own
   body, not as an indented thread — `orderPosts` is untouched by replies, so a
   reply sits wherever its own watch offset places it on the shared timeline,
@@ -223,7 +247,16 @@ of the root `CLAUDE.md` so it loads only when working on these files.
   stays visible while you rewrite. `PATCH /api/posts/:post_id` never touches
   `created_at`, `offset_secs`, or `reply_to_post_id`, so a saved edit keeps the
   note's position on the shared watch-offset timeline and only its body and an
-  `edited_at` marker (`· edited`) change. `editingId` is state owned by
+  `edited_at` marker (`· edited`) change. That marker renders _inside_
+  `.post-body`, trailing the note's last line, rather than beside the author on
+  the meta line: the meta line holds the time and the author and nothing else,
+  because `.post-author`'s fixed gutter is what lines every note's body up and
+  anything optional sitting between the two would undo it (see the alignment
+  bullet below). Its leading gap is `margin-left`, not a space in the markup,
+  since `.post-body` is `white-space: pre-wrap` — a literal space would be
+  preserved and would also let the marker wrap away from the body on its own.
+  A consequence worth knowing: the marker is hidden while that note is being
+  edited, since `EditForm` replaces the body outright. `editingId` is state owned by
   `EpisodeBoard`, for the same reason `replyTo` is — episode-scoped, one note
   editable per board at a time. The edit box shares `.post-input-wrap` with
   `PostForm`'s compose box (see the autosizing note below) and stays enabled
