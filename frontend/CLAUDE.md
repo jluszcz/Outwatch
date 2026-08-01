@@ -30,10 +30,9 @@ of the root `CLAUDE.md` so it loads only when working on these files.
   out-specifies the mobile block's overlapping rules regardless of order.
   A base rule that needs to hold at _both_ sizes can sidestep the ordering
   question entirely by expressing itself relative to whatever the mobile
-  block sets rather than restating an absolute: `.post-action-edit > span`
-  and `.post-action-delete > span` size their glyphs in `em`, so they ride
-  the `1.1rem` the mobile block gives `.post-action` instead of needing a
-  duplicate `rem` rule down there.
+  block sets rather than restating an absolute: `.bi` sizes an icon in `em`,
+  so it rides the `1.1rem` the mobile block gives `.post-action` instead of
+  needing a duplicate `rem` rule down there.
 - Below `640px` that block switches the layout to a phone variant: the season
   column pins to the left of `.table-wrapper` while the checkbox columns
   scroll under it (pinning only engages once the grid overflows the wrapper,
@@ -142,8 +141,8 @@ of the root `CLAUDE.md` so it loads only when working on these files.
   reply button starts it) and `PostForm` (whose chip displays it and whose
   submit clears it), and scoping it there keeps a half-written reply from
   following you to a different episode.
-- Editing a note is inline (`EditForm` in `post.js`): the ✎ button on one of
-  your own notes, shown via the server-computed `mine` flag, swaps the body for
+- Editing a note is inline (`EditForm` in `post.js`): the Edit item in the note's
+  ⋯ menu, shown via the server-computed `mine` flag, swaps the body for
   a textarea with Save and Cancel in place, so the surrounding conversation
   stays visible while you rewrite. `PATCH /api/posts/:post_id` never touches
   `created_at`, `offset_secs`, or `reply_to_post_id`, so a saved edit keeps the
@@ -157,13 +156,51 @@ of the root `CLAUDE.md` so it loads only when working on these files.
   `canCancel()`, which is `false` while a save is in flight — a save already
   sent can't be recalled, so letting the user back out would mean a late
   success silently applies an edit they believe they discarded.
-- Reacting is one emoji picker button (`☺+`, second in the action row: `↰ ☺+ ✎
-×`) plus a `ReactionBar` of chips (`post.js`), both driven by the four-emoji
-  set in `shared/reactions.js` — the same module the Worker
-  validates against, so the picker can never offer an emoji the server would
-  reject. A note's `reactions` array arrives from the server already in set
-  order with counts and names resolved, so the client only draws it; `mine`
-  fills a chip in and is what tapping it toggles. Reactions are per
+- Everything you can do to a note lives behind one `⋯` trigger (`PostMenu` in
+  `post.js`), replacing the four inline glyph buttons (`↰ ☺+ ✎ ×`) that used to
+  crowd every note's meta line. The menu holds an emoji row over Reply, Edit
+  (yours, and not already being edited), and Delete (yours), each a Bootstrap
+  icon plus its name. `menuFor` is state owned by `EpisodeBoard`, for the same
+  episode-scoped, one-at-a-time reason as `replyTo` and `editingId`.
+    - Two layouts, one DOM and no JS measurement: on a pointer device the menu
+      is a dropdown absolutely positioned inside `.post-actions`
+      (`position: relative`, and deliberately no `z-index`, so no stacking
+      context forms there and the menu's `z-index` competes page-wide); the
+      `max-width: 640px` block switches the same element to `position: fixed`,
+      which escapes that ancestor because nothing between it and the root is
+      transformed, and it becomes a bottom sheet with a dimmed scrim and a
+      Cancel row. Nothing in the discussion view sets `overflow`, so the
+      dropdown has nothing to clip it — this is the opposite of the call
+      `EmojiPicker` used to document, and it is only safe because the menu
+      escaped `.post-content`.
+    - A menu opened on the last note of a long board would run past the bottom of
+      the viewport, so `position-try-fallbacks: flip-block` reopens it above the
+      trigger when there is no room below — the browser measures, which is what
+      keeps the no-JS-measurement rule intact. It sits in an `@supports` block
+      rather than layering `top: anchor(bottom)` over a plain `top: 100%` in one
+      rule: a minifier collapses two `top` declarations and the fallback is the
+      one it would drop. Support (Chrome 125+, Firefox 132+, Safari 26+) is a
+      higher floor than the `light-dark()` one, which is why it has to degrade
+      rather than be relied on — without it the menu opens downward as before.
+      The bottom sheet sets `position-try-fallbacks: none`: it is content-sized
+      against the bottom edge and cannot overflow.
+    - The scrim is rendered in both layouts (transparent on a pointer device)
+      and is what dismisses on an outside click. It covers the trigger too, so
+      clicking the trigger while open reaches the scrim rather than the
+      trigger's own toggle — which is the behavior you want, and it sidesteps
+      the usual double-toggle bug.
+    - Deliberately not `role="menu"`: that role promises arrow-key roving this
+      does not implement. Plain buttons in a labelled group, `aria-haspopup` and
+      `aria-expanded` on the trigger, focus into the menu on open, and Escape or
+      the scrim handing focus back to the trigger. Choosing an item does not
+      restore focus — Reply focuses the compose box, Edit the edit box, Delete
+      removes the note.
+- The emoji row (`EmojiPicker`) and the `ReactionBar` of chips below a note are
+  both driven by the four-emoji set in `shared/reactions.js` — the same module
+  the Worker validates against, so the picker can never offer an emoji the
+  server would reject. A note's `reactions` array arrives from the server
+  already in set order with counts and names resolved, so the client only draws
+  it; `mine` fills a chip in and is what tapping it toggles. Reactions are per
   individual, not per column, matching the `reactions` table's key — both
   halves of a shared login react separately, and a note's author reacting to
   their own note is allowed. `PUT /api/posts/:post_id/reactions` takes an
@@ -171,14 +208,22 @@ of the root `CLAUDE.md` so it loads only when working on these files.
   computes it from what the server last said (`!r.mine` for a chip, the
   picker's own `chosen` set for a picker button) instead of flipping a local
   value — idempotent in both directions, so a double tap or a retried request
-  can't desync from the server. The picker (`EmojiPicker` in `post.js`) is
-  inline inside `.post-content`, below the note, not a popover: nothing to
-  clip inside a scrolling board, and its 44px touch targets fall out of a CSS
-  grid rather than fighting absolute positioning. `pickerFor` is state owned
-  by `EpisodeBoard`, for the same episode-scoped, one-at-a-time reason as
-  `replyTo` and `editingId`; choosing an emoji closes the picker unconditionally,
-  whether the mutation that follows succeeds or not, so unlike `saveEdit` there
-  is no response-driven close for a late answer to race against.
+  can't desync from the server. Choosing an emoji closes the menu
+  unconditionally, whether the mutation that follows succeeds or not, so unlike
+  `saveEdit` there is no response-driven close for a late answer to race against.
+- Icons are Bootstrap Icons path data inlined in `frontend/icons.js`, not the
+  npm package: it ships ~2,000 SVGs and a webfont to supply the four glyphs this
+  app draws, and inlining keeps the bundle free of external requests. `Icon`
+  paints with `fill="currentColor"` and sizes in `em` (`.bi`), so a glyph
+  inherits its button's colour — the delete row's red hover included — and its
+  font-size, without a token of its own. The `-fill` variants are used in dark
+  mode, where a 1px outline thins out against the dark surface. That swap is the
+  one thing CSS cannot express (everything else themes through `light-dark()`
+  tokens, which resolve without anyone knowing which theme won), so `useIsDark`
+  (`hooks.js`) observes the `data-theme` attribute `useTheme` writes — the
+  attribute, not the media query, so the manual toggle counts, and a
+  `MutationObserver` rather than a context so nothing has to be threaded through
+  `App → SeasonView → EpisodeBoard → PostList → Post` to reach the menu.
 - The optional watch timer (`WatchTimer` in `discussion.js`, rule in
   `shared/session.js`) starts, pauses, and resumes per (user, episode); a
   session goes stale after three hours without a start/pause/resume/post, and

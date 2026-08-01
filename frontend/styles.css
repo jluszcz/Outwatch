@@ -532,10 +532,16 @@ tr.watched-all .check-cell input {
     flex: 1;
 }
 
+/* The positioning context the ⋯ menu anchors to on a pointer device. On a
+   phone the menu switches to position: fixed and ignores this — see the
+   `max-width: 640px` block. Deliberately no z-index of its own: leaving it
+   `auto` means no stacking context is created here, so the menu's z-index
+   competes against the whole page rather than only against its siblings
+   inside this note. */
 .post-actions {
+    position: relative;
     margin-left: auto;
     display: flex;
-    gap: 0.15rem;
     flex-shrink: 0;
 }
 
@@ -597,6 +603,9 @@ tr.watched-all .check-cell input {
 }
 
 .post-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     background: none;
     border: none;
     color: var(--text-faint);
@@ -606,21 +615,110 @@ tr.watched-all .check-cell input {
     line-height: 1;
 }
 
-/* Optical sizing, not box sizing: all four action buttons share .post-action's
-   font-size, but at 0.9rem the four glyphs draw wildly different amounts of ink
-   (measured height in px: ↰ 12.7, ☺ 10.3, ✎ 8.6, × 6.9), so ✎ and × read as
-   smaller buttons than their neighbours. These multipliers land both near 11px,
-   inside the band the other two already occupy. Scaling the glyph in em rather
-   than setting the button's font-size is what makes this survive the
-   `@media (max-width: 640px)` block below, which raises .post-action to 1.1rem:
-   an em multiplier rides whatever font-size wins, while a second rem rule here
-   would lose to it on source order (equal specificity, and it comes later). */
-.post-action-edit > span {
-    font-size: 1.25em;
+/* A Bootstrap icon (frontend/icons.js). Sized in em so it rides whatever
+   font-size its button ends up with — including the larger one the mobile
+   block gives .post-action — and painted by fill="currentColor" in the markup,
+   so it inherits its button's colour, red hover state included, without a
+   token of its own. The em sizing is what replaced the per-glyph optical
+   corrections the old text-glyph action row needed: these four icons are drawn
+   on one grid and already agree about how much ink they use. */
+.bi {
+    display: block;
+    width: 1.05em;
+    height: 1.05em;
+    flex-shrink: 0;
 }
 
-.post-action-delete > span {
-    font-size: 1.5em;
+/* Covers the viewport whenever a note's ⋯ menu is open, so a click anywhere
+   outside dismisses it in both layouts. Transparent on a pointer device —
+   dimming the page behind a three-item dropdown would be theatre — and given a
+   real scrim colour by the mobile block, where the menu is a bottom sheet. */
+.post-menu-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+    background: transparent;
+}
+
+/* The anchor the menu flips around — see the @supports block below. Only ever
+   read by anchor positioning, so a browser without it ignores the property and
+   loses nothing. */
+.post-menu-trigger {
+    anchor-name: --post-menu-anchor;
+}
+
+/* Anchored under the ⋯ button and right-aligned to it, so it opens inward
+   from the note's right edge instead of off the side of the card. The gap is a
+   margin rather than part of the offset, so it survives the flip below —
+   flipping swaps the block-start and block-end margins along with the insets,
+   and these two are equal. */
+.post-menu {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-block: 0.25rem;
+    z-index: 21;
+    min-width: 10rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    padding: 0.35rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    box-shadow: 0 4px 16px var(--shadow);
+}
+
+/* A menu opened on the last note of a long board would otherwise run past the
+   bottom of the viewport. flip-block reopens it above the trigger when there
+   isn't room below, with the browser doing the measuring — which is the whole
+   point, since measuring in JS is what this design set out to avoid.
+   Progressive enhancement, and deliberately gated behind @supports rather than
+   layered as duplicate `top` declarations: two `top`s in one rule are exactly
+   what a CSS minifier collapses, and the older one is the fallback. Without
+   support the rule above stands and the menu opens downward as it always has.
+   Positioned before the `max-width: 640px` block on purpose — that block's
+   `inset` shorthand has to come later to reset these insets for the bottom
+   sheet, which cannot overflow and so has nothing to flip. */
+@supports (position-try-fallbacks: flip-block) {
+    .post-menu {
+        position-anchor: --post-menu-anchor;
+        top: anchor(bottom);
+        right: anchor(right);
+        position-try-fallbacks: flip-block;
+    }
+}
+
+/* The rule separating the emoji row above from the named actions below. */
+.post-menu-items {
+    display: flex;
+    flex-direction: column;
+    border-top: 1px solid var(--border-subtle);
+    padding-top: 0.35rem;
+}
+
+.post-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    background: none;
+    border: none;
+    border-radius: 0.35rem;
+    color: var(--text-subtle);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.85rem;
+    text-align: left;
+    padding: 0.4rem 0.5rem;
+}
+
+/* Only shown on a phone, where the menu is a bottom sheet: a dropdown you can
+   dismiss by clicking anywhere off it does not need a Cancel row, but a sheet
+   covering the bottom of the screen does — the scrim above it is a small
+   target and not an obvious one. */
+.post-menu-cancel {
+    display: none;
 }
 
 .post-edited {
@@ -665,12 +763,13 @@ tr.watched-all .check-cell input {
     color: var(--blue);
 }
 
-/* repeat(4, auto) puts the current set on one row; a fifth emoji wraps onto a
-   second without any other change. */
+/* The emoji row at the top of the ⋯ menu. 1fr columns spread the current set
+   evenly across whatever width the menu has — the dropdown's min-width on a
+   pointer device, the full screen on a phone — and a fifth emoji wraps onto a
+   second row without any other change. */
 .emoji-picker {
     display: grid;
-    grid-template-columns: repeat(4, auto);
-    justify-content: start;
+    grid-template-columns: repeat(4, 1fr);
     gap: 0.25rem;
 }
 
@@ -1053,17 +1152,81 @@ tr.watched-all .check-cell input {
         justify-content: center;
     }
 
-    /* Deliberately smaller than 44px: this deletes a note and sits inline with
-       notes you scroll past, so it should be reachable but not effortless. */
+    /* The ⋯ trigger gets a full touch target where the old four-glyph action
+       row was held to 32px: that restraint was about a bare × deleting a note
+       under your thumb as you scrolled, and deleting now costs opening a menu
+       and hitting a row that says Delete. One control per note also has the
+       room the four did not. The reply chip's cancel shares .post-action and
+       stays small — a 44px button would stretch the chip it sits in — so the
+       sizing hangs off .post-menu-trigger rather than .post-action, which keeps
+       the 32px it had. Both selectors are one class, so the trigger — which
+       carries both — takes 44px on source order alone. */
     .post-action {
         min-width: 32px;
         min-height: 32px;
         font-size: 1.1rem;
     }
 
+    .post-menu-trigger {
+        min-width: 44px;
+        min-height: 44px;
+    }
+
     .emoji-btn {
         min-width: 44px;
         min-height: 44px;
+    }
+
+    /* The dropdown becomes a bottom sheet: position: fixed escapes
+       .post-actions (nothing between here and the root is transformed, so
+       fixed really is viewport-relative), which is why the same DOM serves
+       both layouts with no JS measuring anything. It sits flush against the
+       bottom edge, so the border and the rounding drop on three sides.
+       Deliberately no env(safe-area-inset-bottom): index.html does not opt
+       into viewport-fit=cover, so iOS already insets the viewport clear of the
+       home indicator. */
+    .post-menu {
+        position: fixed;
+        inset: auto 0 0 0;
+        /* The sheet is content-sized against the bottom edge, so it has no way
+           to overflow and nothing to flip; turning the fallback off says so
+           rather than leaving it to be inferred. */
+        position-try-fallbacks: none;
+        min-width: 0;
+        gap: 0.5rem;
+        padding: 0.6rem 0.9rem;
+        border-width: 1px 0 0;
+        border-radius: 0.9rem 0.9rem 0 0;
+        /* The base rule's shadow falls downward, which is off-screen here. */
+        box-shadow: 0 -4px 16px var(--shadow);
+    }
+
+    .post-menu-scrim {
+        background: light-dark(rgba(0, 0, 0, 0.35), rgba(0, 0, 0, 0.6));
+    }
+
+    .post-menu-item {
+        font-size: 1rem;
+        gap: 0.75rem;
+        padding: 0.6rem;
+    }
+
+    .post-menu .emoji-picker {
+        gap: 0.5rem;
+    }
+
+    .post-menu-cancel {
+        display: block;
+        width: 100%;
+        min-height: 44px;
+        background: none;
+        border: none;
+        border-top: 1px solid var(--border-subtle);
+        color: var(--text-subtle);
+        cursor: pointer;
+        font-family: inherit;
+        font-size: 1rem;
+        padding-top: 0.4rem;
     }
 
     .reaction-chip {
@@ -1086,6 +1249,18 @@ tr.watched-all .check-cell input {
     .post-input,
     .nw-select {
         font-size: 16px;
+    }
+}
+
+/* Touch targets keyed on the input device rather than the viewport, so a
+   tablet — a coarse pointer well above the 640px breakpoint, and therefore
+   still getting the anchored dropdown — has menu rows a finger can hit.
+   Positioned after the mobile block for the usual reason (media queries add no
+   specificity), though nothing in that block sets these properties today. */
+@media (pointer: coarse) {
+    .post-menu-item,
+    .emoji-btn {
+        min-height: 44px;
     }
 }
 
@@ -1126,14 +1301,22 @@ tr.watched-all .check-cell input {
         color: var(--text);
     }
 
-    /* Generic hover for the non-destructive action-row buttons (reply, react,
-       edit, and the reply chip's cancel); .post-action-delete:hover below
-       overrides it for the one button that should read as destructive. */
+    /* The ⋯ trigger and the reply chip's cancel, both of which only lift out of
+       --text-faint on hover. */
     .post-action:hover {
         color: var(--text);
     }
 
-    .post-action-delete:hover {
+    /* .post-menu-item-delete:hover below overrides the generic row hover for
+       the one item that should read as destructive; it comes later at equal
+       specificity, so source order carries it. */
+    .post-menu-item:hover,
+    .post-menu-cancel:hover {
+        background: var(--surface-hover);
+        color: var(--text);
+    }
+
+    .post-menu-item-delete:hover {
         color: var(--red);
     }
 
@@ -1151,6 +1334,8 @@ tr.watched-all .check-cell input {
 .timer-btn:active,
 .reveal-btn:active,
 .post-submit:active,
+.post-menu-item:active,
+.post-menu-cancel:active,
 .theme-btn:active {
     background: var(--surface-hover);
 }

@@ -2,12 +2,17 @@ import { useState, useEffect, useCallback, useRef } from 'preact/hooks';
 import { createRefreshGuard } from './refresh-guard.js';
 import { createSubmitGuard } from './submit-guard.js';
 
+// The theme in effect before anything has been rendered: a manual choice if one
+// was stored, otherwise whatever the OS asks for. Shared by useTheme's initial
+// state and useIsDark's, so the two cannot drift.
+function preferredTheme() {
+    const stored = localStorage.getItem('theme');
+    if (stored === 'light' || stored === 'dark') return stored;
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
 export function useTheme() {
-    const [theme, setTheme] = useState(() => {
-        const stored = localStorage.getItem('theme');
-        if (stored === 'light' || stored === 'dark') return stored;
-        return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-    });
+    const [theme, setTheme] = useState(preferredTheme);
 
     useEffect(() => {
         document.documentElement.dataset.theme = theme;
@@ -29,6 +34,36 @@ export function useTheme() {
     const toggle = useCallback(() => setTheme((t) => (t === 'dark' ? 'light' : 'dark')), []);
 
     return { theme, toggle };
+}
+
+// Whether the dark theme is in effect, for the one thing CSS cannot express:
+// swapping an icon's outline path for its filled one. Everything else themes
+// through light-dark() tokens, which resolve from color-scheme without anyone
+// having to know which theme won.
+//
+// Reads the same data-theme attribute useTheme writes rather than the media
+// query directly, so the manual toggle counts and the OS preference is only
+// consulted for the first paint, before useTheme's effect has written anything.
+// A MutationObserver rather than a shared context: the attribute is already the
+// app-wide source of truth, and this avoids threading a provider through App →
+// SeasonView → EpisodeBoard → PostList → Post just to reach the menu.
+export function useIsDark() {
+    const [dark, setDark] = useState(
+        () => (document.documentElement.dataset.theme || preferredTheme()) === 'dark',
+    );
+
+    useEffect(() => {
+        const root = document.documentElement;
+        const observer = new MutationObserver(() => setDark(root.dataset.theme === 'dark'));
+        observer.observe(root, { attributes: true, attributeFilter: ['data-theme'] });
+        // useTheme's effect may have written the attribute between this
+        // component's render and this effect, so re-read rather than trusting
+        // the initial state to still be right.
+        setDark(root.dataset.theme === 'dark');
+        return () => observer.disconnect();
+    }, []);
+
+    return dark;
 }
 
 // Guards a shared-resource refetch against races with optimistic mutations.

@@ -2,7 +2,8 @@ import { h } from 'preact';
 import { useState, useRef, useEffect } from 'preact/hooks';
 import htm from 'htm';
 import { authorAccent, formatOffsetShort } from './utils.js';
-import { useAutoSize, useSubmitGuard } from './hooks.js';
+import { useAutoSize, useIsDark, useSubmitGuard } from './hooks.js';
+import { Icon } from './icons.js';
 import { REACTIONS } from '../shared/reactions.js';
 
 const html = htm.bind(h);
@@ -27,8 +28,8 @@ export function PostList({
     onStartEdit,
     onCancelEdit,
     onSaveEdit,
-    pickerFor,
-    onTogglePicker,
+    menuFor,
+    onToggleMenu,
     onReact,
 }) {
     if (placed.length === 0) return html`<div class="no-posts">Nothing here yet.</div>`;
@@ -46,8 +47,8 @@ export function PostList({
                         onStartEdit=${onStartEdit}
                         onCancelEdit=${onCancelEdit}
                         onSaveEdit=${onSaveEdit}
-                        pickerOpen=${pickerFor === entry.post.id}
-                        onTogglePicker=${onTogglePicker}
+                        menuOpen=${menuFor === entry.post.id}
+                        onToggleMenu=${onToggleMenu}
                         onReact=${onReact}
                     />`,
             )}
@@ -169,8 +170,9 @@ function ReactionBar({ post, meId, onReact }) {
     `;
 }
 
-// Inline below the note rather than an absolutely positioned popover: nothing
-// to clip inside a scrolling board, and the 44px targets fall out of the grid.
+// The four-emoji row at the top of the action menu. `chosen` comes from the
+// server's `mine` flags rather than a local toggle, so the `on` this sends is
+// always computed from what the server last said (see `PUT .../reactions`).
 function EmojiPicker({ post, onReact }) {
     const chosen = new Set(post.reactions.filter((r) => r.mine).map((r) => r.emoji));
     return html`
@@ -192,6 +194,112 @@ function EmojiPicker({ post, onReact }) {
     `;
 }
 
+// Everything you can do to a note, behind one ⋯ button. Four inline buttons on
+// your own notes crowded the meta line and left every note carrying controls it
+// mostly does not need; one trigger opening a labelled menu costs a tap and
+// gives each action a name and a target you can actually hit.
+//
+// Two layouts, one DOM: a dropdown anchored to the trigger inside the
+// position: relative .post-actions, which the `max-width: 640px` block turns
+// into a bottom sheet by switching it to position: fixed — fixed escapes an
+// untransformed ancestor, so no JS measures anything. The scrim is present in
+// both, transparent on desktop and dimming on a phone, and is what handles
+// click-outside either way.
+//
+// Deliberately not role="menu": that role promises arrow-key roving between
+// items, which this does not implement. Plain buttons in a labelled group get
+// native Tab order and an honest accessibility tree; aria-haspopup and
+// aria-expanded on the trigger say what it opens.
+function PostMenu({ post, editing, open, onToggle, onReply, onReact, onStartEdit, onDelete }) {
+    const dark = useIsDark();
+    const menuRef = useRef(null);
+    const triggerRef = useRef(null);
+
+    const close = () => onToggle(post.id);
+    // Escape and a click on the scrim are the two ways out that leave you where
+    // you started, so they hand focus back to the trigger. Choosing an item
+    // deliberately does not: Reply focuses the compose box, Edit focuses the
+    // edit box, and Delete removes the note — restoring focus here would fight
+    // all three.
+    const dismiss = () => {
+        triggerRef.current?.focus();
+        close();
+    };
+
+    // Keyed on `open` alone. The listener closes over the `dismiss` from the
+    // render that opened the menu, which is safe here: it only reads post.id
+    // and calls the parent's setter, neither of which changes while a menu is
+    // open. Re-subscribing on every render would be churn for nothing.
+    useEffect(() => {
+        if (!open) return;
+        menuRef.current?.querySelector('button')?.focus();
+        const onKeyDown = (e) => {
+            if (e.key === 'Escape') dismiss();
+        };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+    }, [open]);
+
+    // Every item closes the menu first, then acts.
+    const choose = (act) => () => {
+        close();
+        act();
+    };
+
+    return html`
+        <div class="post-actions">
+            <button
+                ref=${triggerRef}
+                class="post-action post-menu-trigger"
+                title="Note actions"
+                aria-label="Note actions"
+                aria-haspopup="true"
+                aria-expanded=${open}
+                onClick=${() => onToggle(post.id)}
+            >
+                <${Icon} name="dots" />
+            </button>
+            ${
+                open &&
+                html`
+                    <div class="post-menu-scrim" onClick=${dismiss}></div>
+                    <div class="post-menu" ref=${menuRef} role="group" aria-label="Note actions">
+                        <${EmojiPicker} post=${post} onReact=${onReact} />
+                        <div class="post-menu-items">
+                            <button class="post-menu-item" onClick=${choose(() => onReply(post))}>
+                                <${Icon} name="reply" filled=${dark} />
+                                <span>Reply</span>
+                            </button>
+                            ${
+                                post.mine &&
+                                !editing &&
+                                html`<button
+                                    class="post-menu-item"
+                                    onClick=${choose(() => onStartEdit(post.id))}
+                                >
+                                    <${Icon} name="pencil" filled=${dark} />
+                                    <span>Edit</span>
+                                </button>`
+                            }
+                            ${
+                                post.mine &&
+                                html`<button
+                                    class="post-menu-item post-menu-item-delete"
+                                    onClick=${choose(() => onDelete(post.id))}
+                                >
+                                    <${Icon} name="trash" filled=${dark} />
+                                    <span>Delete</span>
+                                </button>`
+                            }
+                        </div>
+                        <button class="post-menu-cancel" onClick=${dismiss}>Cancel</button>
+                    </div>
+                `
+            }
+        </div>
+    `;
+}
+
 // One note. The time, author, and action row sit on the note's first line; the
 // quote block, body, and reactions stack inside .post-content, so a plain note
 // still reads as a single line on a wide screen while anything richer grows
@@ -205,8 +313,8 @@ function Post({
     onStartEdit,
     onCancelEdit,
     onSaveEdit,
-    pickerOpen,
-    onTogglePicker,
+    menuOpen,
+    onToggleMenu,
     onReact,
 }) {
     const { post, offset, inferred, tail } = entry;
@@ -241,52 +349,19 @@ function Post({
                     post.reactions.length > 0 &&
                     html`<${ReactionBar} post=${post} meId=${meId} onReact=${onReact} />`
                 }
-                ${pickerOpen && html`<${EmojiPicker} post=${post} onReact=${onReact} />`}
             </div>
             ${
                 meId &&
-                html`<div class="post-actions">
-                    <button
-                        class="post-action"
-                        title="Reply to this note"
-                        aria-label="Reply to this note"
-                        onClick=${() => onReply(post)}
-                    >
-                        <span aria-hidden="true">↰</span>
-                    </button>
-                    <button
-                        class="post-action"
-                        title="React to this note"
-                        aria-label="React to this note"
-                        aria-expanded=${pickerOpen}
-                        onClick=${() => onTogglePicker(post.id)}
-                    >
-                        <span aria-hidden="true">☺+</span>
-                    </button>
-                    ${
-                        post.mine &&
-                        !editing &&
-                        html`<button
-                            class="post-action post-action-edit"
-                            title="Edit this note"
-                            aria-label="Edit this note"
-                            onClick=${() => onStartEdit(post.id)}
-                        >
-                            <span aria-hidden="true">✎</span>
-                        </button>`
-                    }
-                    ${
-                        post.mine &&
-                        html`<button
-                            class="post-action post-action-delete"
-                            title="Delete this note"
-                            aria-label="Delete this note"
-                            onClick=${() => onDelete(post.id)}
-                        >
-                            <span aria-hidden="true">×</span>
-                        </button>`
-                    }
-                </div>`
+                html`<${PostMenu}
+                    post=${post}
+                    editing=${editing}
+                    open=${menuOpen}
+                    onToggle=${onToggleMenu}
+                    onReply=${onReply}
+                    onReact=${onReact}
+                    onStartEdit=${onStartEdit}
+                    onDelete=${onDelete}
+                />`
             }
         </li>
     `;
