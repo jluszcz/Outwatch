@@ -100,7 +100,15 @@ of the root `CLAUDE.md` so it loads only when working on these files.
   cannot-cancel-while-saving rule) from `useSubmitGuard` (`hooks.js`), wiring
   around `createSubmitGuard` (`submit-guard.js`) — the same split as
   `useRefreshGuard`/`refresh-guard.js`, so the rules are tested as a plain
-  factory rather than duplicated per form.
+  factory rather than duplicated per form. The compose box carries
+  `enterkeyhint="send"`, since a textarea's return key is otherwise drawn as a
+  plain ⏎ — a promise of a newline that this form's Enter-posts handler does not
+  keep. `EditForm`'s box keeps the default: its Enter saves, but iOS offers no
+  "save" hint and "send" would misdescribe an edit. Neither box can do anything
+  about the Previous/Next/Done bar above the keyboard — that is the iOS form
+  assistant, owned by the keyboard rather than the page, and no attribute, meta
+  tag, or CSS hides it from a browser or a home-screen web app (Safari also does
+  not implement `interactive-widget`).
 - Both text boxes grow with their content through CSS alone: `.post-input-wrap`
   puts the `<textarea>` and an invisible `::after` replica of the same text into
   one grid cell, so the row is as tall as the text and the textarea stretches to

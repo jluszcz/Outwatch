@@ -399,7 +399,9 @@ function PostForm({ inputRef, replyTo, onCancelReply, onPost }) {
 
     // Enter still posts, the way it did when this was an <input>. Shift+Enter
     // is the escape hatch for a line break, which renders because .post-body is
-    // white-space: pre-wrap.
+    // white-space: pre-wrap. `enterkeyhint="send"` on the box below is what says
+    // so on a phone: a textarea's return key is otherwise labelled with a plain
+    // ⏎, which promises a newline this form does not give it.
     const keyDown = (e) => {
         if (e.key !== 'Enter' || e.shiftKey) return;
         e.preventDefault();
@@ -440,6 +442,7 @@ function PostForm({ inputRef, replyTo, onCancelReply, onPost }) {
                     class="post-input"
                     rows="1"
                     maxlength="2000"
+                    enterkeyhint="send"
                     placeholder="Write a note…"
                     value=${body}
                     onInput=${(e) => setBody(e.target.value)}
