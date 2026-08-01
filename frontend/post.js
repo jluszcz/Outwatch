@@ -400,6 +400,13 @@ function PostMenu({ post, editing, open, onToggle, onReply, onReact, onStartEdit
 // quote block, body, and reactions stack inside .post-content, so a plain note
 // still reads as a single line on a wide screen while anything richer grows
 // downward instead of sideways.
+//
+// The meta line holds the time and the author and nothing else, because
+// .post-author's fixed gutter is what lines every note's body up and anything
+// optional between the two would undo it. That is why the `· edited` marker
+// trails the body from inside .post-body rather than sitting beside the name —
+// which also means it is hidden while the note is being edited, since EditForm
+// replaces the body outright.
 function Post({
     entry,
     meId,
@@ -424,12 +431,6 @@ function Post({
                 }
             </span>
             <span class="post-author">${post.mine ? 'You' : post.author_name}</span>
-            ${
-                post.edited_at &&
-                html`<span class="post-edited" title=${new Date(post.edited_at).toLocaleString()}>
-                    · edited
-                </span>`
-            }
             <div class="post-content">
                 ${post.reply_to && html`<${Quote} quote=${post.reply_to} />`}
                 ${
@@ -439,7 +440,16 @@ function Post({
                               onSave=${onSaveEdit}
                               onCancel=${onCancelEdit}
                           />`
-                        : html`<span class="post-body">${post.body}</span>`
+                        : html`<span class="post-body"
+                              >${post.body}${
+                                  post.edited_at &&
+                                  html`<span
+                                      class="post-edited"
+                                      title=${new Date(post.edited_at).toLocaleString()}
+                                      >· edited</span
+                                  >`
+                              }</span
+                          >`
                 }
                 ${
                     post.reactions.length > 0 &&
