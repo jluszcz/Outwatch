@@ -309,9 +309,35 @@ th .you {
     background: var(--surface-accent);
 }
 
-.nw-marker {
-    font-size: 0.55rem;
+/* Scrolls that person's season into view down in the board. A tinted disc
+   rather than the bare ▶ this replaced, so it reads as something you can press;
+   the rim is what carries it, since the tint alone disappears against
+   .nw-chip.mine, whose background is already --surface-accent. Same glyph the
+   row's own .watching-indicator uses, which is the cue for what you land on. */
+.nw-jump {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: 1px solid var(--blue);
+    border-radius: 50%;
+    background: var(--surface-accent);
     color: var(--blue);
+    font-size: 0.55rem;
+    line-height: 1;
+    cursor: pointer;
+    transition:
+        background-color 0.15s,
+        color 0.15s;
+}
+
+.nw-jump:focus-visible {
+    outline: 2px solid var(--blue);
+    outline-offset: 2px;
 }
 
 .nw-name {
@@ -394,6 +420,40 @@ tr.watched-all .check-cell input {
     opacity: 0.4;
 }
 
+/* The badge sets its own colours, so it would otherwise stay at full contrast
+   on a row everything else has faded out of. Grouped with the rest of the
+   watched-all rules even though .post-badge is declared further down the file:
+   at (0,2,1) against (0,1,0) this wins on specificity, not source order. */
+tr.watched-all .post-badge {
+    border-color: var(--border-subtle);
+    background: transparent;
+    color: var(--text-faint);
+}
+
+/* Lights the row a NowWatching jump button scrolled you to. Duration is kept in
+   step with FLASH_MS in board.js, which is what removes the class.
+
+   An opaque inset shadow fading to transparent, rather than an animated
+   background-color: the cells underneath do not agree on what their background
+   is — td.check-cell.mine is tinted --surface-accent, and the phone layout's
+   pinned td.season-cell is opaque --surface — so animating the background would
+   fade each cell towards some other cell's colour and snap back at the end. A
+   shadow composites over whatever is already there and leaves it exactly as it
+   found it. Being an animation, it also outranks those background declarations
+   in the cascade without needing to out-specify them. */
+tr.flash td {
+    animation: row-flash 1.6s ease-out;
+}
+
+@keyframes row-flash {
+    from {
+        box-shadow: inset 0 0 0 100px var(--surface-accent);
+    }
+    to {
+        box-shadow: inset 0 0 0 100px transparent;
+    }
+}
+
 .back-link {
     display: inline-block;
     margin-bottom: 1rem;
@@ -421,10 +481,24 @@ tr.watched-all .check-cell input {
     white-space: nowrap;
 }
 
+/* A pill rather than loose text: at 0.75rem beside a 1rem season number, the
+   count read as the lightest thing in the row and the two sides of the row did
+   not balance. The chrome supplies the mass the type deliberately does not, so
+   the season label stays the row's loudest element. The glyph is an inline
+   Bootstrap icon rather than 💬, which rendered as a full-colour system emoji —
+   heavier than its own number and deaf to the theme. */
 .post-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
     margin-left: 0.5rem;
+    padding: 2px 8px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--surface-subtle);
     font-size: 0.75rem;
-    color: var(--text-muted);
+    font-weight: 600;
+    color: var(--text-subtle);
     white-space: nowrap;
 }
 
@@ -1077,6 +1151,27 @@ tr.watched-all .check-cell input {
         z-index: 2;
     }
 
+    /* row-flash animates box-shadow, which is also what draws this column's
+       divider — so the pinned cell needs a variant that carries the divider
+       through the flash, or the column loses its edge for the flash's duration.
+       Only the name is overridden; duration and easing come from tr.flash td. */
+    tr.flash td.season-cell {
+        animation-name: row-flash-pinned;
+    }
+
+    @keyframes row-flash-pinned {
+        from {
+            box-shadow:
+                inset 0 0 0 100px var(--surface-accent),
+                1px 0 0 var(--border);
+        }
+        to {
+            box-shadow:
+                inset 0 0 0 100px transparent,
+                1px 0 0 var(--border);
+        }
+    }
+
     /* Number over subtitle, so a long subtitle cannot widen the pinned column. */
     .season-num,
     .season-sub {
@@ -1363,6 +1458,22 @@ tr.watched-all .check-cell input {
     .emoji-btn {
         min-height: 44px;
     }
+
+    /* The jump button reaches 44px through an invisible extender rather than by
+       growing: a 44px disc would set the height of every chip in the strip, and
+       the chip is a label and a season name, not a control. The extender spills
+       ~2px past the chip's own edge, so the strip's gap goes up to keep two
+       neighbouring extenders from meeting in the gutter — gap covers the
+       stacked axis too, which matters because these chips wrap. */
+    .nw-jump::after {
+        content: '';
+        position: absolute;
+        inset: -12px;
+    }
+
+    .now-watching-items {
+        gap: 12px;
+    }
 }
 
 /* Hover effects only where a pointer can actually hover. On a touch device a
@@ -1425,6 +1536,11 @@ tr.watched-all .check-cell input {
     .emoji-btn:hover {
         background: var(--surface-hover);
     }
+
+    .nw-jump:hover {
+        background: var(--blue);
+        color: var(--surface);
+    }
 }
 
 /* Touch gets no hover, so taps need their own feedback. .sort-btn:not(.active)
@@ -1439,4 +1555,12 @@ tr.watched-all .check-cell input {
 .post-menu-close:active,
 .theme-btn:active {
     background: var(--surface-hover);
+}
+
+/* Not folded into the group above: --surface-hover is invisible against the
+   disc's tint, and the press this button wants is the same fill its hover
+   takes. Declared after the hover block so a press wins while both apply. */
+.nw-jump:active {
+    background: var(--blue);
+    color: var(--surface);
 }
