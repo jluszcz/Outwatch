@@ -54,7 +54,8 @@ of the root `CLAUDE.md` so it loads only when working on these files.
   meta line. The text controls specifically — `.post-input` and `.nw-select` —
   are at least `16px`, since Safari zooms the page in on focusing a form
   control below that and never zooms back out; buttons are not affected and
-  stay smaller. Every `:hover` rule sits behind
+  stay smaller. That rule has to name `.post-input-wrap::after` alongside
+  `.post-input`, for the reason the autosizing bullet below gives. Every `:hover` rule sits behind
   `@media (hover: hover)`, with `.sort-btn:hover` scoped `:not(.active)` so
   hovering the selected sort button keeps its style. No DOM test suite
   exists; this layout is verified with an ad-hoc Playwright script, not CI.
@@ -100,6 +101,41 @@ of the root `CLAUDE.md` so it loads only when working on these files.
   around `createSubmitGuard` (`submit-guard.js`) — the same split as
   `useRefreshGuard`/`refresh-guard.js`, so the rules are tested as a plain
   factory rather than duplicated per form.
+- Both text boxes grow with their content through CSS alone: `.post-input-wrap`
+  puts the `<textarea>` and an invisible `::after` replica of the same text into
+  one grid cell, so the row is as tall as the text and the textarea stretches to
+  fill it. The details this rests on, none of them obvious:
+    - The replica renders the wrapper's `data-value` attribute, so that
+      attribute must be given the same state the textarea's `value` is. The
+      trailing space in its `content` is load-bearing — text ending in a newline
+      has to occupy the empty last line, and without it Shift+Enter at the end of
+      a note does not grow the box.
+    - Every property that decides **where a line breaks** — padding, border
+      width, `font`, `font-size`, `white-space`, `overflow-wrap` — belongs on the
+      `.post-input, .post-input-wrap::after` pair, never on the textarea alone.
+      Set one without the other and the two disagree about the line count, so
+      the box comes out a line short or a line tall. This is why the mobile
+      block's 16px Safari-zoom rule names the replica too.
+    - `max-height: 9rem` is set twice on purpose: on the wrapper it clamps the
+      visible box, and on the textarea it stops the control stretching into a
+      row that the replica keeps growing past. The wrapper deliberately sets no
+      `overflow` — the overflowing replica is `visibility: hidden`, so it neither
+      paints nor takes a tap, while hiding it would clip the textarea's focus
+      ring and make the wrapper a scroll container of its own. The mobile 44px
+      touch target goes on the replica rather than the textarea, since the
+      replica is what sizes the row.
+    - This replaced a `useAutoSize` hook that set `height: auto` and read
+      `scrollHeight` back. That collapse forced a layout in which the document
+      was a few lines shorter than it really was, and on iOS — where the compose
+      box is the last element on the page and the caret is pinned above the
+      keyboard — Safari clamped the scroll offset to the shorter document and
+      then scrolled the caret back into view, once per keystroke, so the page
+      shook while you typed. Its `resize` listener (there to rewrap on a
+      rotation) re-ran the same collapse, and since `body`/`.container` are
+      `min-height: 100dvh`, an address bar animating in response to the first
+      jump fed the next one. Do not reintroduce a measure-by-collapsing
+      autosizer; the replica rewraps with the box, so the rotation case needs no
+      listener at all.
 - An open board reads controls → discussion → compose box: the
   `.episode-actions` row leads `.episode-body`, then the notes, then the
   `hidden-note` count, then `PostForm`. The controls sit above the list because
@@ -149,10 +185,9 @@ of the root `CLAUDE.md` so it loads only when working on these files.
   note's position on the shared watch-offset timeline and only its body and an
   `edited_at` marker (`· edited`) change. `editingId` is state owned by
   `EpisodeBoard`, for the same reason `replyTo` is — episode-scoped, one note
-  editable per board at a time. The edit box shares `useAutoSize` (`hooks.js`)
-  with `PostForm`'s compose box, extracted from `PostForm.fit` rather than
-  duplicated, and stays enabled while saving for the same reason `PostForm`'s
-  does. Escape and Cancel are both routed through `useSubmitGuard`'s
+  editable per board at a time. The edit box shares `.post-input-wrap` with
+  `PostForm`'s compose box (see the autosizing note below) and stays enabled
+  while saving for the same reason `PostForm`'s does. Escape and Cancel are both routed through `useSubmitGuard`'s
   `canCancel()`, which is `false` while a save is in flight — a save already
   sent can't be recalled, so letting the user back out would mean a late
   success silently applies an edit they believe they discarded.

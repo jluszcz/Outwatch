@@ -135,36 +135,6 @@ export function useSubmitGuard() {
     return { busy, run, canCancel };
 }
 
-// A textarea does not size itself to its content, so the height is driven from
-// scrollHeight. Resetting to 'auto' first is what lets the box shrink again
-// after a delete — scrollHeight never reports less than the height already set.
-//
-// The same text rewraps onto a different number of lines when the box gets
-// narrower or wider, so the height is recomputed on a rotation or a window
-// resize too, not only when the text changes. The box's width is a function of
-// the viewport alone, so the window event is enough and a ResizeObserver (which
-// would also have to avoid re-firing on the height changes made here) buys
-// nothing.
-export function useAutoSize(ref, value) {
-    const fit = useCallback(() => {
-        const el = ref.current;
-        if (!el) return;
-        el.style.height = 'auto';
-        const style = getComputedStyle(el);
-        // scrollHeight leaves out the border, which box-sizing: border-box
-        // counts inside the height, so skipping this clips the last line.
-        const border = parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
-        el.style.height = `${el.scrollHeight + border}px`;
-    }, [ref]);
-
-    useEffect(fit, [value, fit]);
-
-    useEffect(() => {
-        window.addEventListener('resize', fit);
-        return () => window.removeEventListener('resize', fit);
-    }, [fit]);
-}
-
 // The app has exactly one route beyond the board, so a hash and a listener beat
 // a router library. A hash also means Back returns to the board, a reload keeps
 // your place, and a season is a link you can paste into chat.
