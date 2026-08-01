@@ -219,7 +219,17 @@ of the root `CLAUDE.md` so it loads only when working on these files.
       `max-width: 640px` block switches the same element to `position: fixed`,
       which escapes that ancestor because nothing between it and the root is
       transformed, and it becomes a bottom sheet with a dimmed scrim and a
-      Cancel row. Nothing in the discussion view sets `overflow`, so the
+      Cancel row. The sheet is flush against the bottom edge but carries `3rem`
+      of bottom padding, which is not decoration: while iOS Safari's toolbar is
+      collapsed to its pill, the strip along the bottom edge belongs to Safari,
+      and a tap there expands the toolbar rather than reaching the page — the
+      Cancel row, as the sheet's last child, sat in that strip and lost its
+      first tap. The padding has to stay on `.post-menu`; moving it to
+      `padding-bottom` on `.post-menu-cancel` would grow that button's hit
+      target back down into the swallowed strip and restore the bug. It shows
+      as empty sheet under Cancel whenever the toolbar is expanded, the
+      accepted cost of keeping the sheet flush rather than floating it inset
+      from all four edges. Nothing in the discussion view sets `overflow`, so the
       dropdown has nothing to clip it — this is the opposite of the call
       `EmojiPicker` used to document, and it is only safe because the menu
       escaped `.post-content`.

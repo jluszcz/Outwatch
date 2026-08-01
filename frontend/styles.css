@@ -716,7 +716,9 @@ tr.watched-all .check-cell input {
 /* Only shown on a phone, where the menu is a bottom sheet: a dropdown you can
    dismiss by clicking anywhere off it does not need a Cancel row, but a sheet
    covering the bottom of the screen does — the scrim above it is a small
-   target and not an obvious one. */
+   target and not an obvious one. Being the sheet's last child puts it nearest
+   the bottom edge, which is why the sheet carries bottom padding on a phone —
+   see the `max-width: 640px` block. */
 .post-menu-cancel {
     display: none;
 }
@@ -1248,7 +1250,19 @@ tr.watched-all .check-cell input {
        bottom edge, so the border and the rounding drop on three sides.
        Deliberately no env(safe-area-inset-bottom): index.html does not opt
        into viewport-fit=cover, so iOS already insets the viewport clear of the
-       home indicator. */
+       home indicator.
+
+       The 3rem of bottom padding is a separate concern from that inset and is
+       load-bearing: while iOS Safari's toolbar is collapsed to its pill, the
+       strip along the bottom edge belongs to Safari, and a tap there expands
+       the toolbar instead of reaching the page. Flush against the edge, the
+       Cancel row sat in that strip and swallowed the first tap. The padding
+       keeps every target in the sheet above it. It must stay on the container
+       rather than becoming padding-bottom on .post-menu-cancel — on the button
+       it would grow that same hit target back down into the swallowed strip,
+       which is the original bug with a tidier diff. The cost, accepted
+       knowingly: when the toolbar is expanded the padding shows as empty sheet
+       under Cancel. */
     .post-menu {
         position: fixed;
         inset: auto 0 0 0;
@@ -1258,7 +1272,7 @@ tr.watched-all .check-cell input {
         position-try-fallbacks: none;
         min-width: 0;
         gap: 0.5rem;
-        padding: 0.6rem 0.9rem;
+        padding: 0.6rem 0.9rem 3rem;
         border-width: 1px 0 0;
         border-radius: 0.9rem 0.9rem 0 0;
         /* The base rule's shadow falls downward, which is off-screen here. */
