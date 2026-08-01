@@ -39,7 +39,7 @@ of the root `CLAUDE.md` so it loads only when working on these files.
   `box-shadow` the flash would otherwise replace for the flash's duration.
 - `Board` calls `useIsDark` once and passes `dark` down to `SeasonRow`, rather
   than letting each row call it: the hook costs a `MutationObserver` per
-  calling component and the board renders ~50 rows. This is the "a shared
+  calling component and the board renders a row per season. This is the "a shared
   subscription is the better trade" case the icons bullet below anticipates,
   settled with one level of prop drilling instead of a context.
 - A season row's note count is a pill (`.post-badge`) drawing `bi-chat`, not a
@@ -68,8 +68,8 @@ of the root `CLAUDE.md` so it loads only when working on these files.
 - Below `640px` that block switches the layout to a phone variant: the season
   column pins to the left of `.table-wrapper` while the checkbox columns
   scroll under it (pinning only engages once the grid overflows the wrapper,
-  which the current 3-column roster does not — it's a safety net for a
-  longer name or a fourth column); `seasonParts` splits the label so the
+  which the current roster does not — it's a safety net for a longer name
+  or another column); `seasonParts` splits the label so the
   subtitle sits on its own line; each header swaps its full name for
   `abbreviateName`'s initials (`Bob & Carol` renders `B & C`) and hides the
   `(you)` suffix — both leave the accessibility tree, not just the layout, but
@@ -296,7 +296,7 @@ of the root `CLAUDE.md` so it loads only when working on these files.
       restore focus — Reply focuses the compose box, Edit the edit box, Delete
       removes the note.
 - The emoji row (`EmojiPicker`) and the `ReactionBar` of chips below a note are
-  both driven by the four-emoji set in `shared/reactions.js` — the same module
+  both driven by the emoji set in `shared/reactions.js` — the same module
   the Worker validates against, so the picker can never offer an emoji the
   server would reject. A note's `reactions` array arrives from the server
   already in set order with counts and names resolved, so the client only draws
@@ -312,8 +312,9 @@ of the root `CLAUDE.md` so it loads only when working on these files.
   unconditionally, whether the mutation that follows succeeds or not, so unlike
   `saveEdit` there is no response-driven close for a late answer to race against.
 - Icons are Bootstrap Icons path data inlined in `frontend/icons.js`, not the
-  npm package: it ships ~2,000 SVGs and a webfont to supply the five glyphs this
-  app draws, and inlining keeps the bundle free of external requests. `Icon`
+  npm package: it ships thousands of SVGs and a webfont, overkill for the
+  handful of glyphs this app draws, and inlining keeps the bundle free of
+  external requests. `Icon`
   paints with `fill="currentColor"` and sizes in `em` (`.bi`), so a glyph
   inherits its button's colour — the delete row's red hover included — and its
   font-size, without a token of its own. The `-fill` variants are used in dark
