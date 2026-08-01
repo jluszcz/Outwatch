@@ -314,19 +314,18 @@ of the root `CLAUDE.md` so it loads only when working on these files.
 - Icons are Bootstrap Icons path data inlined in `frontend/icons.js`, not the
   npm package: it ships thousands of SVGs and a webfont, overkill for the
   handful of glyphs this app draws, and inlining keeps the bundle free of
-  external requests. `Icon`
-  paints with `fill="currentColor"` and sizes in `em` (`.bi`), so a glyph
-  inherits its button's colour — the delete row's red hover included — and its
-  font-size, without a token of its own. The `-fill` variants are used in dark
-  mode, where a 1px outline thins out against the dark surface. That swap is the
-  one thing CSS cannot express (everything else themes through `light-dark()`
-  tokens, which resolve without anyone knowing which theme won), so `useIsDark`
-  (`hooks.js`) observes the `data-theme` attribute `useTheme` writes — the
-  attribute, not the media query, so the manual toggle counts, and a
-  `MutationObserver` rather than a context so nothing has to be threaded through
-  `App → SeasonView → EpisodeBoard → PostList → Post` to reach the menu. One
-  observer per calling component is the price of skipping the context, so call
-  it from the narrowest component that needs it (`PostMenuPanel`, not
+  external requests. `Icon` paints with `fill="currentColor"` and sizes in `em`
+  (`.bi`), so a glyph inherits its button's colour — the delete row's red hover
+  included — and its font-size, without a token of its own. The `-fill` variants
+  are used in dark mode, where a 1px outline thins out against the dark surface.
+  That swap is the one thing CSS cannot express (everything else themes through
+  `light-dark()` tokens, which resolve without anyone knowing which theme won),
+  so `useIsDark` (`hooks.js`) observes the `data-theme` attribute `useTheme`
+  writes — the attribute, not the media query, so the manual toggle counts, and
+  a `MutationObserver` rather than a context so nothing has to be threaded
+  through `App → SeasonView → EpisodeBoard → PostList → Post` to reach the menu.
+  One observer per calling component is the price of skipping the context, so
+  call it from the narrowest component that needs it (`PostMenuPanel`, not
   `PostMenu`) — if a third caller ever renders per-note, a shared subscription
   is the better trade.
 - The optional watch timer (`WatchTimer` in `discussion.js`, rule in
