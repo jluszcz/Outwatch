@@ -714,12 +714,13 @@ tr.watched-all .check-cell input {
 }
 
 /* Only shown on a phone, where the menu is a bottom sheet: a dropdown you can
-   dismiss by clicking anywhere off it does not need a Cancel row, but a sheet
+   dismiss by clicking anywhere off it does not need a close button, but a sheet
    covering the bottom of the screen does — the scrim above it is a small
-   target and not an obvious one. Being the sheet's last child puts it nearest
-   the bottom edge, which is why the sheet carries bottom padding on a phone —
-   see the `max-width: 640px` block. */
-.post-menu-cancel {
+   target and not an obvious one. It sits in the top-right corner rather than
+   reading as a full-width Cancel row along the bottom, which is both the
+   taller shape and the one nearest the edge iOS Safari's collapsed toolbar
+   claims — see the `max-width: 640px` block. */
+.post-menu-close {
     display: none;
 }
 
@@ -1252,17 +1253,26 @@ tr.watched-all .check-cell input {
        into viewport-fit=cover, so iOS already insets the viewport clear of the
        home indicator.
 
-       The 3rem of bottom padding is a separate concern from that inset and is
+       The 1.5rem of bottom padding is a separate concern from that inset and is
        load-bearing: while iOS Safari's toolbar is collapsed to its pill, the
        strip along the bottom edge belongs to Safari, and a tap there expands
-       the toolbar instead of reaching the page. Flush against the edge, the
-       Cancel row sat in that strip and swallowed the first tap. The padding
-       keeps every target in the sheet above it. It must stay on the container
-       rather than becoming padding-bottom on .post-menu-cancel — on the button
-       it would grow that same hit target back down into the swallowed strip,
-       which is the original bug with a tidier diff. The cost, accepted
-       knowingly: when the toolbar is expanded the padding shows as empty sheet
-       under Cancel. */
+       the toolbar instead of reaching the page. The padding holds the sheet's
+       last row up out of that strip. It must stay on the container rather than
+       becoming padding-bottom on that row's button — on the button it would
+       grow the same hit target back down into the swallowed strip, which is the
+       bug with a tidier diff.
+
+       The real fix for that bug was moving the dismiss control out of the strip
+       entirely: it used to be a full-width Cancel row along the sheet's bottom,
+       the reflexive tap and the one most often lost, and it is now the close
+       button in the top-right corner. What the padding still protects is the
+       Delete row, which inherits the bottom-most slot. A swallowed tap there
+       does nothing, so the failure is a control that ignores you once rather
+       than one that fires unasked — but it is the same confusion, hence the
+       padding. Deliberately modest: it shows as empty sheet whenever the
+       toolbar is expanded, and 3rem (enough to clear a collapsed toolbar
+       outright) made the sheet look padded out for no reason a viewer could
+       see. This is the knob if a tap on Delete ever comes up short. */
     .post-menu {
         position: fixed;
         inset: auto 0 0 0;
@@ -1272,7 +1282,7 @@ tr.watched-all .check-cell input {
         position-try-fallbacks: none;
         min-width: 0;
         gap: 0.5rem;
-        padding: 0.6rem 0.9rem 3rem;
+        padding: 0.6rem 0.9rem 1.5rem;
         border-width: 1px 0 0;
         border-radius: 0.9rem 0.9rem 0 0;
         /* The base rule's shadow falls downward, which is off-screen here. */
@@ -1293,18 +1303,30 @@ tr.watched-all .check-cell input {
         gap: 0.5rem;
     }
 
-    .post-menu-cancel {
-        display: block;
-        width: 100%;
+    /* align-self rather than a wrapper row: .post-menu is already a flex
+       column, so the corner placement is one property and the sheet keeps its
+       flat child list. The negative margins keep the 44px target from costing
+       44px of sheet — the point of moving dismissal into the corner was to stop
+       spending a row on it. Top and right pull the button out into the sheet's
+       own padding; bottom cancels the parent's 0.5rem gap exactly, so the emoji
+       picker sits flush under the button's box rather than overlapping it. The
+       glyph carries ~14px of its own slack inside the target, which is the
+       whitespace the eye actually reads here. */
+    .post-menu-close {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        align-self: flex-end;
+        min-width: 44px;
         min-height: 44px;
+        margin: -0.4rem -0.5rem -0.5rem 0;
         background: none;
         border: none;
-        border-top: 1px solid var(--border-subtle);
-        color: var(--text-subtle);
+        border-radius: 0.35rem;
+        color: var(--text-faint);
         cursor: pointer;
-        font-family: inherit;
         font-size: 1rem;
-        padding-top: 0.4rem;
+        padding: 0;
     }
 
     .reaction-chip {
@@ -1390,7 +1412,7 @@ tr.watched-all .check-cell input {
        the one item that should read as destructive; it comes later at equal
        specificity, so source order carries it. */
     .post-menu-item:hover,
-    .post-menu-cancel:hover {
+    .post-menu-close:hover {
         background: var(--surface-hover);
         color: var(--text);
     }
@@ -1414,7 +1436,7 @@ tr.watched-all .check-cell input {
 .reveal-btn:active,
 .post-submit:active,
 .post-menu-item:active,
-.post-menu-cancel:active,
+.post-menu-close:active,
 .theme-btn:active {
     background: var(--surface-hover);
 }

@@ -219,17 +219,21 @@ of the root `CLAUDE.md` so it loads only when working on these files.
       `max-width: 640px` block switches the same element to `position: fixed`,
       which escapes that ancestor because nothing between it and the root is
       transformed, and it becomes a bottom sheet with a dimmed scrim and a
-      Cancel row. The sheet is flush against the bottom edge but carries `3rem`
-      of bottom padding, which is not decoration: while iOS Safari's toolbar is
+      close button in its top-right corner (`.post-menu-close`, hidden on a
+      pointer device, where clicking anywhere off the dropdown already
+      dismisses). That corner is the furthest point in the sheet from the bottom
+      edge, and that is the reason for it: while iOS Safari's toolbar is
       collapsed to its pill, the strip along the bottom edge belongs to Safari,
-      and a tap there expands the toolbar rather than reaching the page — the
-      Cancel row, as the sheet's last child, sat in that strip and lost its
-      first tap. The padding has to stay on `.post-menu`; moving it to
-      `padding-bottom` on `.post-menu-cancel` would grow that button's hit
-      target back down into the swallowed strip and restore the bug. It shows
-      as empty sheet under Cancel whenever the toolbar is expanded, the
-      accepted cost of keeping the sheet flush rather than floating it inset
-      from all four edges. Nothing in the discussion view sets `overflow`, so the
+      and a tap there expands the toolbar rather than reaching the page. The
+      dismiss control used to be a full-width Cancel row along the sheet's
+      bottom, so the most reflexive tap in the menu was also the one most often
+      swallowed. The sheet also keeps `1.5rem` of bottom padding, which is not
+      decoration — it holds the Delete row, which inherits the bottom-most slot,
+      up out of that strip. The padding has to stay on `.post-menu`; moving it
+      to `padding-bottom` on the last item would grow that button's hit target
+      back down into the strip and restore the bug. It is deliberately modest
+      rather than the `3rem` that would clear a collapsed toolbar outright,
+      since it shows as empty sheet whenever the toolbar is expanded. Nothing in the discussion view sets `overflow`, so the
       dropdown has nothing to clip it — this is the opposite of the call
       `EmojiPicker` used to document, and it is only safe because the menu
       escaped `.post-content`.
@@ -251,8 +255,12 @@ of the root `CLAUDE.md` so it loads only when working on these files.
       the usual double-toggle bug.
     - Deliberately not `role="menu"`: that role promises arrow-key roving this
       does not implement. Plain buttons in a labelled group, `aria-haspopup` and
-      `aria-expanded` on the trigger, focus into the menu on open, and Escape or
-      the scrim handing focus back to the trigger. Choosing an item does not
+      `aria-expanded` on the trigger, focus into the menu on open, and Escape,
+      the scrim, or the sheet's close button handing focus back to the trigger.
+      Focus on open goes to the first _action_ (`.emoji-btn, .post-menu-item`)
+      rather than the first button, since the close button leads in DOM order
+      and opening a menu onto its own escape hatch is a strange place to land.
+      Choosing an item does not
       restore focus — Reply focuses the compose box, Edit the edit box, Delete
       removes the note.
 - The emoji row (`EmojiPicker`) and the `ReactionBar` of chips below a note are
@@ -272,7 +280,7 @@ of the root `CLAUDE.md` so it loads only when working on these files.
   unconditionally, whether the mutation that follows succeeds or not, so unlike
   `saveEdit` there is no response-driven close for a late answer to race against.
 - Icons are Bootstrap Icons path data inlined in `frontend/icons.js`, not the
-  npm package: it ships ~2,000 SVGs and a webfont to supply the four glyphs this
+  npm package: it ships ~2,000 SVGs and a webfont to supply the five glyphs this
   app draws, and inlining keeps the bundle free of external requests. `Icon`
   paints with `fill="currentColor"` and sizes in `em` (`.bi`), so a glyph
   inherits its button's colour — the delete row's red hover included — and its

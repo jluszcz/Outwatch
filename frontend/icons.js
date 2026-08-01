@@ -5,7 +5,7 @@ const html = htm.bind(h);
 
 // Path data copied from Bootstrap Icons v1.13.1 (MIT), which is not an npm
 // dependency here: the package ships ~2,000 SVGs and a webfont, and this app
-// draws four glyphs. Inlining them keeps the bundle self-contained and makes a
+// draws five glyphs. Inlining them keeps the bundle self-contained and makes a
 // refresh a copy-paste from https://github.com/twbs/icons/tree/main/icons.
 //
 // Each entry holds a list of path `d` strings, because some icons are more than
@@ -19,6 +19,16 @@ export const ICONS = {
     dots: {
         outline: [
             'M3 9.5a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3m5 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3m5 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3',
+        ],
+        fill: null,
+    },
+    // bi-x-lg — the bottom sheet's close button. The plain bi-x is drawn at the
+    // same weight but half the size, which at this button's font-size reads as
+    // a smudge rather than a cross. No fill variant: it is two solid strokes,
+    // so the dark-mode thinning the -fill pairs exist for does not apply.
+    x: {
+        outline: [
+            'M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8z',
         ],
         fill: null,
     },

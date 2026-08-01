@@ -209,7 +209,11 @@ function EmojiPicker({ post, onReact }) {
 // into a bottom sheet by switching it to position: fixed — fixed escapes an
 // untransformed ancestor, so no JS measures anything. The scrim is present in
 // both, transparent on desktop and dimming on a phone, and is what handles
-// click-outside either way.
+// click-outside either way. The close button renders in both too but is hidden
+// on a pointer device: a dropdown you dismiss by clicking anywhere off it does
+// not need one, while a sheet across the bottom of a phone does — and its
+// top-right corner is the one spot in the sheet furthest from the bottom edge,
+// where iOS Safari's collapsed toolbar swallows the first tap.
 //
 // Deliberately not role="menu": that role promises arrow-key roving between
 // items, which this does not implement. Plain buttons in a labelled group get
@@ -234,7 +238,10 @@ function PostMenuPanel({
     // changes while a menu is open. Re-subscribing on every render would be
     // churn for nothing.
     useEffect(() => {
-        menuRef.current?.querySelector('button')?.focus();
+        // The first action, not the first button — the close button leads in
+        // DOM order (it is the sheet's top-right corner), and opening a menu
+        // onto its own escape hatch would be a strange place to land.
+        menuRef.current?.querySelector('.emoji-btn, .post-menu-item')?.focus();
         const onKeyDown = (e) => {
             if (e.key === 'Escape') onDismiss();
         };
@@ -251,6 +258,9 @@ function PostMenuPanel({
     return html`
         <div class="post-menu-scrim" onClick=${onDismiss}></div>
         <div class="post-menu" ref=${menuRef} role="group" aria-label="Note actions">
+            <button class="post-menu-close" aria-label="Close menu" onClick=${onDismiss}>
+                <${Icon} name="x" />
+            </button>
             <${EmojiPicker} post=${post} onReact=${onReact} />
             <div class="post-menu-items">
                 <button class="post-menu-item" onClick=${choose(() => onReply(post))}>
@@ -279,7 +289,6 @@ function PostMenuPanel({
                     </button>`
                 }
             </div>
-            <button class="post-menu-cancel" onClick=${onDismiss}>Cancel</button>
         </div>
     `;
 }
@@ -296,8 +305,10 @@ function PostMenu({ post, editing, open, onToggle, onReply, onReact, onStartEdit
     const triggerRef = useRef(null);
 
     const close = () => onToggle(post.id);
-    // Escape and a click on the scrim are the two ways out that leave you where
-    // you started, so they hand focus back to the trigger. Choosing an item
+    // Escape, a click on the scrim, and the sheet's close button are the three
+    // ways out that leave you where you started, so they hand focus back to the
+    // trigger — the close button included, since it is the phone's stand-in for
+    // the Escape a phone has no key for. Choosing an item
     // deliberately does not: Reply focuses the compose box, Edit focuses the
     // edit box, and Delete removes the note — restoring focus here would fight
     // all three.
