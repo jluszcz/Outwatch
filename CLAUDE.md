@@ -90,6 +90,31 @@ Two pre-commit hooks also run locally (`.husky/pre-commit` and
 they format and sanity-check, they do not build, test, or lint. Never bypass
 either with `--no-verify`.
 
+### Preview deployments
+
+Cloudflare's GitHub integration (Workers Builds, configured in the Cloudflare
+dashboard rather than in `wrangler.toml`) builds every pull request and
+publishes it as its own Worker version, so a branch or commit gets a preview
+URL the change can be reviewed on before it merges. Three consequences
+specific to this repo:
+
+- The build it runs has to bundle the frontend. `public/script.js` is
+  gitignored, so a preview built without `npm run build` serves `index.html`
+  with nothing behind it. This is the "always go through the npm scripts"
+  tradeoff from Build & Bundling above, applied to a builder that is not your
+  shell.
+- A preview version uses the same bindings as production, so it reads and
+  writes the **production D1** — there is no preview database. Clicking around
+  a preview toggles real watched rows and posts real notes.
+- Identity still comes from a verified Access token and nothing else. On a
+  hostname the Access application does not front, no token arrives;
+  `DEV_USER_EMAIL` is a local-dev affordance living in `.dev.vars`, so it is
+  not there to fall back on either, and `callerUser` resolves to nothing. Every
+  API route then answers 403 and the shell loads over an empty board. That is
+  the first thing to check when a preview looks broken, and it is the intended
+  failure rather than a gap — see Authentication & identity for why the
+  plaintext header is deliberately not a fallback.
+
 ## Architecture Notes
 
 ### Authentication & identity
