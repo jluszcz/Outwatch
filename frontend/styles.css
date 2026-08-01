@@ -912,11 +912,20 @@ tr.flash td {
     padding: 0.3rem 0.5rem;
 }
 
+/* `height`, not `max-height`: the box has to be the same size whether it is
+   holding all 1914 emoji or the four that match "cat". Under a max-height the
+   filtered grid is shorter than the cap, so the container becomes content-sized
+   and the whole panel collapses as you type — and on a phone, where the sheet
+   is pinned to the bottom edge and grows upward, collapsing walks the results
+   down toward the keyboard instead of leaving them where your eye already is.
+   `flex: none` keeps .emoji-full's flex column from shrinking it back.
+
+   The scroll container is also the containment context for the per-group
+   content-visibility below, so it has to be the element carrying the height. */
 .emoji-scroll {
     overflow-y: auto;
-    max-height: 15rem;
-    /* The scroll container is the containment context for the per-group
-       content-visibility below, so it has to be the element with the height. */
+    height: 15rem;
+    flex: none;
     overscroll-behavior: contain;
 }
 
@@ -1553,10 +1562,11 @@ tr.flash td {
 
     /* The full picker gets more of the sheet than it gets of a dropdown: the
        sheet is already the width of the phone, and a taller grid is the
-       difference between scrolling past two rows at a time and browsing. Capped
-       in vh rather than rem so it cannot outgrow the viewport it sits in. */
+       difference between scrolling past two rows at a time and browsing. Sized
+       in vh rather than rem so it cannot outgrow the viewport it sits in, and a
+       fixed height rather than a cap for the reason the base rule gives. */
     .emoji-scroll {
-        max-height: 45vh;
+        height: 45vh;
     }
 }
 
