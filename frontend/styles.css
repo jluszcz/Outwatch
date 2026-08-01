@@ -877,8 +877,31 @@ tr.flash td {
     min-width: 15rem;
 }
 
+/* Back sits beside the search field rather than on a row of its own: the
+   dropdown is short and a dedicated row costs a band of emoji on a phone. */
+.emoji-head {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.emoji-back {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    background: none;
+    border: none;
+    border-radius: 0.35rem;
+    color: var(--text-subtle);
+    cursor: pointer;
+    font-size: 1rem;
+    padding: 0.25rem;
+}
+
 .emoji-search {
-    width: 100%;
+    flex: 1;
+    min-width: 0;
     box-sizing: border-box;
     border: 1px solid var(--border);
     border-radius: 0.4rem;
@@ -1544,8 +1567,15 @@ tr.flash td {
    specificity), though nothing in that block sets these properties today. */
 @media (pointer: coarse) {
     .post-menu-item,
-    .emoji-btn {
+    .emoji-btn,
+    .emoji-back {
         min-height: 44px;
+    }
+
+    /* The back button is the picker's only way out that is not a reaction, so
+       it gets a finger-sized width too — the icon alone is ~16px. */
+    .emoji-back {
+        min-width: 44px;
     }
 
     /* The full picker's tracks have to carry the same 44px floor the mobile
@@ -1630,7 +1660,8 @@ tr.flash td {
     }
 
     .reaction-chip:hover,
-    .emoji-btn:hover {
+    .emoji-btn:hover,
+    .emoji-back:hover {
         background: var(--surface-hover);
     }
 

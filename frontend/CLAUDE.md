@@ -292,6 +292,8 @@ of the root `CLAUDE.md` so it loads only when working on these files.
       does not implement. Plain buttons in a labelled group, `aria-haspopup` and
       `aria-expanded` on the trigger, focus into the menu on open, and Escape,
       the scrim, or the sheet's close button handing focus back to the trigger.
+      Escape is the one exception: with the full emoji picker open it steps back
+      to the actions first, and only dismisses on a second press.
       Focus on open goes to the first _action_ (`.emoji-btn, .post-menu-item`)
       rather than the first button, since the close button leads in DOM order
       and opening a menu onto its own escape hatch is a strange place to land.
@@ -304,8 +306,17 @@ of the root `CLAUDE.md` so it loads only when working on these files.
   search is empty, that set grouped by category. The picker replaces the menu's
   contents rather than opening a layer of its own, so it reuses the dropdown on
   a pointer device and the bottom sheet on a phone: no second scrim, no nesting.
-  There is deliberately no way back to Reply/Edit/Delete — choosing an emoji
-  closes the whole menu like every other item, and reopening is one tap.
+  Choosing an emoji closes the whole menu like every other item, but the
+  picker's back chevron and Escape return to the actions instead of dismissing —
+  the picker replaced them, so without a way back an accidental ＋ costs a
+  dismiss and a reopen to reach Reply.
+    - `full` lives in `PostMenuPanel`, not `EpisodeBoard`, since it dies with
+      the menu. Escape's meaning now depends on it, so that listener
+      resubscribes on `full` rather than binding once on mount the way the
+      other menu effects do — at most twice per opened menu. A third effect
+      moves focus across the swap (into the search field, back onto the ＋),
+      skipping mount, since otherwise a keyboard user is left on a button that
+      no longer exists and the browser drops them to the document.
     - A web page cannot open the OS emoji picker; there is no API for it. The
       in-app grid is not a fallback for a nicer thing that exists, it is the
       only thing that works the same on a phone and a laptop. Focusing a text

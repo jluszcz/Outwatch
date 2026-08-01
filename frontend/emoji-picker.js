@@ -2,6 +2,7 @@ import { h } from 'preact';
 import { useState, useMemo } from 'preact/hooks';
 import htm from 'htm';
 import RAW_GROUPS from './emoji-data.json';
+import { Icon } from './icons.js';
 import { isReactionEmoji } from '../shared/reactions.js';
 
 const html = htm.bind(h);
@@ -75,7 +76,12 @@ export function searchEmoji(query) {
 //
 // `chosen` comes from the server's `mine` flags, like the quick row's, so the
 // `on` this sends is always computed from what the server last said.
-export function FullEmojiPicker({ post, onReact }) {
+//
+// `onBack` returns to the menu's actions rather than closing the menu, since
+// the picker replaced them: without it, an accidental ＋ costs a dismiss and a
+// reopen to reach Reply. It is the only control here that does not react —
+// choosing an emoji still closes the whole menu.
+export function FullEmojiPicker({ post, onReact, onBack }) {
     const [query, setQuery] = useState('');
     const chosen = useMemo(
         () => new Set(post.reactions.filter((r) => r.mine).map((r) => r.emoji)),
@@ -97,18 +103,23 @@ export function FullEmojiPicker({ post, onReact }) {
 
     return html`
         <div class="emoji-full">
-            <input
-                class="emoji-search"
-                type="search"
-                value=${query}
-                placeholder="Search emoji"
-                aria-label="Search emoji"
-                autocomplete="off"
-                autocorrect="off"
-                autocapitalize="off"
-                spellcheck="false"
-                onInput=${(e) => setQuery(e.target.value)}
-            />
+            <div class="emoji-head">
+                <button class="emoji-back" aria-label="Back to note actions" onClick=${onBack}>
+                    <${Icon} name="chevronLeft" />
+                </button>
+                <input
+                    class="emoji-search"
+                    type="search"
+                    value=${query}
+                    placeholder="Search emoji"
+                    aria-label="Search emoji"
+                    autocomplete="off"
+                    autocorrect="off"
+                    autocapitalize="off"
+                    spellcheck="false"
+                    onInput=${(e) => setQuery(e.target.value)}
+                />
+            </div>
             <div class="emoji-scroll">
                 ${
                     matches === null

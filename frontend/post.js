@@ -242,27 +242,46 @@ function PostMenuPanel({
     // The full picker replaces the menu's body rather than opening a layer of
     // its own: it reuses the same dropdown on a pointer device and the same
     // bottom sheet on a phone, so there is no second scrim, no nesting, and
-    // nothing new to dismiss. There is deliberately no way back to the actions —
-    // choosing an emoji closes the whole menu, like every other item, and
-    // reopening the menu is one tap.
+    // nothing new to dismiss. Choosing an emoji closes the whole menu, like
+    // every other item, but the picker's back button and Escape return to the
+    // actions rather than dismissing: the picker replaced them, so without a way
+    // back an accidental ＋ costs a dismiss and a reopen to reach Reply.
     const [full, setFull] = useState(false);
+    const mounted = useRef(false);
 
-    // Mount is open, so this subscribes once per opened menu. The listener
-    // closes over the `onDismiss` from that first render, which is safe here:
-    // it only reads post.id and calls the parent's setter, neither of which
-    // changes while a menu is open. Re-subscribing on every render would be
-    // churn for nothing.
     useEffect(() => {
         // The first action, not the first button — the close button leads in
         // DOM order (it is the sheet's top-right corner), and opening a menu
         // onto its own escape hatch would be a strange place to land.
         menuRef.current?.querySelector('.emoji-btn, .post-menu-item')?.focus();
+    }, []);
+
+    // Escape means "undo the last thing that opened", so it steps out of the
+    // picker before it dismisses the menu. That makes its meaning depend on
+    // `full`, which is why this resubscribes rather than binding once on mount
+    // the way the focus effect above does — at most twice per opened menu,
+    // since `full` only flips when the ＋ or the back button is pressed.
+    useEffect(() => {
         const onKeyDown = (e) => {
-            if (e.key === 'Escape') onDismiss();
+            if (e.key !== 'Escape') return;
+            if (full) setFull(false);
+            else onDismiss();
         };
         window.addEventListener('keydown', onKeyDown);
         return () => window.removeEventListener('keydown', onKeyDown);
-    }, []);
+    }, [full]);
+
+    // Focus follows the swap, or a keyboard user is left on a button that no
+    // longer exists and the browser drops them back to the document. Skipped on
+    // mount, where the effect above has already placed focus — this one owns
+    // only the transitions between the menu's two bodies.
+    useEffect(() => {
+        if (!mounted.current) {
+            mounted.current = true;
+            return;
+        }
+        menuRef.current?.querySelector(full ? '.emoji-search' : '.emoji-more')?.focus();
+    }, [full]);
 
     // Every item closes the menu first, then acts.
     const choose = (act) => () => {
@@ -278,7 +297,11 @@ function PostMenuPanel({
             </button>
             ${
                 full
-                    ? html`<${FullEmojiPicker} post=${post} onReact=${onReact} />`
+                    ? html`<${FullEmojiPicker}
+                          post=${post}
+                          onReact=${onReact}
+                          onBack=${() => setFull(false)}
+                      />`
                     : html`<${EmojiPicker}
                           post=${post}
                           onReact=${onReact}
