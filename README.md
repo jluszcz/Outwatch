@@ -43,9 +43,10 @@ watching at different paces don't spoil each other.
 - **Replies, reactions, and edits.** A note can answer another note on the same
   episode, and it renders as a quote block above the reply rather than as an
   indented thread — a reply keeps its own place on the watch-offset timeline.
-  Anyone who can see a note can put one of a small set of emoji on it;
-  reactions are per person rather than per column, so both halves of a shared
-  login count separately. You can rewrite or delete your own notes. An edit
+  Anyone who can see a note can put any emoji on it — four are one tap away in
+  the note's menu and a ＋ opens a searchable picker for the rest, up to twelve
+  different emoji per note. Reactions are per person rather than per column, so
+  both halves of a shared login count separately. You can rewrite or delete your own notes. An edit
   changes only the body and marks the note edited, leaving its position on the
   timeline alone; a delete detaches any reply to it rather than leaving a
   `[deleted]` tombstone, since deleting is an author's "unsay it" and a
@@ -242,7 +243,7 @@ never trusted — see [Authentication](#authentication).
 | `PUT`    | `/api/currently-watching`                          | Set the caller's currently-watching season, or clear it (`{ season_id }`, nullable)                                                                                                                                              |
 | `POST`   | `/api/seasons/:season_id/episodes/:episode/posts`  | Add a discussion note, stamped with the caller's live watch-timer offset and their author email (`{ body, reply_to_post_id? }`)                                                                                                  |
 | `PATCH`  | `/api/posts/:post_id`                              | Rewrite one of the caller's own notes and mark it edited (`{ body }`); never touches its timestamp, watch offset, or reply target, so an edit cannot move it on the timeline                                                     |
-| `PUT`    | `/api/posts/:post_id/reactions`                    | Add or remove one emoji on a note the caller can see (`{ emoji, on }`); idempotent in both directions and attributed to the individual rather than their column                                                                  |
+| `PUT`    | `/api/posts/:post_id/reactions`                    | Add or remove one emoji on a note the caller can see (`{ emoji, on }`); any single emoji is accepted, up to 12 distinct per note; idempotent in both directions and attributed to the individual rather than their column        |
 | `GET`    | `/api/seasons/:season_id/discussion`               | Per-episode discussion state for a season, gated by the spoiler rule; each post carries its byline and the caller's own ownership flag, and each episode's `authors` names its bylined individuals — emails are never serialized |
 | `POST`   | `/api/seasons/:season_id/episodes/:episode/reveal` | Open one episode's discussion board for reading (permanent)                                                                                                                                                                      |
 | `DELETE` | `/api/posts/:post_id`                              | Delete one of the caller's own discussion notes, scoped to the individual author; a note from before individual attribution stays deletable by the column                                                                        |
@@ -309,16 +310,19 @@ API enforces that at write time, so no read path re-checks it.
 
 **`reactions`** — one row per (note, person, emoji); presence means that person put that emoji on that note (migration `0007`)
 
-| Column       | Type    | Notes                                                        |
-| ------------ | ------- | ------------------------------------------------------------ |
-| `post_id`    | INTEGER | References `posts.id`                                        |
-| `email`      | TEXT    | References `user_emails.email`; `COLLATE NOCASE`, never NULL |
-| `emoji`      | TEXT    | One of the emoji in `shared/reactions.js`                    |
-| `created_at` | TEXT    | ISO timestamp                                                |
+| Column       | Type    | Notes                                                         |
+| ------------ | ------- | ------------------------------------------------------------- |
+| `post_id`    | INTEGER | References `posts.id`                                         |
+| `email`      | TEXT    | References `user_emails.email`; `COLLATE NOCASE`, never NULL  |
+| `emoji`      | TEXT    | Any single emoji (`isReactionEmoji` in `shared/reactions.js`) |
+| `created_at` | TEXT    | ISO timestamp                                                 |
 
 Primary key is `(post_id, email, emoji)`. Keyed on the email rather than a
 column, so both halves of a shared login react separately — the same call as a
 note's byline, and the opposite of the column-level watched checkbox.
+
+`created_at` is read, not just recorded: a note's chips are ordered by when each
+emoji first appeared on it, so a chip does not change places as counts move.
 
 **`reveals`** — presence means that user opened that episode's board for reading (one-way)
 

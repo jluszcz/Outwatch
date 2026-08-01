@@ -888,13 +888,54 @@ describe('PUT /api/posts/:post_id/reactions', () => {
         expect(ep.posts[0].reactions).toEqual([]);
     });
 
-    it('lets one person apply several different emoji, in set order', async () => {
+    it('lets one person apply several different emoji', async () => {
         const { post: p } = await (await postNote('alice@example.com', 'note')).json();
         await react('alice@example.com', p.id, '😮', true);
         await react('alice@example.com', p.id, '👍', true);
 
         const ep = await episodeView('alice@example.com');
-        expect(ep.posts[0].reactions.map((r) => r.emoji)).toEqual(['👍', '😮']);
+        expect(ep.posts[0].reactions.map((r) => r.emoji).sort()).toEqual(['👍', '😮'].sort());
+    });
+
+    // Written straight to the table with chosen timestamps rather than through
+    // the route: the ordering rule is about which emoji appeared first, and two
+    // real requests can land in the same millisecond, which would make the
+    // assertion depend on the tie-break instead of on the rule under test.
+    it('orders chips by when each emoji first appeared, not by count', async () => {
+        const { post: p } = await (await postNote('alice@example.com', 'note')).json();
+        await revealEpisode('bob@example.com');
+        await env.DB.batch(
+            [
+                ['bob@example.com', '🐍', '2026-01-01T00:00:03.000Z'],
+                ['alice@example.com', '🔥', '2026-01-01T00:00:01.000Z'],
+                ['bob@example.com', '🔥', '2026-01-01T00:00:04.000Z'],
+                ['alice@example.com', '🗿', '2026-01-01T00:00:02.000Z'],
+            ].map(([email, emoji, at]) =>
+                env.DB.prepare(
+                    'INSERT INTO reactions (post_id, email, emoji, created_at) VALUES (?, ?, ?, ?)',
+                ).bind(p.id, email, emoji, at),
+            ),
+        );
+
+        const ep = await episodeView('alice@example.com');
+        // 🔥 leads on first use even though 🐍 and 🗿 have the same count, and
+        // 🔥's second reaction does not move it.
+        expect(ep.posts[0].reactions.map((r) => r.emoji)).toEqual(['🔥', '🗿', '🐍']);
+        expect(ep.posts[0].reactions.map((r) => r.count)).toEqual([2, 1, 1]);
+    });
+
+    it('accepts any emoji, not just the quick row', async () => {
+        const { post: p } = await (await postNote('alice@example.com', 'note')).json();
+        // A multi-codepoint sequence, a ZWJ family, a flag, and a skin tone —
+        // the shapes a picker or a phone keyboard actually produces.
+        for (const emoji of ['❤️', '🐍', '👨‍👩‍👧‍👦', '🏳️‍🌈', '👍🏽']) {
+            expect((await react('alice@example.com', p.id, emoji, true)).status).toBe(200);
+        }
+
+        const ep = await episodeView('alice@example.com');
+        expect(ep.posts[0].reactions.map((r) => r.emoji).sort()).toEqual(
+            ['❤️', '🐍', '👨‍👩‍👧‍👦', '🏳️‍🌈', '👍🏽'].sort(),
+        );
     });
 
     // Reactions are the individual's, so the two halves of a shared column count
@@ -918,11 +959,49 @@ describe('PUT /api/posts/:post_id/reactions', () => {
         expect((await react('alice@example.com', p.id, '🤣', true)).status).toBe(200);
     });
 
-    it('returns 400 for an emoji outside the set', async () => {
+    // The `v`-flag `\p{RGI_Emoji}` property is the whole validator, so this is
+    // as much a check that workerd's regex engine supports it as it is a check
+    // of the rule: if the property were unsupported the module would not even
+    // parse, and if the anchors were dropped every case here would pass.
+    it('returns 400 for anything that is not exactly one emoji', async () => {
         const { post: p } = await (await postNote('alice@example.com', 'note')).json();
-        for (const emoji of ['❤️', '🐍', 'x', '']) {
+        const bad = [
+            'x', // plain text
+            '', // empty
+            ' ', // whitespace
+            '👍👍', // two emoji
+            'a👍', // text with an emoji in it
+            '👍 ', // one emoji plus a trailing space
+            '❤', // U+2764 without the U+FE0F variation selector: not RGI
+            '‍', // a bare zero-width joiner
+        ];
+        for (const emoji of bad) {
             expect((await react('alice@example.com', p.id, emoji, true)).status).toBe(400);
         }
+        for (const emoji of [1, null, true, ['👍']]) {
+            expect((await react('alice@example.com', p.id, emoji, true)).status).toBe(400);
+        }
+    });
+
+    it('caps a note at 12 distinct emoji but always allows toggling an existing one', async () => {
+        const { post: p } = await (await postNote('alice@example.com', 'note')).json();
+        const twelve = ['👍', '👎', '🤣', '😮', '🐍', '🔥', '🗿', '💀', '🎯', '🏆', '🥥', '🌴'];
+        for (const emoji of twelve) {
+            expect((await react('alice@example.com', p.id, emoji, true)).status).toBe(200);
+        }
+
+        // A thirteenth distinct emoji is refused...
+        expect((await react('alice@example.com', p.id, '🦑', true)).status).toBe(409);
+
+        // ...but a second person joining one of the twelve is not, and neither
+        // is removing one. Removing frees a slot for the thirteenth.
+        await revealEpisode('bob@example.com');
+        expect((await react('bob@example.com', p.id, '🔥', true)).status).toBe(200);
+        expect((await react('alice@example.com', p.id, '🌴', false)).status).toBe(200);
+        expect((await react('alice@example.com', p.id, '🦑', true)).status).toBe(200);
+
+        const ep = await episodeView('alice@example.com');
+        expect(ep.posts[0].reactions).toHaveLength(12);
     });
 
     it('returns 404 for a post the caller cannot see', async () => {

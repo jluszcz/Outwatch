@@ -4,7 +4,7 @@ import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 
 import { sessionOffsetSecs } from '../shared/session.js';
-import { REACTIONS } from '../shared/reactions.js';
+import { MAX_REACTIONS_PER_POST, isReactionEmoji } from '../shared/reactions.js';
 import { accessTokenEmail } from './access.js';
 
 const app = new Hono();
@@ -52,10 +52,9 @@ const postCreate = z.object({
 const postEdit = z.object({ body: postBody });
 
 const reactionUpdate = z.object({
-    emoji: z.enum(
-        REACTIONS.map((r) => r.emoji),
-        { message: 'emoji must be one of the supported reactions' },
-    ),
+    emoji: z
+        .string({ message: 'emoji must be a single emoji' })
+        .refine(isReactionEmoji, { message: 'emoji must be a single emoji' }),
     on: z.boolean({ message: 'on must be true or false' }),
 });
 
@@ -429,22 +428,46 @@ function quoteOf(post, byId, visibleIds, people, me) {
     return { id: parent.id, author_name, author_index, mine, body: parent.body };
 }
 
-// A note's reactions, in REACTIONS order, omitting any nobody used. Names
+// A note's reactions, ordered by when each emoji first landed on it. Names
 // rather than a bare count: on a roster this size "2" says almost nothing and
 // "Bob, Carol" says all of it. Only ever called for posts that survived the
 // visibility filter, so a locked board carries no counts and no names.
+//
+// Any emoji can be a reaction now, so there is no fixed set to order by. First
+// use rather than count keeps a chip still: ordering by popularity would make
+// chips trade places under someone's finger as other people click, and the
+// order a conversation's reactions appeared in is the more meaningful one
+// anyway. ISO timestamps sort lexicographically, so they compare as strings.
+// Two can still land in the same millisecond; the emoji itself breaks the tie,
+// which is arbitrary but keeps a given set of rows ordered the same on every
+// read rather than following whatever order SQLite handed them back.
 function reactionsOf(postId, byPost, people, me) {
     const rows = byPost.get(postId);
     if (!rows) return [];
-    return REACTIONS.map(({ emoji }) => {
-        const hits = rows.filter((r) => r.emoji === emoji);
-        return {
-            emoji,
-            count: hits.length,
-            mine: Boolean(me) && hits.some((r) => r.email.toLowerCase() === me.email),
-            names: hits.map((r) => people.byEmail.get(r.email.toLowerCase())?.name ?? 'Someone'),
-        };
-    }).filter((r) => r.count > 0);
+
+    const firstSeen = new Map();
+    for (const r of rows) {
+        const prev = firstSeen.get(r.emoji);
+        if (prev === undefined || r.created_at < prev) firstSeen.set(r.emoji, r.created_at);
+    }
+
+    return [...firstSeen.keys()]
+        .sort((a, b) => {
+            const at = firstSeen.get(a);
+            const bt = firstSeen.get(b);
+            return at === bt ? (a < b ? -1 : 1) : at < bt ? -1 : 1;
+        })
+        .map((emoji) => {
+            const hits = rows.filter((r) => r.emoji === emoji);
+            return {
+                emoji,
+                count: hits.length,
+                mine: Boolean(me) && hits.some((r) => r.email.toLowerCase() === me.email),
+                names: hits.map(
+                    (r) => people.byEmail.get(r.email.toLowerCase())?.name ?? 'Someone',
+                ),
+            };
+        });
 }
 
 // The spoiler gate. An episode is readable when the caller has watched the whole
@@ -503,7 +526,8 @@ app.get('/api/seasons/:season_id/discussion', async (c) => {
         // One query for the season's reactions rather than one per note; grouped
         // below alongside the posts themselves.
         c.env.DB.prepare(
-            `SELECT reactions.post_id AS post_id, reactions.email AS email, reactions.emoji AS emoji
+            `SELECT reactions.post_id AS post_id, reactions.email AS email,
+                    reactions.emoji AS emoji, reactions.created_at AS created_at
              FROM reactions JOIN posts ON posts.id = reactions.post_id
              WHERE posts.season_id = ?`,
         )
@@ -644,6 +668,26 @@ app.put(
 
         const { emoji, on } = c.req.valid('json');
         if (on) {
+            // The cap is on how many *distinct* emoji a note carries, so it can
+            // only ever block a new one — joining a chip that already exists,
+            // or removing anything, is never refused. Checked before the
+            // INSERT rather than enforced in the schema because it depends on
+            // the note's current state, and a 409 (not a 400) because the
+            // request is well-formed and would have succeeded a moment ago.
+            const { results: distinct } = await c.env.DB.prepare(
+                'SELECT DISTINCT emoji FROM reactions WHERE post_id = ?',
+            )
+                .bind(postId)
+                .all();
+            const isNew = !distinct.some((r) => r.emoji === emoji);
+            if (isNew && distinct.length >= MAX_REACTIONS_PER_POST) {
+                return c.json(
+                    {
+                        error: `A note can carry at most ${MAX_REACTIONS_PER_POST} different reactions`,
+                    },
+                    409,
+                );
+            }
             await c.env.DB.prepare(
                 `INSERT OR IGNORE INTO reactions (post_id, email, emoji, created_at)
              VALUES (?, ?, ?, ?)`,

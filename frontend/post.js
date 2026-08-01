@@ -5,12 +5,9 @@ import { authorAccent, formatOffsetShort } from './utils.js';
 import { useIsDark, useSubmitGuard } from './hooks.js';
 import { Icon } from './icons.js';
 import { REACTIONS } from '../shared/reactions.js';
+import { FullEmojiPicker, emojiName } from './emoji-picker.js';
 
 const html = htm.bind(h);
-
-// emoji -> label, built once rather than a REACTIONS.find() per chip per
-// render. Used for a chip's accessible name (see ReactionBar).
-const REACTION_LABELS = new Map(REACTIONS.map(({ emoji, label }) => [emoji, label]));
 
 // The accent class for a note — 'mine' | 1..N | null, where null leaves it
 // unstriped rather than inventing a colour for an author who left the roster.
@@ -141,9 +138,11 @@ function EditForm({ post, onSave, onCancel }) {
     `;
 }
 
-// A note's existing reactions. The server sends them in set order with the
-// counts and names already resolved, so this only draws them. `mine` fills the
-// chip in and is what tapping it toggles. The bar still renders for a viewer
+// A note's existing reactions. The server sends them ordered by when each emoji
+// first landed on the note, with the counts and names already resolved, so this
+// only draws them. Any emoji can appear here, not just the quick row's four —
+// hence `emojiName` for the label rather than a lookup in that row's set.
+// `mine` fills the chip in and is what tapping it toggles. The bar still renders for a viewer
 // with no `meId` — the counts and names are information they're entitled to
 // see — but each chip is disabled, since reacting, like every other control in
 // the action row, requires being on the roster. Defensive rather than reachable:
@@ -161,7 +160,7 @@ function ReactionBar({ post, meId, onReact }) {
                         key=${r.emoji}
                         class=${'reaction-chip' + (r.mine ? ' mine' : '')}
                         aria-pressed=${r.mine}
-                        aria-label=${`${REACTION_LABELS.get(r.emoji)}: ${r.count}`}
+                        aria-label=${`${emojiName(r.emoji)}: ${r.count}`}
                         title=${r.names.join(', ')}
                         disabled=${!meId}
                         onClick=${() => onReact(post.id, r.emoji, !r.mine)}
@@ -174,10 +173,16 @@ function ReactionBar({ post, meId, onReact }) {
     `;
 }
 
-// The four-emoji row at the top of the action menu. `chosen` comes from the
-// server's `mine` flags rather than a local toggle, so the `on` this sends is
-// always computed from what the server last said (see `PUT .../reactions`).
-function EmojiPicker({ post, onReact }) {
+// The quick row at the top of the action menu: the four emoji from
+// `shared/reactions.js` worth reaching without opening the full picker, plus a
+// ＋ that opens it. `chosen` comes from the server's `mine` flags rather than a
+// local toggle, so the `on` this sends is always computed from what the server
+// last said (see `PUT .../reactions`).
+//
+// The ＋ is a fifth cell in the same grid rather than a control of its own, so
+// it reads as "and the rest of them" continuing the row rather than as a
+// separate action sitting among Reply/Edit/Delete.
+function EmojiPicker({ post, onReact, onOpenFull }) {
     const chosen = new Set(post.reactions.filter((r) => r.mine).map((r) => r.emoji));
     return html`
         <div class="emoji-picker">
@@ -194,6 +199,9 @@ function EmojiPicker({ post, onReact }) {
                     </button>
                 `,
             )}
+            <button class="emoji-btn emoji-more" aria-label="More emoji" onClick=${onOpenFull}>
+                ＋
+            </button>
         </div>
     `;
 }
@@ -231,6 +239,13 @@ function PostMenuPanel({
 }) {
     const dark = useIsDark();
     const menuRef = useRef(null);
+    // The full picker replaces the menu's body rather than opening a layer of
+    // its own: it reuses the same dropdown on a pointer device and the same
+    // bottom sheet on a phone, so there is no second scrim, no nesting, and
+    // nothing new to dismiss. There is deliberately no way back to the actions —
+    // choosing an emoji closes the whole menu, like every other item, and
+    // reopening the menu is one tap.
+    const [full, setFull] = useState(false);
 
     // Mount is open, so this subscribes once per opened menu. The listener
     // closes over the `onDismiss` from that first render, which is safe here:
@@ -261,34 +276,45 @@ function PostMenuPanel({
             <button class="post-menu-close" aria-label="Close menu" onClick=${onDismiss}>
                 <${Icon} name="x" />
             </button>
-            <${EmojiPicker} post=${post} onReact=${onReact} />
-            <div class="post-menu-items">
-                <button class="post-menu-item" onClick=${choose(() => onReply(post))}>
-                    <${Icon} name="reply" filled=${dark} />
-                    <span>Reply</span>
-                </button>
-                ${
-                    post.mine &&
-                    !editing &&
-                    html`<button
-                        class="post-menu-item"
-                        onClick=${choose(() => onStartEdit(post.id))}
-                    >
-                        <${Icon} name="pencil" filled=${dark} />
-                        <span>Edit</span>
-                    </button>`
-                }
-                ${
-                    post.mine &&
-                    html`<button
-                        class="post-menu-item post-menu-item-delete"
-                        onClick=${choose(() => onDelete(post.id))}
-                    >
-                        <${Icon} name="trash" filled=${dark} />
-                        <span>Delete</span>
-                    </button>`
-                }
-            </div>
+            ${
+                full
+                    ? html`<${FullEmojiPicker} post=${post} onReact=${onReact} />`
+                    : html`<${EmojiPicker}
+                          post=${post}
+                          onReact=${onReact}
+                          onOpenFull=${() => setFull(true)}
+                      />`
+            }
+            ${
+                !full &&
+                html`<div class="post-menu-items">
+                    <button class="post-menu-item" onClick=${choose(() => onReply(post))}>
+                        <${Icon} name="reply" filled=${dark} />
+                        <span>Reply</span>
+                    </button>
+                    ${
+                        post.mine &&
+                        !editing &&
+                        html`<button
+                            class="post-menu-item"
+                            onClick=${choose(() => onStartEdit(post.id))}
+                        >
+                            <${Icon} name="pencil" filled=${dark} />
+                            <span>Edit</span>
+                        </button>`
+                    }
+                    ${
+                        post.mine &&
+                        html`<button
+                            class="post-menu-item post-menu-item-delete"
+                            onClick=${choose(() => onDelete(post.id))}
+                        >
+                            <${Icon} name="trash" filled=${dark} />
+                            <span>Delete</span>
+                        </button>`
+                    }
+                </div>`
+            }
         </div>
     `;
 }
