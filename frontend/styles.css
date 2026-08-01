@@ -442,7 +442,7 @@ tr.watched-all .post-badge {
    found it. Being an animation, it also outranks those background declarations
    in the cascade without needing to out-specify them. */
 tr.flash td {
-    animation: row-flash 1.6s ease-out;
+    animation: row-flash 2.5s ease-out;
 }
 
 @keyframes row-flash {

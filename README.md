@@ -10,7 +10,7 @@ Built on Cloudflare Workers with a D1 SQLite database, behind Cloudflare Access.
 
 ## Features
 
-- All 50 U.S. seasons of _Survivor_ seeded with official subtitles + Wikipedia links
+- Every U.S. season of _Survivor_ seeded with official subtitles + Wikipedia links
 - One checkbox column per person/couple; you can only change your own (Access-derived identity)
 - Couples share a column — either partner's login can toggle it
 - Discussion notes are bylined to the individual who wrote them, so a shared column speaks with two voices
@@ -223,17 +223,17 @@ the `Cf-Access-Jwt-Assertion` header (or `DEV_USER_EMAIL` locally). Clients neve
 send a user id, and the plaintext `Cf-Access-Authenticated-User-Email` header is
 never trusted — see [Authentication](#authentication).
 
-| Method   | Path                                               | Description                                                                                                                                                                                                                 |
-| -------- | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET`    | `/api/board`                                       | Current user, all users, and all seasons with watched state, episode counts, and post counts                                                                                                                                |
-| `POST`   | `/api/watched`                                     | Mark the caller as having watched a season (`{ season_id }`)                                                                                                                                                                |
-| `DELETE` | `/api/watched/:season_id`                          | Unmark the caller for a season                                                                                                                                                                                              |
-| `PUT`    | `/api/currently-watching`                          | Set the caller's currently-watching season, or clear it (`{ season_id }`, nullable)                                                                                                                                         |
-| `POST`   | `/api/seasons/:season_id/episodes/:episode/posts`  | Add a discussion note, stamped with the caller's live watch-timer offset and their author email (`{ body }`)                                                                                                                |
-| `GET`    | `/api/seasons/:season_id/discussion`               | Per-episode discussion state for a season, gated by the spoiler rule; each post carries `author_name`, `author_index`, and `mine`, and each episode's `authors` names its bylined individuals — emails are never serialized |
-| `POST`   | `/api/seasons/:season_id/episodes/:episode/reveal` | Open one episode's discussion board for reading (permanent)                                                                                                                                                                 |
-| `DELETE` | `/api/posts/:post_id`                              | Delete one of the caller's own discussion notes, scoped to the individual author; a note from before individual attribution stays deletable by the column                                                                   |
-| `POST`   | `/api/seasons/:season_id/episodes/:episode/timer`  | Start, pause, or resume the caller's watch timer for an episode (`{ action }`)                                                                                                                                              |
+| Method   | Path                                               | Description                                                                                                                                                                                                                      |
+| -------- | -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET`    | `/api/board`                                       | Current user, all users, and all seasons with watched state, episode counts, and post counts                                                                                                                                     |
+| `POST`   | `/api/watched`                                     | Mark the caller as having watched a season (`{ season_id }`)                                                                                                                                                                     |
+| `DELETE` | `/api/watched/:season_id`                          | Unmark the caller for a season                                                                                                                                                                                                   |
+| `PUT`    | `/api/currently-watching`                          | Set the caller's currently-watching season, or clear it (`{ season_id }`, nullable)                                                                                                                                              |
+| `POST`   | `/api/seasons/:season_id/episodes/:episode/posts`  | Add a discussion note, stamped with the caller's live watch-timer offset and their author email (`{ body }`)                                                                                                                     |
+| `GET`    | `/api/seasons/:season_id/discussion`               | Per-episode discussion state for a season, gated by the spoiler rule; each post carries its byline and the caller's own ownership flag, and each episode's `authors` names its bylined individuals — emails are never serialized |
+| `POST`   | `/api/seasons/:season_id/episodes/:episode/reveal` | Open one episode's discussion board for reading (permanent)                                                                                                                                                                      |
+| `DELETE` | `/api/posts/:post_id`                              | Delete one of the caller's own discussion notes, scoped to the individual author; a note from before individual attribution stays deletable by the column                                                                        |
+| `POST`   | `/api/seasons/:season_id/episodes/:episode/timer`  | Start, pause, or resume the caller's watch timer for an episode (`{ action }`)                                                                                                                                                   |
 
 ## Database Schema
 
@@ -259,12 +259,12 @@ see [The roster](#the-roster).
 
 **`seasons`** — _Survivor_ seasons (reference data, seeded in migration `0002`)
 
-| Column          | Type       | Notes                                                                   |
-| --------------- | ---------- | ----------------------------------------------------------------------- |
-| `id`            | INTEGER PK | The season number                                                       |
-| `subtitle`      | TEXT       | Official subtitle without the `Survivor: ` prefix; empty for 41–49      |
-| `wikipedia_url` | TEXT       | Link to the season's Wikipedia article                                  |
-| `episode_count` | INTEGER    | Episode count from Wikipedia's episode table; added in migration `0005` |
+| Column          | Type       | Notes                                                                                    |
+| --------------- | ---------- | ---------------------------------------------------------------------------------------- |
+| `id`            | INTEGER PK | The season number                                                                        |
+| `subtitle`      | TEXT       | Official subtitle without the `Survivor: ` prefix; empty for the modern numbered seasons |
+| `wikipedia_url` | TEXT       | Link to the season's Wikipedia article                                                   |
+| `episode_count` | INTEGER    | Episode count from Wikipedia's episode table; added in migration `0005`                  |
 
 **`watched`** — one row per (user, season) watched; presence means watched
 
@@ -394,11 +394,10 @@ sends no token at all, so nobody signed in can do anything there.
 
 ## Cost
 
-Designed to run within Cloudflare's free tier:
-
-- **Workers**: 100,000 requests/day
-- **D1**: 5M reads/day, 100K writes/day, 5 GB storage
-- **Access**: up to 50 users
+Designed to run within Cloudflare's free tier — the daily request cap on
+Workers, the read/write/storage caps on D1, and the seat cap on Access are the
+limits that apply, and a group this size is orders of magnitude under all of
+them. Check Cloudflare's pricing pages for the current numbers.
 
 ## License
 
