@@ -162,6 +162,13 @@ of the root `CLAUDE.md` so it loads only when working on these files.
   (yours, and not already being edited), and Delete (yours), each a Bootstrap
   icon plus its name. `menuFor` is state owned by `EpisodeBoard`, for the same
   episode-scoped, one-at-a-time reason as `replyTo` and `editingId`.
+    - Split in two: `PostMenu` renders on every note and holds nothing but the
+      trigger and the two ways out, while `PostMenuPanel` — the scrim, the
+      picker, and the items — mounts only while that note's menu is open. The
+      split is what keeps the per-note cost to a button: `useIsDark`'s
+      `MutationObserver` and the Escape listener are subscribed by the panel, so
+      a board of fifty notes carries one of each (the open menu's) rather than
+      fifty. It also lets both effects key on mount instead of on `open`.
     - Two layouts, one DOM and no JS measurement: on a pointer device the menu
       is a dropdown absolutely positioned inside `.post-actions`
       (`position: relative`, and deliberately no `z-index`, so no stacking
@@ -223,7 +230,11 @@ of the root `CLAUDE.md` so it loads only when working on these files.
   (`hooks.js`) observes the `data-theme` attribute `useTheme` writes — the
   attribute, not the media query, so the manual toggle counts, and a
   `MutationObserver` rather than a context so nothing has to be threaded through
-  `App → SeasonView → EpisodeBoard → PostList → Post` to reach the menu.
+  `App → SeasonView → EpisodeBoard → PostList → Post` to reach the menu. One
+  observer per calling component is the price of skipping the context, so call
+  it from the narrowest component that needs it (`PostMenuPanel`, not
+  `PostMenu`) — if a third caller ever renders per-note, a shared subscription
+  is the better trade.
 - The optional watch timer (`WatchTimer` in `discussion.js`, rule in
   `shared/session.js`) starts, pauses, and resumes per (user, episode); a
   session goes stale after three hours without a start/pause/resume/post, and

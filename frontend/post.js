@@ -194,10 +194,11 @@ function EmojiPicker({ post, onReact }) {
     `;
 }
 
-// Everything you can do to a note, behind one ⋯ button. Four inline buttons on
-// your own notes crowded the meta line and left every note carrying controls it
-// mostly does not need; one trigger opening a labelled menu costs a tap and
-// gives each action a name and a target you can actually hit.
+// The scrim and the menu itself: everything that exists only while the menu is
+// open. Split from PostMenu so it mounts with the menu rather than with the
+// note, which is what keeps `useIsDark`'s MutationObserver down to the one open
+// menu instead of one per rendered note on the board. Its effects get to key on
+// mount for the same reason.
 //
 // Two layouts, one DOM: a dropdown anchored to the trigger inside the
 // position: relative .post-actions, which the `max-width: 640px` block turns
@@ -210,9 +211,84 @@ function EmojiPicker({ post, onReact }) {
 // items, which this does not implement. Plain buttons in a labelled group get
 // native Tab order and an honest accessibility tree; aria-haspopup and
 // aria-expanded on the trigger say what it opens.
-function PostMenu({ post, editing, open, onToggle, onReply, onReact, onStartEdit, onDelete }) {
+function PostMenuPanel({
+    post,
+    editing,
+    onClose,
+    onDismiss,
+    onReply,
+    onReact,
+    onStartEdit,
+    onDelete,
+}) {
     const dark = useIsDark();
     const menuRef = useRef(null);
+
+    // Mount is open, so this subscribes once per opened menu. The listener
+    // closes over the `onDismiss` from that first render, which is safe here:
+    // it only reads post.id and calls the parent's setter, neither of which
+    // changes while a menu is open. Re-subscribing on every render would be
+    // churn for nothing.
+    useEffect(() => {
+        menuRef.current?.querySelector('button')?.focus();
+        const onKeyDown = (e) => {
+            if (e.key === 'Escape') onDismiss();
+        };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+    }, []);
+
+    // Every item closes the menu first, then acts.
+    const choose = (act) => () => {
+        onClose();
+        act();
+    };
+
+    return html`
+        <div class="post-menu-scrim" onClick=${onDismiss}></div>
+        <div class="post-menu" ref=${menuRef} role="group" aria-label="Note actions">
+            <${EmojiPicker} post=${post} onReact=${onReact} />
+            <div class="post-menu-items">
+                <button class="post-menu-item" onClick=${choose(() => onReply(post))}>
+                    <${Icon} name="reply" filled=${dark} />
+                    <span>Reply</span>
+                </button>
+                ${
+                    post.mine &&
+                    !editing &&
+                    html`<button
+                        class="post-menu-item"
+                        onClick=${choose(() => onStartEdit(post.id))}
+                    >
+                        <${Icon} name="pencil" filled=${dark} />
+                        <span>Edit</span>
+                    </button>`
+                }
+                ${
+                    post.mine &&
+                    html`<button
+                        class="post-menu-item post-menu-item-delete"
+                        onClick=${choose(() => onDelete(post.id))}
+                    >
+                        <${Icon} name="trash" filled=${dark} />
+                        <span>Delete</span>
+                    </button>`
+                }
+            </div>
+            <button class="post-menu-cancel" onClick=${onDismiss}>Cancel</button>
+        </div>
+    `;
+}
+
+// Everything you can do to a note, behind one ⋯ button. Four inline buttons on
+// your own notes crowded the meta line and left every note carrying controls it
+// mostly does not need; one trigger opening a labelled menu costs a tap and
+// gives each action a name and a target you can actually hit.
+//
+// This half renders on every note, so it deliberately holds nothing but the
+// trigger and the two ways out — the menu's own state and subscriptions live in
+// PostMenuPanel, which only exists while the menu is open.
+function PostMenu({ post, editing, open, onToggle, onReply, onReact, onStartEdit, onDelete }) {
     const triggerRef = useRef(null);
 
     const close = () => onToggle(post.id);
@@ -224,26 +300,6 @@ function PostMenu({ post, editing, open, onToggle, onReply, onReact, onStartEdit
     const dismiss = () => {
         triggerRef.current?.focus();
         close();
-    };
-
-    // Keyed on `open` alone. The listener closes over the `dismiss` from the
-    // render that opened the menu, which is safe here: it only reads post.id
-    // and calls the parent's setter, neither of which changes while a menu is
-    // open. Re-subscribing on every render would be churn for nothing.
-    useEffect(() => {
-        if (!open) return;
-        menuRef.current?.querySelector('button')?.focus();
-        const onKeyDown = (e) => {
-            if (e.key === 'Escape') dismiss();
-        };
-        window.addEventListener('keydown', onKeyDown);
-        return () => window.removeEventListener('keydown', onKeyDown);
-    }, [open]);
-
-    // Every item closes the menu first, then acts.
-    const choose = (act) => () => {
-        close();
-        act();
     };
 
     return html`
@@ -261,40 +317,16 @@ function PostMenu({ post, editing, open, onToggle, onReply, onReact, onStartEdit
             </button>
             ${
                 open &&
-                html`
-                    <div class="post-menu-scrim" onClick=${dismiss}></div>
-                    <div class="post-menu" ref=${menuRef} role="group" aria-label="Note actions">
-                        <${EmojiPicker} post=${post} onReact=${onReact} />
-                        <div class="post-menu-items">
-                            <button class="post-menu-item" onClick=${choose(() => onReply(post))}>
-                                <${Icon} name="reply" filled=${dark} />
-                                <span>Reply</span>
-                            </button>
-                            ${
-                                post.mine &&
-                                !editing &&
-                                html`<button
-                                    class="post-menu-item"
-                                    onClick=${choose(() => onStartEdit(post.id))}
-                                >
-                                    <${Icon} name="pencil" filled=${dark} />
-                                    <span>Edit</span>
-                                </button>`
-                            }
-                            ${
-                                post.mine &&
-                                html`<button
-                                    class="post-menu-item post-menu-item-delete"
-                                    onClick=${choose(() => onDelete(post.id))}
-                                >
-                                    <${Icon} name="trash" filled=${dark} />
-                                    <span>Delete</span>
-                                </button>`
-                            }
-                        </div>
-                        <button class="post-menu-cancel" onClick=${dismiss}>Cancel</button>
-                    </div>
-                `
+                html`<${PostMenuPanel}
+                    post=${post}
+                    editing=${editing}
+                    onClose=${close}
+                    onDismiss=${dismiss}
+                    onReply=${onReply}
+                    onReact=${onReact}
+                    onStartEdit=${onStartEdit}
+                    onDelete=${onDelete}
+                />`
             }
         </div>
     `;
