@@ -211,9 +211,9 @@ function EpisodeBoard({
     // Escape — i.e. not saving at all — it isn't meant to, and doesn't, cover
     // navigating away to edit something else instead.
     const [editingId, setEditingId] = useState(null);
-    // Which post's picker is open, or null for none — one at a time, same as
+    // Which post's ⋯ menu is open, or null for none — one at a time, same as
     // editingId, and episode-scoped for the same reason.
-    const [pickerFor, setPickerFor] = useState(null);
+    const [menuFor, setMenuFor] = useState(null);
     // Owned here rather than inside PostForm so tapping Reply can focus the box.
     const inputRef = useRef(null);
 
@@ -243,9 +243,9 @@ function EpisodeBoard({
         if (saved) setEditingId((cur) => (cur === postId ? null : cur));
     };
 
-    // Choosing an emoji closes the picker, whether it added or removed one.
+    // Choosing an emoji closes the menu, whether it added or removed one.
     const react = (postId, emoji, on) => {
-        setPickerFor(null);
+        setMenuFor(null);
         return onReact(postId, emoji, on);
     };
 
@@ -312,8 +312,8 @@ function EpisodeBoard({
                             onStartEdit=${setEditingId}
                             onCancelEdit=${() => setEditingId(null)}
                             onSaveEdit=${saveEdit}
-                            pickerFor=${pickerFor}
-                            onTogglePicker=${(id) => setPickerFor((cur) => (cur === id ? null : id))}
+                            menuFor=${menuFor}
+                            onToggleMenu=${(id) => setMenuFor((cur) => (cur === id ? null : id))}
                             onReact=${react}
                         />
                         ${

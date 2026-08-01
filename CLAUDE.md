@@ -19,12 +19,13 @@ It is a sibling of the **Seen** project and follows the same stack and structure
     - `CLAUDE.md` — The frontend's conventions and gotchas; loads only when working on files under `frontend/`, keeping them out of every unrelated session's context
     - `script.js` — `App` component: board/season state, hash routing, optimistic mutations
     - `api.js` — `api()`, the shared fetch helper (throws with `.status` on a non-2xx response)
-    - `hooks.js` — `useTheme`, `useRefreshGuard`, `useSubmitGuard`, `useHashRoute`, `useRefreshOnFocus`, `useAutoSize`
+    - `hooks.js` — `useTheme`, `useIsDark`, `useRefreshGuard`, `useSubmitGuard`, `useHashRoute`, `useRefreshOnFocus`, `useAutoSize`
     - `refresh-guard.js` — `createRefreshGuard`, the refetch-vs-mutation race rules as a plain state machine; `useRefreshGuard` is the wiring around it
     - `submit-guard.js` — `createSubmitGuard`, the submit-once and cannot-cancel-in-flight rules as a plain state machine, shared by the compose box and the edit box; `useSubmitGuard` is the wiring around it
     - `board.js` — `Header`, `Board` and its child components (the season × user grid)
     - `discussion.js` — `SeasonView`, `EpisodeBoard`, `WatchTimer`, and `PostForm`: the per-episode discussion board and its compose box + watch timer UI
-    - `post.js` — The note renderer: `PostList` and its children, moved out of `discussion.js` so a quote block and a reaction bar have somewhere to live inside each note
+    - `post.js` — The note renderer: `PostList` and its children, moved out of `discussion.js` so a quote block, a reaction bar, and the per-note `⋯` action menu have somewhere to live inside each note
+    - `icons.js` — Bootstrap Icons path data inlined as plain strings, plus the `Icon` component that draws it; the outline/`-fill` pair per icon is what light/dark mode swaps between
     - `utils.js` — Pure helpers (`seasonLabel`, `isFullyWatched`, `sortSeasons`, `sortBySeenCount`, `selectableSeasons`, `setWatched`, `clearsCurrentlyWatching`, `episodeNumbers`, `formatOffset`, `orderPosts`, `quoteSnippet`); shared with tests
     - `styles.css` — Theme tokens + layout
 - `shared/` — Code the Worker and the browser bundle both import, so the two never disagree
