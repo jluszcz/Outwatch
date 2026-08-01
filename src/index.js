@@ -674,6 +674,20 @@ app.put(
             // INSERT rather than enforced in the schema because it depends on
             // the note's current state, and a 409 (not a 400) because the
             // request is well-formed and would have succeeded a moment ago.
+            //
+            // Known and accepted: this read and the INSERT below are not one
+            // transaction, so two people adding two *different* new emoji to a
+            // note sitting at 11 can both see 11, both pass, and leave it at 13.
+            // Deliberately not closed. The cap is a layout guard, not an
+            // invariant anything reads back — a thirteenth chip is a slightly
+            // wider reaction bar, and the next attempt is refused normally — and
+            // the window needs two of five people to act in the same instant.
+            // Closing it would mean folding the count into the INSERT's own
+            // WHERE (SQLite evaluates that atomically) and then distinguishing
+            // "already there" from "cap refused" by a follow-up read, since both
+            // surface as zero rows changed. That is a real cost in a route this
+            // legible, paid for a miscount nobody can see. If the cap ever
+            // becomes something a client depends on, that is the fix.
             const { results: distinct } = await c.env.DB.prepare(
                 'SELECT DISTINCT emoji FROM reactions WHERE post_id = ?',
             )
