@@ -640,12 +640,23 @@ tr.watched-all .check-cell input {
     background: transparent;
 }
 
+/* The anchor the menu flips around — see the @supports block below. Only ever
+   read by anchor positioning, so a browser without it ignores the property and
+   loses nothing. */
+.post-menu-trigger {
+    anchor-name: --post-menu-anchor;
+}
+
 /* Anchored under the ⋯ button and right-aligned to it, so it opens inward
-   from the note's right edge instead of off the side of the card. */
+   from the note's right edge instead of off the side of the card. The gap is a
+   margin rather than part of the offset, so it survives the flip below —
+   flipping swaps the block-start and block-end margins along with the insets,
+   and these two are equal. */
 .post-menu {
     position: absolute;
-    top: calc(100% + 0.25rem);
+    top: 100%;
     right: 0;
+    margin-block: 0.25rem;
     z-index: 21;
     min-width: 10rem;
     display: flex;
@@ -656,6 +667,26 @@ tr.watched-all .check-cell input {
     border: 1px solid var(--border);
     border-radius: 0.5rem;
     box-shadow: 0 4px 16px var(--shadow);
+}
+
+/* A menu opened on the last note of a long board would otherwise run past the
+   bottom of the viewport. flip-block reopens it above the trigger when there
+   isn't room below, with the browser doing the measuring — which is the whole
+   point, since measuring in JS is what this design set out to avoid.
+   Progressive enhancement, and deliberately gated behind @supports rather than
+   layered as duplicate `top` declarations: two `top`s in one rule are exactly
+   what a CSS minifier collapses, and the older one is the fallback. Without
+   support the rule above stands and the menu opens downward as it always has.
+   Positioned before the `max-width: 640px` block on purpose — that block's
+   `inset` shorthand has to come later to reset these insets for the bottom
+   sheet, which cannot overflow and so has nothing to flip. */
+@supports (position-try-fallbacks: flip-block) {
+    .post-menu {
+        position-anchor: --post-menu-anchor;
+        top: anchor(bottom);
+        right: anchor(right);
+        position-try-fallbacks: flip-block;
+    }
 }
 
 /* The rule separating the emoji row above from the named actions below. */
@@ -1157,6 +1188,10 @@ tr.watched-all .check-cell input {
     .post-menu {
         position: fixed;
         inset: auto 0 0 0;
+        /* The sheet is content-sized against the bottom edge, so it has no way
+           to overflow and nothing to flip; turning the fallback off says so
+           rather than leaving it to be inferred. */
+        position-try-fallbacks: none;
         min-width: 0;
         gap: 0.5rem;
         padding: 0.6rem 0.9rem;

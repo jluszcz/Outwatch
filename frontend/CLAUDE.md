@@ -172,9 +172,18 @@ of the root `CLAUDE.md` so it loads only when working on these files.
       Cancel row. Nothing in the discussion view sets `overflow`, so the
       dropdown has nothing to clip it — this is the opposite of the call
       `EmojiPicker` used to document, and it is only safe because the menu
-      escaped `.post-content`. A menu opened on the last note of a long board
-      can still run past the viewport bottom; the page scrolls, and flipping it
-      upward would need the JS measurement this design avoids.
+      escaped `.post-content`.
+    - A menu opened on the last note of a long board would run past the bottom of
+      the viewport, so `position-try-fallbacks: flip-block` reopens it above the
+      trigger when there is no room below — the browser measures, which is what
+      keeps the no-JS-measurement rule intact. It sits in an `@supports` block
+      rather than layering `top: anchor(bottom)` over a plain `top: 100%` in one
+      rule: a minifier collapses two `top` declarations and the fallback is the
+      one it would drop. Support (Chrome 125+, Firefox 132+, Safari 26+) is a
+      higher floor than the `light-dark()` one, which is why it has to degrade
+      rather than be relied on — without it the menu opens downward as before.
+      The bottom sheet sets `position-try-fallbacks: none`: it is content-sized
+      against the bottom edge and cannot overflow.
     - The scrim is rendered in both layouts (transparent on a pointer device)
       and is what dismisses on an outside click. It covers the trigger too, so
       clicking the trigger while open reaches the scrim rather than the
