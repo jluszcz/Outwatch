@@ -5,7 +5,7 @@ const html = htm.bind(h);
 
 // Path data copied from Bootstrap Icons v1.13.1 (MIT), which is not an npm
 // dependency here: the package ships ~2,000 SVGs and a webfont, and this app
-// draws five glyphs. Inlining them keeps the bundle self-contained and makes a
+// draws six glyphs. Inlining them keeps the bundle self-contained and makes a
 // refresh a copy-paste from https://github.com/twbs/icons/tree/main/icons.
 //
 // Each entry holds a list of path `d` strings, because some icons are more than
@@ -31,6 +31,17 @@ export const ICONS = {
             'M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8z',
         ],
         fill: null,
+    },
+    // bi-chat / bi-chat-fill — the board's note-count badge. The only icon drawn
+    // outside a note's action menu, and the one place a glyph sits next to text
+    // rather than alone in a button.
+    chat: {
+        outline: [
+            'M2.678 11.894a1 1 0 0 1 .287.801 11 11 0 0 1-.398 2c1.395-.323 2.247-.697 2.634-.893a1 1 0 0 1 .71-.074A8 8 0 0 0 8 14c3.996 0 7-2.807 7-6s-3.004-6-7-6-7 2.808-7 6c0 1.468.617 2.83 1.678 3.894m-.493 3.905a22 22 0 0 1-.713.129c-.2.032-.352-.176-.273-.362a10 10 0 0 0 .244-.637l.003-.01c.248-.72.45-1.548.524-2.319C.743 11.37 0 9.76 0 8c0-3.866 3.582-7 8-7s8 3.134 8 7-3.582 7-8 7a9 9 0 0 1-2.347-.306c-.52.263-1.639.742-3.468 1.105',
+        ],
+        fill: [
+            'M8 15c4.418 0 8-3.134 8-7s-3.582-7-8-7-8 3.134-8 7c0 1.76.743 3.37 1.97 4.6-.097 1.016-.417 2.13-.771 2.966-.079.186.074.394.273.362 2.256-.37 3.597-.938 4.18-1.234A9 9 0 0 0 8 15',
+        ],
     },
     // bi-reply / bi-reply-fill
     reply: {

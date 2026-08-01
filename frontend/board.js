@@ -1,5 +1,5 @@
 import { h } from 'preact';
-import { useState, useMemo } from 'preact/hooks';
+import { useState, useMemo, useEffect } from 'preact/hooks';
 import htm from 'htm';
 import {
     seasonLabel,
@@ -10,8 +10,16 @@ import {
     sortBySeenCount,
     selectableSeasons,
 } from './utils.js';
+import { Icon } from './icons.js';
+import { useIsDark } from './hooks.js';
 
 const html = htm.bind(h);
+
+// How long a jumped-to row stays lit. Long enough to find the row after the
+// scroll settles, short enough that it is gone before you act on it.
+const FLASH_MS = 1600;
+
+const prefersReducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 // Lucide icons (MIT) — currentColor inherits button color from CSS
 const SunIcon = () => html`
@@ -63,10 +71,15 @@ export function Header({ theme, onToggleTheme }) {
     `;
 }
 
-function SeasonRow({ season, users, meId, fullyWatched, onToggle }) {
+function SeasonRow({ season, users, meId, fullyWatched, flash, dark, onToggle }) {
     const { number, subtitle } = seasonParts(season);
+    const rowClass = [fullyWatched ? 'watched-all' : '', flash ? 'flash' : '']
+        .filter(Boolean)
+        .join(' ');
+    // The id is what NowWatching's jump buttons scroll to. Keyed on the season
+    // rather than the row's position, so it survives a re-sort.
     return html`
-        <tr class=${fullyWatched ? 'watched-all' : ''}>
+        <tr id=${`season-row-${season.id}`} class=${rowClass}>
             <td class="season-cell">
                 <div class="season-cell-row">
                     <a href=${`#/season/${season.id}`} aria-label=${seasonLabel(season)}
@@ -75,9 +88,9 @@ function SeasonRow({ season, users, meId, fullyWatched, onToggle }) {
                     >
                     ${
                         season.post_count > 0
-                            ? html`<span class="post-badge" title=${`${season.post_count} notes`}>
-                                  💬 ${season.post_count}
-                              </span>`
+                            ? html`<span class="post-badge" title=${`${season.post_count} notes`}
+                                  ><${Icon} name="chat" filled=${dark} />${season.post_count}</span
+                              >`
                             : null
                     }
                 </div>
@@ -121,8 +134,9 @@ function SeasonRow({ season, users, meId, fullyWatched, onToggle }) {
 
 // A summary strip above the board: one chip per person showing the season they're
 // currently on. Your own chip is editable (pick from your unwatched seasons);
-// everyone else's is read-only.
-function NowWatching({ users, seasons, meId, onSetCurrentlyWatching }) {
+// everyone else's is read-only. Each chip also leads with a jump button that
+// scrolls that person's season into view down in the board.
+function NowWatching({ users, seasons, meId, onSetCurrentlyWatching, onJump }) {
     return html`
         <div class="now-watching">
             <span class="now-watching-label">Now Watching</span>
@@ -139,8 +153,19 @@ function NowWatching({ users, seasons, meId, onSetCurrentlyWatching }) {
                             }
                         >
                             ${
-                                cwId != null
-                                    ? html`<span class="nw-marker" aria-hidden="true">▶</span>`
+                                // Gated on the season being found rather than on cwId alone: the
+                                // button's label names the season, so there is nothing to say
+                                // about an id the board did not send a season for.
+                                current
+                                    ? html`<button
+                                          class="nw-jump"
+                                          aria-label=${`Jump to ${
+                                              isMe ? 'your' : `${u.name}'s`
+                                          } current season, ${seasonLabel(current)}`}
+                                          onClick=${() => onJump(current.id)}
+                                      >
+                                          ▶
+                                      </button>`
                                     : null
                             }
                             <span class="nw-name">${isMe ? 'You' : u.name}</span>
@@ -178,6 +203,10 @@ function NowWatching({ users, seasons, meId, onSetCurrentlyWatching }) {
 
 export function Board({ users, seasons, meId, onToggle, onSetCurrentlyWatching }) {
     const [sortMode, setSortMode] = useState('season');
+    const [flashId, setFlashId] = useState(null);
+    // Subscribed once for the whole board rather than per row: useIsDark costs a
+    // MutationObserver per calling component, and SeasonRow renders ~50 times.
+    const dark = useIsDark();
     const userCount = users.length;
     const sorted = useMemo(
         () =>
@@ -192,6 +221,27 @@ export function Board({ users, seasons, meId, onToggle, onSetCurrentlyWatching }
         [users, meId],
     );
 
+    useEffect(() => {
+        if (flashId == null) return undefined;
+        const timer = setTimeout(() => setFlashId(null), FLASH_MS);
+        return () => clearTimeout(timer);
+    }, [flashId]);
+
+    // Scrolling alone leaves you hunting for the row you landed on, so the jump
+    // also lights it. Focus moves to the season link — with preventScroll, since
+    // scrollIntoView is what decides where the row sits — so the jump goes
+    // somewhere for a keyboard user instead of only moving the viewport.
+    const jumpTo = (seasonId) => {
+        const row = document.getElementById(`season-row-${seasonId}`);
+        if (!row) return;
+        row.querySelector('.season-cell a')?.focus({ preventScroll: true });
+        row.scrollIntoView({
+            block: 'center',
+            behavior: prefersReducedMotion() ? 'auto' : 'smooth',
+        });
+        setFlashId(seasonId);
+    };
+
     return html`
         <div>
             <${NowWatching}
@@ -199,6 +249,7 @@ export function Board({ users, seasons, meId, onToggle, onSetCurrentlyWatching }
                 seasons=${seasons}
                 meId=${meId}
                 onSetCurrentlyWatching=${onSetCurrentlyWatching}
+                onJump=${jumpTo}
             />
             <div class="sort-controls">
                 <span class="sort-label">Sort by</span>
@@ -250,6 +301,8 @@ export function Board({ users, seasons, meId, onToggle, onSetCurrentlyWatching }
                                     users=${orderedUsers}
                                     meId=${meId}
                                     fullyWatched=${isFullyWatched(s, userCount)}
+                                    flash=${s.id === flashId}
+                                    dark=${dark}
                                     onToggle=${onToggle}
                                 />`,
                         )}

@@ -18,6 +18,38 @@ of the root `CLAUDE.md` so it loads only when working on these files.
   The state machine is a plain factory so `test/frontend/refresh-guard.test.js`
   can drive it directly — keep the rules there, not in the hook.
 - Only the current user's column checkboxes are enabled; others are read-only.
+- Each `NowWatching` chip leads with `.nw-jump`, a button that scrolls that
+  person's currently-watching season into view down in the board and lights the
+  row for `FLASH_MS`. `Board` owns `flashId` and clears it on a timer;
+  `SeasonRow` carries `id="season-row-<id>"`, keyed on the season rather than
+  the row's position so the anchor survives a re-sort. The jump also focuses
+  the row's season link — with `preventScroll`, so `scrollIntoView` alone
+  decides where the row lands — since otherwise it would move the viewport and
+  nothing else for a keyboard user. The disc is tinted _and_ rimmed: the tint
+  alone vanishes against `.nw-chip.mine`, whose background is already
+  `--surface-accent`.
+- `row-flash` animates an inset `box-shadow` rather than `background-color`,
+  because the cells it crosses disagree about their own background —
+  `td.check-cell.mine` is tinted and the phone layout's pinned `td.season-cell`
+  is opaque — so a background animation would fade each one towards some other
+  cell's colour and snap back at the end. Being an animation it also outranks
+  those declarations without having to out-specify them, which is what makes
+  the pinned cell flash at all. The phone block overrides only
+  `animation-name`, since that layout draws its column divider with the same
+  `box-shadow` the flash would otherwise replace for the flash's duration.
+- `Board` calls `useIsDark` once and passes `dark` down to `SeasonRow`, rather
+  than letting each row call it: the hook costs a `MutationObserver` per
+  calling component and the board renders ~50 rows. This is the "a shared
+  subscription is the better trade" case the icons bullet below anticipates,
+  settled with one level of prop drilling instead of a context.
+- A season row's note count is a pill (`.post-badge`) drawing `bi-chat`, not a
+  bare `💬 N`. The emoji rendered as a full-colour system glyph that outweighed
+  its own number and ignored the theme, and at `0.75rem` beside a `1rem`
+  season number the pair was the lightest thing in the row. The chrome supplies
+  the weight so the type does not have to, which keeps the season label the
+  row's loudest element. `tr.watched-all .post-badge` exists because the pill
+  sets its own colours and would otherwise stay at full contrast on a row
+  everything else has faded out of.
 - `styles.css` themes via CSS `light-dark()`, which needs a mid-2024 browser
   (Chrome 123+, Safari 17.5+, Firefox 120+); older browsers render with no
   theme colors at all.
