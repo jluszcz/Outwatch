@@ -53,8 +53,10 @@ that made `DELETE /api/posts/:post_id` detach replies rather than leave a
 
 ### Grouping
 
-The group key is `(author, season, episode, calendar day)` — one line per
-person per episode per day, however many notes they left.
+The group key is `(author, season, episode, sitting)` — one line per person per
+episode per sitting, however many notes they left. A sitting ends after
+`FEED_GROUP_GAP_MS` (6 hours) with no further note from that person on that
+episode.
 
 The line carries **no count**. "Alice commented on Season 45 Episode 3" already
 implies one or more, and the number is not something you would act on
@@ -64,11 +66,24 @@ lets the panel stay a list of sentences rather than a table.
 
 Grouping by author and episode alone would fold a note from three weeks ago
 into today's group and stamp the pair with today's time, so the line would
-claim two notes arrived three hours ago when one arrived three weeks ago. A
-calendar-day boundary is the boring rule that avoids it, and someone watching
-an episode does it in one sitting anyway. A "session" rule (notes within N
-hours of each other) would be more precise and much harder to express in SQL,
-for a distinction nobody reading this panel would notice.
+claim two notes arrived three hours ago when one arrived three weeks ago.
+Something has to end a group, and the obvious candidate — a calendar day — is
+wrong here. `posts.created_at` is always UTC, so a "day" boundary falls at
+8:00pm Eastern and 5:00pm Pacific, which is inside the evening someone actually
+watches an episode. A session running 7:30–8:30pm ET straddles it and splits
+into two lines showing the same sentence at two times, which reads as a bug
+because it is one.
+
+A gap between consecutive notes has no timezone in it at all, so it is right
+wherever the viewer is, and it still separates the three-week-old note the day
+rule was introduced to separate. Six hours is far longer than any pause inside
+one sitting and far shorter than the gap to a later thought.
+
+This is more precise than a day and no harder to compute, because it is not
+computed in SQL: the route reads the window's rows and groups them in a single
+pass in JavaScript (`groupNotes`, `src/feed.js`), which is also what lets the
+unread count and the ten shown groups come from the same pass rather than two
+queries that could disagree about what a group is.
 
 The group's timestamp is its **newest** note.
 

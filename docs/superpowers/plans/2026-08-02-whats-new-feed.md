@@ -12,37 +12,18 @@
 
 ---
 
-## Deviation from the spec — READ FIRST
+## The grouping rule — settled, no action needed
 
-The spec groups notes by **calendar day**. Implementing it surfaced a defect,
-so this plan groups by a **6-hour gap between consecutive notes** instead.
-Everything else follows the spec as approved.
+An earlier draft of the spec grouped by **calendar day**. That was wrong and has
+been fixed: `posts.created_at` is always UTC, so a day boundary falls at 8:00pm
+Eastern / 5:00pm Pacific — inside the evening someone watches an episode — and a
+session running 7:30–8:30pm ET split into two lines showing the same sentence at
+two times.
 
-**Why the spec's rule breaks.** `posts.created_at` is
-`new Date().toISOString()` — always UTC. A calendar day is therefore a UTC day,
-and UTC midnight falls at 8:00pm Eastern / 5:00pm Pacific — inside the evening
-when someone actually watches an episode. A session running 7:30–8:30pm ET
-straddles that boundary, so its notes split into two groups and the panel shows
-`Alice commented on Season 45 Episode 3` twice with two timestamps. It looks
-like a bug because it is one.
-
-**Why the gap rule instead.** Notes by the same author on the same episode join
-the same group while consecutive notes are at most 6 hours apart. It has no
-timezone concept at all, so it is right for every viewer regardless of where
-they are; it still separates the three-week-old note the spec's day rule was
-introduced to separate; and it costs about ten lines. The spec dismissed a
-session rule as "much harder to express in SQL" — true, and irrelevant here,
-because Task 2 groups in JavaScript over rows the route has already fetched.
-
-**The alternative, if you prefer the spec's literal rule:** group on
-`toLocaleDateString('en-CA', { timeZone: 'America/New_York' })` rather than the
-UTC date. That fixes the split too, but it hardcodes one timezone into a shared
-board and still splits anyone watching past midnight local. The gap rule has
-neither problem.
-
-**Before starting Task 2, confirm this deviation with the user** and update the
-spec's Grouping section to match whichever rule wins. The plan and the spec must
-not be left disagreeing.
+Both the spec and this plan now group by a **6-hour gap between consecutive
+notes**, which has no timezone in it at all. The rationale lives in the spec's
+Grouping section; Task 2 implements it. **Nothing here needs confirming — build
+what Task 2 says.**
 
 ---
 
@@ -195,8 +176,6 @@ clear Carol's badge."
 - Produces:
     - `FEED_WINDOW_MS`, `FEED_MAX_EVENTS`, `FEED_GROUP_GAP_MS` — numbers
     - `groupNotes(rows)` — takes rows ordered by `(author_key, season_id, episode, created_at ASC)`, each `{ author_key, author_email, user_id, season_id, episode, created_at }`; returns `[{ author_key, author_email, user_id, season_id, episode, at }]` where `at` is the group's newest `created_at`. Group order follows input order — the caller sorts.
-
-**Confirm the deviation above with the user before starting this task.**
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1933,25 +1912,25 @@ EOF
 
 **Spec coverage:**
 
-| Spec section                                   | Task                                        |
-| ---------------------------------------------- | ------------------------------------------- |
-| Scope — comments only, own excluded            | 3                                           |
-| `feed_seen_at` on `user_emails`                | 1                                           |
-| No event table; deleted note leaves the feed   | 2, 3                                        |
-| Grouping                                       | 2 (**deviates — see the top of this plan**) |
-| Window 30 days, cap 10, NULL = all unread      | 2, 3                                        |
-| `GET /api/feed` shape, no bodies, 403          | 3                                           |
-| `POST /api/feed/seen`, no body, per individual | 4                                           |
-| Disclosure — no new class of information       | 3 (tests assert no body, no email)          |
-| `FeedBell`/`FeedPanel` split, header placement | 7                                           |
-| Dropdown + bottom sheet                        | 8                                           |
-| Badge optimistic, marks kept until refetch     | 7                                           |
-| Line text, no count, unread dot, empty state   | 5, 7, 8                                     |
-| No "and N more" footer                         | 7 (absent by construction)                  |
-| `relativeTime` tiers                           | 5                                           |
-| `parseHashRoute`, `useHashRoute`, seeding      | 6                                           |
-| Arriving at a locked episode does not reveal   | 6 (step 8 check), 9                         |
-| Docs                                           | 1, 3, 9                                     |
+| Spec section                                   | Task                               |
+| ---------------------------------------------- | ---------------------------------- |
+| Scope — comments only, own excluded            | 3                                  |
+| `feed_seen_at` on `user_emails`                | 1                                  |
+| No event table; deleted note leaves the feed   | 2, 3                               |
+| Grouping (6-hour gap)                          | 2                                  |
+| Window 30 days, cap 10, NULL = all unread      | 2, 3                               |
+| `GET /api/feed` shape, no bodies, 403          | 3                                  |
+| `POST /api/feed/seen`, no body, per individual | 4                                  |
+| Disclosure — no new class of information       | 3 (tests assert no body, no email) |
+| `FeedBell`/`FeedPanel` split, header placement | 7                                  |
+| Dropdown + bottom sheet                        | 8                                  |
+| Badge optimistic, marks kept until refetch     | 7                                  |
+| Line text, no count, unread dot, empty state   | 5, 7, 8                            |
+| No "and N more" footer                         | 7 (absent by construction)         |
+| `relativeTime` tiers                           | 5                                  |
+| `parseHashRoute`, `useHashRoute`, seeding      | 6                                  |
+| Arriving at a locked episode does not reveal   | 6 (step 8 check), 9                |
+| Docs                                           | 1, 3, 9                            |
 
 **Known gaps, accepted:**
 
