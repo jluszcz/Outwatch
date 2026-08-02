@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { sessionOffsetSecs, MAX_OFFSET_ADJUST_SECS } from '../shared/session.js';
 import { MAX_REACTIONS_PER_POST, isReactionEmoji } from '../shared/reactions.js';
 import { accessTokenEmail } from './access.js';
+import { groupNotes, FEED_WINDOW_MS, FEED_MAX_EVENTS } from './feed.js';
 
 const app = new Hono();
 
@@ -673,6 +674,81 @@ app.post('/api/seasons/:season_id/episodes/:episode/reveal', async (c) => {
         .run();
 
     return c.json({ success: true, season_id: season.id, episode });
+});
+
+// What other people have said since you last looked.
+//
+// Read from posts rather than an event log, which is what makes a deleted note
+// leave the feed on its own. The whole window is fetched and grouped in one
+// pass rather than paged: a household board's 30 days is a few hundred rows,
+// and one pass is what keeps the unread count and the ten shown groups from
+// ever disagreeing about what a group is.
+//
+// The caller's own notes are excluded in SQL rather than after grouping, so the
+// ten returned are ten they can actually act on. The test mirrors
+// attribute()'s `mine` rule exactly: an attributed note is theirs when the
+// email matches, an unattributed one when the column does.
+app.get('/api/feed', async (c) => {
+    const me = await callerUser(c);
+    if (!me) return c.json({ error: 'Your account is not on the watch list' }, 403);
+
+    const nowMs = Date.now();
+    const since = new Date(nowMs - FEED_WINDOW_MS).toISOString();
+
+    const [{ results: rows }, people, seenRow] = await Promise.all([
+        c.env.DB.prepare(
+            `SELECT posts.season_id   AS season_id,
+                    posts.episode     AS episode,
+                    posts.user_id     AS user_id,
+                    posts.author_email AS author_email,
+                    posts.created_at  AS created_at,
+                    COALESCE(LOWER(posts.author_email), 'user:' || posts.user_id) AS author_key
+             FROM posts
+             WHERE posts.created_at >= ?
+               AND CASE WHEN posts.author_email IS NULL
+                        THEN posts.user_id <> ?
+                        ELSE LOWER(posts.author_email) <> ?
+                   END
+             ORDER BY author_key ASC, posts.season_id ASC, posts.episode ASC,
+                      posts.created_at ASC`,
+        )
+            .bind(since, me.id, me.email)
+            .all(),
+        rosterPeople(c),
+        c.env.DB.prepare('SELECT feed_seen_at FROM user_emails WHERE email = ?')
+            .bind(me.email)
+            .first(),
+    ]);
+
+    const seenAt = seenRow?.feed_seen_at ?? null;
+
+    // Both sides are toISOString() output — fixed-length UTC — so a string
+    // compare is a chronological one and needs no parsing.
+    const groups = groupNotes(rows).map((group) => ({
+        ...group,
+        unread: seenAt === null || group.at > seenAt,
+    }));
+
+    // groupNotes returns them grouped by author; the panel wants them by time.
+    groups.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+
+    return c.json({
+        now: new Date(nowMs).toISOString(),
+        // Counts every unread group in the window, not only the ten shown, so
+        // the badge can read higher than the list is long. Deliberate: the
+        // panel has no second page, so a footer explaining the difference could
+        // only name a number nobody can follow.
+        unread_count: groups.filter((group) => group.unread).length,
+        events: groups.slice(0, FEED_MAX_EVENTS).map((group) => ({
+            // attribute() resolves the byline the same way the discussion route
+            // does, so a note reads the same in the feed as on its board.
+            author_name: attribute(group, people, me).author_name,
+            season_id: group.season_id,
+            episode: group.episode,
+            at: group.at,
+            unread: group.unread,
+        })),
+    });
 });
 
 // A reaction is the individual's, so it is keyed on the caller's verified email
