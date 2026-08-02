@@ -255,6 +255,29 @@ error instead of falling back to the board.
 accordion stays user-controlled after that — landing on an episode opens it,
 and collapsing it does not rewrite the hash.
 
+### Arriving at a locked episode
+
+Following a feed line **expands** that episode's board and does nothing else.
+It must never fire `POST .../reveal`.
+
+This is the one place the feature could quietly undo the spoiler rule, and the
+tempting reasoning is right there in the interaction: you clicked a
+notification about a note, so surely you meant to read it. You did not — a
+reveal is permanent and one-way, and spending someone's reveal on a tap they
+made from a header panel is exactly the kind of thing they cannot undo. The
+existing code already draws this line correctly: `onToggle` sets `openEpisode`
+and `onReveal` posts the reveal, and they are separate handlers
+(`frontend/discussion.js`). Seeding `openEpisode` from the route rides the
+first and must not touch the second.
+
+So a feed line pointing at an episode the caller has not watched or revealed
+lands them on the locked board — 🔒, the note count, the authors, their own
+notes, and the Reveal button — with the bodies absent because the server never
+serialized them, not because the client is hiding them. That is a coherent
+destination rather than a dead end: the feed told them something was said and
+who said it, which is what the discussion route already discloses about a
+locked board, and the Reveal button is right there if they want the rest.
+
 ## Testing
 
 ### Worker — `test/worker/feed.test.js`
@@ -284,6 +307,11 @@ and collapsing it does not rewrite the hash.
   zero
 - `parseHashRoute` in `test/frontend/utils.test.js`: both accepted forms, the
   rejected `0` and leading-zero cases, and unrelated hashes
+
+There is no DOM test suite, so "arriving at a locked episode does not reveal
+it" cannot be asserted in CI. It is instead a property of the wiring: seeding
+`openEpisode` is the only change to `SeasonView`, and `reveal` keeps its single
+caller. A reviewer should check that `reveal`'s call sites still number one.
 
 ### Migration
 
