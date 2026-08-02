@@ -751,6 +751,24 @@ app.get('/api/feed', async (c) => {
     });
 });
 
+// Marks the feed read for the individual, not their column — the same reason
+// feed_seen_at sits on user_emails.
+//
+// No request body on purpose. The stamp is the server's own clock, so a caller
+// cannot backdate the mark to keep a badge lit or forward-date it to silence
+// one. Idempotent: calling it twice just moves the mark forward.
+app.post('/api/feed/seen', async (c) => {
+    const me = await callerUser(c);
+    if (!me) return c.json({ error: 'Your account is not on the watch list' }, 403);
+
+    const seenAt = new Date().toISOString();
+    await c.env.DB.prepare('UPDATE user_emails SET feed_seen_at = ? WHERE email = ?')
+        .bind(seenAt, me.email)
+        .run();
+
+    return c.json({ feed_seen_at: seenAt });
+});
+
 // A reaction is the individual's, so it is keyed on the caller's verified email
 // rather than their column — both halves of a shared column react separately.
 // `on` is explicit rather than a toggle, which makes the route idempotent: a

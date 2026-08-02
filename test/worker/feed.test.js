@@ -164,33 +164,34 @@ async function addPost({
         .run();
 }
 
-describe('GET /api/feed', () => {
-    beforeEach(async () => {
-        await stubJwksEndpoint();
-        await env.DB.exec('DELETE FROM reactions');
-        await env.DB.exec('DELETE FROM posts');
-        await env.DB.exec('DELETE FROM user_emails');
-        await env.DB.exec('DELETE FROM users');
-        await env.DB.exec('DELETE FROM seasons');
-        await env.DB.exec(
-            "INSERT INTO users (id, name, sort_order) VALUES ('user-alice', 'Alice', 1)",
-        );
-        await env.DB.exec(
-            "INSERT INTO users (id, name, sort_order) VALUES ('user-bob', 'Bob & Carol', 2)",
-        );
-        await env.DB.exec(
-            'INSERT INTO user_emails (email, user_id, name) VALUES ' +
-                "('alice@example.com', 'user-alice', NULL), " +
-                "('bob@example.com', 'user-bob', 'Bob'), " +
-                "('carol@example.com', 'user-bob', 'Carol')",
-        );
-        await env.DB.exec(
-            'INSERT INTO seasons (id, subtitle, wikipedia_url, episode_count) VALUES ' +
-                "(45, '', 'https://en.wikipedia.org/wiki/Survivor_45', 13), " +
-                "(46, '', 'https://en.wikipedia.org/wiki/Survivor_46', 13)",
-        );
-    });
+// Shared fixture for both GET and POST feed routes, with the superset of their
+// test data (both seasons 45 and 46). The GET tests need 46; the POST tests
+// need only 45, but hoisting lets them share without duplication.
+beforeEach(async () => {
+    await stubJwksEndpoint();
+    await env.DB.exec('DELETE FROM reactions');
+    await env.DB.exec('DELETE FROM posts');
+    await env.DB.exec('DELETE FROM user_emails');
+    await env.DB.exec('DELETE FROM users');
+    await env.DB.exec('DELETE FROM seasons');
+    await env.DB.exec("INSERT INTO users (id, name, sort_order) VALUES ('user-alice', 'Alice', 1)");
+    await env.DB.exec(
+        "INSERT INTO users (id, name, sort_order) VALUES ('user-bob', 'Bob & Carol', 2)",
+    );
+    await env.DB.exec(
+        'INSERT INTO user_emails (email, user_id, name) VALUES ' +
+            "('alice@example.com', 'user-alice', NULL), " +
+            "('bob@example.com', 'user-bob', 'Bob'), " +
+            "('carol@example.com', 'user-bob', 'Carol')",
+    );
+    await env.DB.exec(
+        'INSERT INTO seasons (id, subtitle, wikipedia_url, episode_count) VALUES ' +
+            "(45, '', 'https://en.wikipedia.org/wiki/Survivor_45', 13), " +
+            "(46, '', 'https://en.wikipedia.org/wiki/Survivor_46', 13)",
+    );
+});
 
+describe('GET /api/feed', () => {
     it('403s for a caller who is not on the roster', async () => {
         const res = await req('GET', '/api/feed', { email: 'nobody@example.com' });
         expect(res.status).toBe(403);
@@ -333,5 +334,62 @@ describe('GET /api/feed', () => {
         const res = await req('GET', '/api/feed', { email: 'bob@example.com' });
         const data = await res.json();
         expect(Number.isNaN(Date.parse(data.now))).toBe(false);
+    });
+});
+
+describe('POST /api/feed/seen', () => {
+    it('403s for a caller who is not on the roster', async () => {
+        const res = await req('POST', '/api/feed/seen', { email: 'nobody@example.com' });
+        expect(res.status).toBe(403);
+    });
+
+    it('stamps the caller and returns the mark', async () => {
+        const res = await req('POST', '/api/feed/seen', { email: 'bob@example.com' });
+        expect(res.status).toBe(200);
+        const data = await res.json();
+        expect(Number.isNaN(Date.parse(data.feed_seen_at))).toBe(false);
+
+        const row = await env.DB.prepare('SELECT feed_seen_at FROM user_emails WHERE email = ?')
+            .bind('bob@example.com')
+            .first();
+        expect(row.feed_seen_at).toBe(data.feed_seen_at);
+    });
+
+    it('leaves the other half of a shared column unmarked', async () => {
+        await req('POST', '/api/feed/seen', { email: 'bob@example.com' });
+        const row = await env.DB.prepare('SELECT feed_seen_at FROM user_emails WHERE email = ?')
+            .bind('carol@example.com')
+            .first();
+        expect(row.feed_seen_at).toBeNull();
+    });
+
+    it('clears the unread count it was called to clear', async () => {
+        await env.DB.prepare(
+            `INSERT INTO posts (season_id, episode, user_id, body, created_at, author_email)
+             VALUES (45, 3, 'user-alice', 'note', ?, 'alice@example.com')`,
+        )
+            .bind(new Date(Date.now() - 60 * 1000).toISOString())
+            .run();
+
+        const before = await (await req('GET', '/api/feed', { email: 'bob@example.com' })).json();
+        expect(before.unread_count).toBe(1);
+
+        await req('POST', '/api/feed/seen', { email: 'bob@example.com' });
+
+        const after = await (await req('GET', '/api/feed', { email: 'bob@example.com' })).json();
+        expect(after.unread_count).toBe(0);
+        expect(after.events).toHaveLength(1);
+    });
+
+    it('is idempotent', async () => {
+        const first = await (
+            await req('POST', '/api/feed/seen', { email: 'bob@example.com' })
+        ).json();
+        const second = await (
+            await req('POST', '/api/feed/seen', { email: 'bob@example.com' })
+        ).json();
+        expect(Date.parse(second.feed_seen_at)).toBeGreaterThanOrEqual(
+            Date.parse(first.feed_seen_at),
+        );
     });
 });
