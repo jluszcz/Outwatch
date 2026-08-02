@@ -6,7 +6,7 @@ A bell in the header shows what has happened on the board since you last
 checked. It carries a count of unread activity and opens a short, timestamped
 list:
 
-> Alice posted to Season 45 Episode 3 — 3 hours ago
+> Alice commented on Season 45 Episode 3 — 3 hours ago
 
 Clicking a line takes you to that episode's discussion board.
 
@@ -46,7 +46,7 @@ and reactions are per individual, everything about watching is per column.
 There is **no event table**. Events are read from `posts.created_at` live. The
 consequence that makes this the right call: a deleted note leaves the feed on
 its own, and no denormalized row can drift from the note it describes. A
-generic `events` log would leave a stale "Alice posted" line behind after
+generic `events` log would leave a stale "Alice commented" line behind after
 Alice deleted the note — preserving exactly what they unsaid, the same objection
 that made `DELETE /api/posts/:post_id` detach replies rather than leave a
 `[deleted]` ghost.
@@ -56,7 +56,7 @@ that made `DELETE /api/posts/:post_id` detach replies rather than leave a
 The group key is `(author, season, episode, calendar day)` — one line per
 person per episode per day, however many notes they left.
 
-The line carries **no count**. "Alice posted to Season 45 Episode 3" already
+The line carries **no count**. "Alice commented on Season 45 Episode 3" already
 implies one or more, and the number is not something you would act on
 differently: two notes and five notes both mean go read the episode. Leaving it
 out also keeps the line to one phrase with nothing trailing it, which is what
@@ -189,7 +189,7 @@ surfaces nothing: it is not worth an error banner, and the next open retries it.
 A line reads:
 
 ```
-Alice posted to Season 45 Episode 3
+Alice commented on Season 45 Episode 3
 3 hours ago
 ```
 
