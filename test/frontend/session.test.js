@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { sessionOffsetSecs, SESSION_IDLE_LIMIT_SECS } from '../../shared/session.js';
+import {
+    sessionOffsetSecs,
+    SESSION_IDLE_LIMIT_SECS,
+    MAX_OFFSET_ADJUST_SECS,
+} from '../../shared/session.js';
 
 const T0 = Date.parse('2026-07-25T21:00:00.000Z');
 const at = (secs) => T0 + secs * 1000;
@@ -39,5 +43,37 @@ describe('sessionOffsetSecs', () => {
     it('never returns a negative offset when clocks disagree', () => {
         const session = { elapsed_secs: 0, running_since: iso(30), last_activity_at: iso(30) };
         expect(sessionOffsetSecs(session, at(0))).toBe(0);
+    });
+
+    it('adds a correction to the running total', () => {
+        const session = { elapsed_secs: 600, running_since: null, last_activity_at: iso(0) };
+        expect(sessionOffsetSecs(session, at(60), 45)).toBe(645);
+        expect(sessionOffsetSecs(session, at(60), -45)).toBe(555);
+    });
+
+    it('defaults the correction to zero when omitted', () => {
+        const session = { elapsed_secs: 600, running_since: null, last_activity_at: iso(0) };
+        expect(sessionOffsetSecs(session, at(60))).toBe(600);
+    });
+
+    // A correction is a statement about the episode's zero point, not about when
+    // the app was last touched, so it cannot revive a session that has gone stale.
+    it('is still null for a stale session however large the correction', () => {
+        const session = { elapsed_secs: 600, running_since: null, last_activity_at: iso(0) };
+        expect(sessionOffsetSecs(session, at(SESSION_IDLE_LIMIT_SECS + 1), 3600)).toBeNull();
+    });
+
+    // A correction backwards can push an early note below zero. That is left to
+    // sort truthfully; formatOffset and formatOffsetShort clamp the display.
+    it('allows a correction to push the total negative', () => {
+        const session = { elapsed_secs: 10, running_since: null, last_activity_at: iso(0) };
+        expect(sessionOffsetSecs(session, at(0), -60)).toBe(-50);
+    });
+});
+
+describe('MAX_OFFSET_ADJUST_SECS', () => {
+    // Shared so the client clamp and the server's 400 cannot disagree.
+    it('is an hour, far past any plausible zero-point error', () => {
+        expect(MAX_OFFSET_ADJUST_SECS).toBe(3600);
     });
 });

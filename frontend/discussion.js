@@ -3,8 +3,17 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'preact/hooks'
 import htm from 'htm';
 import { api } from './api.js';
 import { useRefreshGuard, useRefreshOnFocus, useSubmitGuard } from './hooks.js';
-import { seasonLabel, orderPosts, formatOffset, quoteSnippet, bodyAfterPost } from './utils.js';
-import { sessionOffsetSecs } from '../shared/session.js';
+import {
+    seasonLabel,
+    orderPosts,
+    formatOffset,
+    formatAdjust,
+    clampAdjust,
+    settledAdjust,
+    quoteSnippet,
+    bodyAfterPost,
+} from './utils.js';
+import { sessionOffsetSecs, MAX_OFFSET_ADJUST_SECS } from '../shared/session.js';
 import { PostList } from './post.js';
 
 const html = htm.bind(h);
@@ -119,6 +128,20 @@ export function SeasonView({ seasonId }) {
             { suppressError: (err) => err.status === 409 },
         );
 
+    // Absolute rather than a delta, matching the route: a retried or duplicated
+    // PUT then still lands on the same total instead of compounding. The
+    // accumulation that makes a run of taps add up lives entirely on
+    // WatchTimer's side, in a local total it seeds from adjust_secs — this
+    // call only ever carries what that total already is.
+    const setOffsetAdjust = (episode, adjustSecs) =>
+        mutate(() =>
+            api(`/api/seasons/${seasonId}/episodes/${episode}/offset`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ adjust_secs: adjustSecs }),
+            }),
+        );
+
     if (loading) return html`<div class="loading">Loading…</div>`;
     // Only a failure with nothing to show yet (the initial load) gets the view to
     // itself. Once there is data, an error is a banner *above* it, the way the
@@ -172,6 +195,7 @@ export function SeasonView({ seasonId }) {
                             onEdit=${editPost}
                             onReact=${setReaction}
                             onTimer=${setTimer}
+                            onOffsetAdjust=${setOffsetAdjust}
                         />`,
                 )}
             </div>
@@ -193,6 +217,7 @@ function EpisodeBoard({
     onEdit,
     onReact,
     onTimer,
+    onOffsetAdjust,
 }) {
     const placed = useMemo(() => orderPosts(ep.posts), [ep.posts]);
 
@@ -296,8 +321,10 @@ function EpisodeBoard({
                                         meId &&
                                         html`<${WatchTimer}
                                             session=${ep.session}
+                                            adjustSecs=${ep.adjust_secs ?? 0}
                                             serverSkewMs=${serverSkewMs}
                                             onAction=${(action) => onTimer(ep.episode, action)}
+                                            onAdjust=${(secs) => onOffsetAdjust(ep.episode, secs)}
                                         />`
                                     }
                                 </div>
@@ -344,8 +371,58 @@ function EpisodeBoard({
 // all land on the same number. It stops at the same three-hour staleness point
 // the server uses (shared/session.js), because showing a number the server would
 // refuse to stamp would be a promise the post cannot keep.
-function WatchTimer({ session, serverSkewMs, onAction }) {
+//
+// The ± button opens a second row of nudges. Everyone watches separately, so
+// timers drift by a constant shift — one person started before the "previously
+// on", another skipped the recap — and one number corrects it. That number is
+// applied on read, so a nudge also moves every note you have already posted on
+// this episode, which is the point: you discover the drift by seeing your note
+// land in the wrong place.
+function WatchTimer({ session, adjustSecs, serverSkewMs, onAction, onAdjust }) {
     const [tick, setTick] = useState(0);
+    // Local to the timer and deliberately not episode-scoped state up in
+    // EpisodeBoard: the row belongs to this control, and nothing outside it
+    // needs to know whether it is open.
+    const [adjusting, setAdjusting] = useState(false);
+
+    // The running total taps accumulate against, seeded from the server's
+    // adjust_secs and reconciled below. Not read straight off the adjustSecs
+    // prop: mutate() (SeasonView) awaits the PUT and then a refetch that
+    // useRefreshGuard defers until every in-flight mutation settles
+    // (refresh-guard.js), so the prop can lag a tap by two full round trips.
+    // A second tap inside that window would read the same not-yet-updated
+    // prop, compute the same total the first tap already sent, and be
+    // silently dropped by the `next === current` no-op check below — this
+    // local copy is what makes each tap see the previous one's result.
+    const [pendingAdjust, setPendingAdjust] = useState(adjustSecs);
+
+    // The last value this component knows the server actually holds, read by
+    // nudge/reset below to undo an optimistic update a failed PUT never
+    // committed. A ref rather than the adjustSecs prop directly: by the time
+    // a rejected request's `await` settles, this component may have
+    // re-rendered on a newer prop value, and the closure captured at click
+    // time would restore that stale snapshot instead of the current one.
+    // Advanced by a successful PUT as well as by the effect below, because the
+    // refetch that would carry the new value back into the prop can fail on its
+    // own (useRefreshGuard swallows it) — leaving this ref, and so the
+    // restore-on-failure path, pointing at a value the server no longer holds
+    // until some later refetch succeeds.
+    const adjustSecsRef = useRef(adjustSecs);
+
+    // Reconciles once the server's value genuinely changes underneath this
+    // component — another device adjusted the same episode, or a later
+    // load/focus refetch. Keyed on adjustSecs rather than syncing every
+    // render: the eventual echo of a value this component already applied
+    // leaves the prop unchanged, so the effect does not re-fire for it and
+    // does not clobber a tap made in the meantime. This does not by itself
+    // cover a failed PUT — that leaves the server's value, and so this prop,
+    // unchanged, which is exactly why nudge/reset below restore from
+    // adjustSecsRef explicitly rather than waiting on this effect to notice
+    // anything.
+    useEffect(() => {
+        adjustSecsRef.current = adjustSecs;
+        setPendingAdjust(adjustSecs);
+    }, [adjustSecs]);
 
     useEffect(() => {
         if (!session?.running_since) return;
@@ -353,29 +430,115 @@ function WatchTimer({ session, serverSkewMs, onAction }) {
         return () => clearInterval(id);
     }, [session?.running_since]);
 
-    const offset = sessionOffsetSecs(session, Date.now() + serverSkewMs);
+    const offset = sessionOffsetSecs(session, Date.now() + serverSkewMs, pendingAdjust);
     // `tick` only exists to force this re-render each second.
     void tick;
 
-    if (offset === null) {
-        return html`
-            <div class="timer">
-                ${session && html`<span class="timer-expired">timer expired</span>`}
-                <button class="timer-btn" onClick=${() => onAction('start')}>Start watching</button>
-            </div>
-        `;
-    }
+    // Which nudge is the newest — the same generation-counter pattern
+    // refresh-guard.js uses to keep an out-of-order fetch response from
+    // overwriting a newer one (there, `startFetch`/`isCurrent`; here, one ref
+    // instead of a whole guard object, since only one thing — pendingAdjust —
+    // is ever being decided). Two taps close together send two PUTs that can
+    // resolve in either order; without this, a slow failure landing after a
+    // fast success would restore pendingAdjust to the pre-failure value and
+    // stomp a result the server had already confirmed.
+    const nudgeSeqRef = useRef(0);
 
-    const running = session.running_since != null;
+    // Applies a new total optimistically, then settles it once the request
+    // that carries it comes back — but only if this is still the newest
+    // nudge in flight; see nudgeSeqRef above. `onAdjust` resolves `mutate`'s
+    // own success boolean (SeasonView), so there is nothing to poll: a
+    // rejected PUT already left an error banner up in SeasonView, this just
+    // stops the control from disagreeing with it once the dust settles.
+    const apply = async (next) => {
+        setPendingAdjust(next);
+        const seq = (nudgeSeqRef.current += 1);
+        const ok = await onAdjust(next);
+        const settled = settledAdjust(seq === nudgeSeqRef.current, ok, next, adjustSecsRef.current);
+        // Whatever this settles on is also the best thing known about the
+        // server: `next` if it accepted the value, the previous known-stored
+        // value if it didn't (a no-op assignment), and nothing at all if a
+        // newer nudge has taken over — that one settles the ref itself, and an
+        // older response must not speak for it here either.
+        if (settled !== undefined) {
+            adjustSecsRef.current = settled;
+            setPendingAdjust(settled);
+        }
+    };
+
+    // Clamped here as well as server-side so a run of taps stops at the limit
+    // instead of collecting a 400 banner per tap. Against pendingAdjust, not
+    // the prop, so consecutive taps within one round trip accumulate instead
+    // of each computing the same total from a stale base.
+    const nudge = (delta) => {
+        const next = clampAdjust(pendingAdjust, delta, MAX_OFFSET_ADJUST_SECS);
+        if (next !== pendingAdjust) apply(next);
+    };
+
+    const reset = () => apply(0);
+
+    const chip =
+        offset === null
+            ? html`
+                  ${session && html`<span class="timer-expired">timer expired</span>`}
+                  <button class="timer-btn" onClick=${() => onAction('start')}>
+                      Start watching
+                  </button>
+              `
+            : html`
+                  <button
+                      class=${'timer-chip' + (session.running_since ? ' running' : '')}
+                      title=${session.running_since ? 'Pause' : 'Resume'}
+                      aria-label=${
+                          (session.running_since ? 'Pause timer at ' : 'Resume timer from ') +
+                          formatOffset(offset)
+                      }
+                      onClick=${() => onAction(session.running_since ? 'pause' : 'resume')}
+                  >
+                      ${session.running_since ? '▶' : '⏸'} ${formatOffset(offset)}
+                  </button>
+                  <button class="timer-btn" onClick=${() => onAction('start')}>Restart</button>
+              `;
+
     return html`
-        <div class="timer">
-            <span class=${'timer-chip' + (running ? ' running' : '')}>
-                ${running ? '▶' : '⏸'} ${formatOffset(offset)}
-            </span>
-            <button class="timer-btn" onClick=${() => onAction(running ? 'pause' : 'resume')}>
-                ${running ? 'Pause' : 'Resume'}
-            </button>
-            <button class="timer-btn subtle" onClick=${() => onAction('start')}>Restart</button>
+        <div class="timer-stack">
+            <div class="timer">
+                ${chip}
+                <button
+                    class="timer-btn timer-adjust-toggle"
+                    aria-expanded=${adjusting}
+                    title="Adjust this episode's timer"
+                    aria-label="Adjust this episode's timer"
+                    onClick=${() => setAdjusting((v) => !v)}
+                >
+                    <span aria-hidden="true">±</span>
+                </button>
+            </div>
+            ${
+                adjusting &&
+                html`<div class="timer-adjust" role="group" aria-label="Timer adjustment">
+                    ${
+                        // Reset leads the row, which reads oddly and is load-bearing. It is the
+                        // one control here that comes and goes, and this row is pinned to its
+                        // right edge (.timer-stack is align-items: flex-end), so whichever end
+                        // Reset occupies is the end that moves. At the trailing end its arrival
+                        // shoved all four nudge buttons left by a Reset-width the instant the
+                        // total left zero — sliding +15s out from under the finger that had just
+                        // tapped it. At the leading end it grows the row leftwards into empty
+                        // space and nothing else moves at all. Reserving its width instead (a
+                        // hidden-but-present Reset) also held the buttons still, but then every
+                        // visible button sat a Reset-width shy of the right edge, so the row no
+                        // longer lined up with the timer above it.
+                        pendingAdjust !== 0 &&
+                        html`<button class="timer-btn subtle" onClick=${reset}>Reset</button>`
+                    }
+                    <button class="timer-btn" onClick=${() => nudge(-60)}>−1m</button>
+                    <button class="timer-btn" onClick=${() => nudge(-15)}>−15s</button>
+                    <span class="timer-adjust-total">${formatAdjust(pendingAdjust)}</span>
+                    <button class="timer-btn" onClick=${() => nudge(15)}>+15s</button>
+                    <button class="timer-btn" onClick=${() => nudge(60)}>+1m</button>
+                </div>`
+            }
         </div>
     `;
 }

@@ -14,6 +14,10 @@ const timed = (id, user_id, offset_secs, created_at) => ({
     offset_secs,
 });
 const untimed = (id, user_id, created_at) => timed(id, user_id, null, created_at);
+const replying = (id, user_id, offset_secs, created_at, parentId) => ({
+    ...timed(id, user_id, offset_secs, created_at),
+    reply_to: { id: parentId, author_name: 'Someone', author_index: 0, mine: false, body: 'x' },
+});
 const names = (placed) => placed.map((p) => `${p.post.user_id}@${p.offset}`);
 
 describe('orderPosts', () => {
@@ -109,6 +113,64 @@ describe('orderPosts', () => {
             { id: 3, user_id: 'u1', offset_secs: 60, created_at: '2026-01-01T00:05:00Z' },
         ];
         expect(orderPosts(posts).map((p) => p.post.id)).toEqual([1, 3, 2]);
+    });
+
+    // Two people whose timers disagree can stamp a reply earlier than the note it
+    // answers, which put the quote block above the note it quotes.
+    it('pulls a reply down to sit directly after an earlier-stamped parent', () => {
+        const posts = [
+            timed(1, 'alice', 900, '2026-07-20T21:15:00.000Z'),
+            replying(2, 'bob', 300, '2026-07-23T06:05:00.000Z', 1),
+            timed(3, 'alice', 1200, '2026-07-20T21:20:00.000Z'),
+        ];
+        const placed = orderPosts(posts);
+        expect(placed.map((p) => p.post.id)).toEqual([1, 2, 3]);
+        expect(placed[1].clamped).toBe(true);
+    });
+
+    it('resolves a chain of replies, each stamped before the last', () => {
+        const posts = [
+            timed(1, 'alice', 900, '2026-07-20T21:15:00.000Z'),
+            replying(2, 'bob', 600, '2026-07-23T06:10:00.000Z', 1),
+            replying(3, 'carol', 300, '2026-07-24T06:05:00.000Z', 2),
+        ];
+        expect(orderPosts(posts).map((p) => p.post.id)).toEqual([1, 2, 3]);
+    });
+
+    // Nothing to do with drift: a stray untimed note from a timed author sits in
+    // the tail, and a timed reply to it must follow it down there.
+    it('follows a tail parent into the tail', () => {
+        const posts = [
+            timed(1, 'alice', 900, '2026-07-20T21:15:00.000Z'),
+            untimed(2, 'alice', '2026-07-22T21:10:00.000Z'),
+            replying(3, 'bob', 300, '2026-07-23T06:05:00.000Z', 2),
+        ];
+        const placed = orderPosts(posts);
+        expect(placed.map((p) => p.post.id)).toEqual([1, 2, 3]);
+        expect(placed[2].clamped).toBe(true);
+    });
+
+    it('leaves a reply that already follows its parent unclamped', () => {
+        const posts = [
+            timed(1, 'alice', 300, '2026-07-20T21:05:00.000Z'),
+            replying(2, 'bob', 900, '2026-07-23T06:15:00.000Z', 1),
+        ];
+        const placed = orderPosts(posts);
+        expect(placed.map((p) => p.post.id)).toEqual([1, 2]);
+        expect(placed[1].clamped).toBe(false);
+    });
+
+    // A locked parent is not rendered at all, so there is no ordering to violate;
+    // a deleted one leaves reply_to null. Both leave the reply where it fell.
+    it('leaves a reply alone when the parent is not in the list', () => {
+        const locked = {
+            ...timed(2, 'bob', 300, '2026-07-23T06:05:00.000Z'),
+            reply_to: { id: 99, locked: true },
+        };
+        const posts = [timed(1, 'alice', 900, '2026-07-20T21:15:00.000Z'), locked];
+        const placed = orderPosts(posts);
+        expect(placed.map((p) => p.post.id)).toEqual([2, 1]);
+        expect(placed[0].clamped).toBe(false);
     });
 });
 

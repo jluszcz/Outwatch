@@ -3,7 +3,7 @@ import { HTTPException } from 'hono/http-exception';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 
-import { sessionOffsetSecs } from '../shared/session.js';
+import { sessionOffsetSecs, MAX_OFFSET_ADJUST_SECS } from '../shared/session.js';
 import { MAX_REACTIONS_PER_POST, isReactionEmoji } from '../shared/reactions.js';
 import { accessTokenEmail } from './access.js';
 
@@ -32,6 +32,18 @@ const timerAction = z.object({
     action: z.enum(['start', 'pause', 'resume'], {
         message: 'action must be start, pause, or resume',
     }),
+});
+
+const offsetAdjust = z.object({
+    adjust_secs: z
+        .number()
+        .int({ message: 'adjust_secs must be a whole number of seconds' })
+        .min(-MAX_OFFSET_ADJUST_SECS, {
+            message: `adjust_secs must be within ${MAX_OFFSET_ADJUST_SECS} seconds of zero`,
+        })
+        .max(MAX_OFFSET_ADJUST_SECS, {
+            message: `adjust_secs must be within ${MAX_OFFSET_ADJUST_SECS} seconds of zero`,
+        }),
 });
 
 const postBody = z
@@ -496,6 +508,7 @@ app.get('/api/seasons/:season_id/discussion', async (c) => {
         { results: sessions },
         people,
         { results: reactionRows },
+        { results: offsets },
     ] = await Promise.all([
         c.env.DB.prepare(
             `SELECT id, episode, user_id, body, created_at, offset_secs, author_email,
@@ -533,11 +546,25 @@ app.get('/api/seasons/:season_id/discussion', async (c) => {
         )
             .bind(seasonId)
             .all(),
+        // Every user's corrections, not just the caller's: a post is shifted by the
+        // correction of whoever wrote it. One query for the season, grouped below.
+        c.env.DB.prepare(
+            'SELECT user_id, episode, adjust_secs FROM watch_offsets WHERE season_id = ?',
+        )
+            .bind(seasonId)
+            .all(),
     ]);
 
     const watchedSeason = watchedRow != null;
     const revealed = new Set(reveals.map((r) => r.episode));
     const sessionByEpisode = new Map(sessions.map((s) => [s.episode, s]));
+
+    // A watch-timer correction (migration 0008) is applied here rather than stored
+    // into posts.offset_secs, which keeps meaning what the writer's timer actually
+    // read. Applying on read is what lets a correction be revised, and what makes
+    // it reach the notes that revealed the drift in the first place.
+    const adjustByKey = new Map(offsets.map((o) => [`${o.user_id}:${o.episode}`, o.adjust_secs]));
+    const adjustFor = (userId, episode) => adjustByKey.get(`${userId}:${episode}`) ?? 0;
 
     const byEpisode = new Map();
     for (const p of posts) {
@@ -596,7 +623,8 @@ app.get('/api/seasons/:season_id/discussion', async (c) => {
                 user_id: p.user_id,
                 body: p.body,
                 created_at: p.created_at,
-                offset_secs: p.offset_secs,
+                offset_secs:
+                    p.offset_secs == null ? null : p.offset_secs + adjustFor(p.user_id, episode),
                 edited_at: p.edited_at,
                 reply_to: quoteOf(p, byId, visibleIds, people, me),
                 reactions: reactionsOf(p.id, reactionsByPost, people, me),
@@ -609,6 +637,9 @@ app.get('/api/seasons/:season_id/discussion', async (c) => {
                       last_activity_at: session.last_activity_at,
                   }
                 : null,
+            // The caller's own correction, for the live chip — it ticks locally, so it
+            // has to add the same number the posts above already got.
+            adjust_secs: me ? adjustFor(me.id, episode) : 0,
         });
     }
 
@@ -903,6 +934,57 @@ app.post(
             session,
             offset_secs: sessionOffsetSecs(session, nowMs),
         });
+    },
+);
+
+// Correct where this episode started for you. Timers drift because people press
+// start at different points relative to the show — before the "previously on",
+// after the cold open, or not at all because they skipped the recap — so the
+// error is a constant shift and one number fixes it.
+//
+// The value is absolute rather than a delta, for the reason the reactions route
+// takes an explicit `on` instead of toggling: the client computes the new total
+// from what the server last reported, so a double-tap, a retry, or a slow
+// network cannot accumulate a correction nobody asked for.
+//
+// Its own route rather than a fourth timer action: it writes no session, and it
+// has to work when none exists. Noticing your notes sit in the wrong place
+// happens while reading the board, long after the timer went stale.
+app.put(
+    '/api/seasons/:season_id/episodes/:episode/offset',
+    zValidator('json', offsetAdjust, onInvalid),
+    async (c) => {
+        const me = await callerUser(c);
+        if (!me) return c.json({ error: 'Your account is not on the watch list' }, 403);
+
+        const resolved = await resolveEpisode(c);
+        if (resolved.error) return c.json({ error: resolved.error }, resolved.status);
+        const { season, episode } = resolved;
+
+        const { adjust_secs } = c.req.valid('json');
+        const key = [me.id, season.id, episode];
+
+        if (adjust_secs === 0) {
+            // "No correction" gets one representation rather than two.
+            await c.env.DB.prepare(
+                'DELETE FROM watch_offsets WHERE user_id = ? AND season_id = ? AND episode = ?',
+            )
+                .bind(...key)
+                .run();
+        } else {
+            await c.env.DB.prepare(
+                `INSERT INTO watch_offsets
+                     (user_id, season_id, episode, adjust_secs, updated_at)
+                 VALUES (?, ?, ?, ?, ?)
+                 ON CONFLICT (user_id, season_id, episode) DO UPDATE SET
+                     adjust_secs = excluded.adjust_secs,
+                     updated_at = excluded.updated_at`,
+            )
+                .bind(...key, adjust_secs, new Date().toISOString())
+                .run();
+        }
+
+        return c.json({ success: true, season_id: season.id, episode, adjust_secs });
     },
 );
 

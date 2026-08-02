@@ -12,6 +12,9 @@ import {
     clearsCurrentlyWatching,
     quoteSnippet,
     bodyAfterPost,
+    formatAdjust,
+    clampAdjust,
+    settledAdjust,
 } from '../../frontend/utils.js';
 
 // ---------------------------------------------------------------------------
@@ -350,5 +353,86 @@ describe('bodyAfterPost', () => {
 
     it('keeps text typed on top of the note while it was in flight', () => {
         expect(bodyAfterPost('a thought and more', 'a thought')).toBe('a thought and more');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// formatAdjust
+// ---------------------------------------------------------------------------
+
+describe('formatAdjust', () => {
+    it('shows no correction as a plus-minus zero', () => {
+        expect(formatAdjust(0)).toBe('±0:00');
+    });
+
+    it('signs a forward correction', () => {
+        expect(formatAdjust(45)).toBe('+0:45');
+        expect(formatAdjust(75)).toBe('+1:15');
+    });
+
+    // U+2212, matching the −1m / −15s buttons rather than a hyphen.
+    it('signs a backward correction with a real minus', () => {
+        expect(formatAdjust(-45)).toBe('−0:45');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// clampAdjust
+// ---------------------------------------------------------------------------
+
+describe('clampAdjust', () => {
+    it('adds the delta to the current total', () => {
+        expect(clampAdjust(0, 15, 3600)).toBe(15);
+        expect(clampAdjust(15, 15, 3600)).toBe(30);
+    });
+
+    it('accumulates a run of taps against its own result, not a fixed base', () => {
+        // The regression this exists for: two rapid nudges must land on 30, not
+        // both compute 0 + 15 against a total that hasn't round-tripped to the
+        // server yet.
+        let pending = 0;
+        pending = clampAdjust(pending, 15, 3600);
+        pending = clampAdjust(pending, 15, 3600);
+        expect(pending).toBe(30);
+    });
+
+    it('clamps at the positive limit', () => {
+        expect(clampAdjust(3590, 15, 3600)).toBe(3600);
+    });
+
+    it('clamps at the negative limit', () => {
+        expect(clampAdjust(-3590, -15, 3600)).toBe(-3600);
+    });
+
+    it('is a no-op once already at the limit', () => {
+        expect(clampAdjust(3600, 15, 3600)).toBe(3600);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// settledAdjust
+// ---------------------------------------------------------------------------
+
+describe('settledAdjust', () => {
+    it('keeps the optimistic value once the newest request succeeds', () => {
+        expect(settledAdjust(true, true, 30, 0)).toBe(30);
+    });
+
+    it('reverts to the last known-good value when the newest request fails', () => {
+        // The regression this exists for: a failed PUT leaves the server's
+        // adjust_secs unchanged, so nothing else notices and undoes the
+        // optimistic update — this is the decision that does.
+        expect(settledAdjust(true, false, 30, 0)).toBe(0);
+    });
+
+    it('ignores a stale failure once a newer request has already settled', () => {
+        // The regression this one exists for: two overlapping taps resolve out
+        // of order, and an older failure landing after a newer success must not
+        // stomp the confirmed result back down.
+        expect(settledAdjust(false, false, 30, 0)).toBeUndefined();
+    });
+
+    it('ignores a stale success once a newer request has already settled', () => {
+        expect(settledAdjust(false, true, 30, 0)).toBeUndefined();
     });
 });

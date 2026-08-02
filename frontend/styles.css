@@ -1045,19 +1045,30 @@ tr.flash td {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    /* Pushes the timer to the right edge of .episode-actions — and keeps it
-       there when the reveal button is gone and it is the only child. */
-    margin-left: auto;
 }
 
+/* The chip is the pause/resume control, not a readout beside one — there is no
+   Pause button any more, because the thing you want to stop is the number
+   itself and a separate button to stop it was a second place to look. It stays
+   a pill rather than becoming a third roundrect so the one control that shows
+   state still reads differently from the two that only act; the ▶/⏸ glyph
+   carries which way a click will go. font-family: inherit because a <button>
+   does not take the page's font on its own, and min-height pins it to the same
+   line as Restart and ± now that all three are peers in the row. */
 .timer-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    min-height: var(--control-height);
     font-variant-numeric: tabular-nums;
-    padding: 0.2rem 0.5rem;
+    padding: 0.2rem 0.6rem;
     border-radius: 999px;
     background: var(--surface-subtle);
     border: 1px solid var(--border);
+    font-family: inherit;
     font-size: 0.85rem;
     color: var(--text-subtle);
+    cursor: pointer;
 }
 
 .timer-chip.running {
@@ -1070,7 +1081,15 @@ tr.flash td {
     color: var(--amber-text);
 }
 
+/* Height comes from --control-height rather than from the text, so every
+   control in the timer rows lines up whatever it contains — Restart's word,
+   the ±'s single glyph, and the nudge row's −15s all sit at one height.
+   inline-flex so the label stays centred once min-height exceeds it, the same
+   pairing .reveal-btn uses for the same reason. */
 .timer-btn {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--control-height);
     padding: 0.25rem 0.6rem;
     background: none;
     border: 1px solid var(--border);
@@ -1083,6 +1102,60 @@ tr.flash td {
 .timer-btn.subtle {
     border-color: transparent;
     color: var(--text-muted);
+}
+
+/* Rides .timer-btn for its roundrect, so the ± matches Restart above it and the
+   nudge buttons below it rather than being a third shape in a three-control
+   row. This class adds only what a plain .timer-btn cannot say: centring for a
+   single glyph, a min-width so a one-character label is not narrower than every
+   other button, and the open state — which takes .timer-chip.running's accent
+   fill, reusing the "this is live" signal the running timer already establishes
+   rather than inventing a second one. */
+.timer-adjust-toggle {
+    justify-content: center;
+    min-width: var(--control-height);
+    padding: 0.25rem;
+}
+
+.timer-adjust-toggle[aria-expanded='true'] {
+    background: var(--surface-accent);
+    color: var(--text);
+}
+
+/* The timer and its optional adjustment row are one flex item in
+   .episode-actions, not two: two would wrap apart from each other at narrow
+   widths and put the nudges on the far side of the reveal button. */
+.timer-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.4rem;
+    /* Pushes the whole timer to the right edge of .episode-actions — and keeps
+       it there when the reveal button is gone and it is the only child. */
+    margin-left: auto;
+}
+
+.timer-adjust {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    /* Only bites once the row is wide enough to wrap (the phone block below),
+       where it keeps a wrapped-off line hard right with the rest rather than
+       stranded at the left. Unwrapped, the row is content-sized and
+       .timer-stack's flex-end has already placed it. */
+    justify-content: flex-end;
+}
+
+/* The running total, not a per-tap readout: the correction is stored state, so
+   you need to see how far you have pushed yourself to know whether to undo it.
+   Fixed width and tabular figures so the buttons either side hold still while
+   the number changes under a finger. */
+.timer-adjust-total {
+    min-width: 3.5rem;
+    font-variant-numeric: tabular-nums;
+    font-size: 0.8rem;
+    color: var(--text-subtle);
+    text-align: center;
 }
 
 .post-form {
@@ -1413,12 +1486,13 @@ tr.flash td {
         order: 1;
     }
 
-    /* Defensive: measured at 320px, the timer (a chip plus at most two
-       buttons) does not actually wrap, but flex-wrap costs nothing if that
-       ever changes. */
+    /* .timer holds a chip and up to three buttons, and .timer-adjust up to six
+       controls at a 44px touch target — both wrap at phone widths, so this is
+       load-bearing rather than the defensive rule it started as. */
     .episode-head,
     .season-view-head,
     .timer,
+    .timer-adjust,
     .sort-controls {
         flex-wrap: wrap;
     }
@@ -1428,8 +1502,16 @@ tr.flash td {
         align-items: center;
     }
 
+    /* min-width alongside the group below's min-height: a one-character label
+       would otherwise leave this the one control in the row too narrow to hit
+       reliably, however tall it got. */
+    .timer-adjust-toggle {
+        min-width: 44px;
+    }
+
     .reveal-btn,
     .post-submit,
+    .timer-chip,
     .timer-btn {
         min-height: 44px;
     }
@@ -1704,6 +1786,27 @@ tr.flash td {
         background: var(--surface-hover);
     }
 
+    /* Every button in both timer rows — Start watching, Restart, the nudges,
+       Reset, and the ± — since they are one family and hovering only some of
+       them made the rest look inert.
+
+       :not([aria-expanded='true']) for the same reason .sort-btn:hover excludes
+       .active: the ± is the only .timer-btn carrying that attribute, and its
+       open state is a class-plus-attribute selector of equal specificity
+       declared earlier, so an unscoped hover would win on source order and
+       flash an open toggle back to its closed fill. */
+    .timer-btn:not([aria-expanded='true']):hover {
+        background: var(--surface-hover);
+    }
+
+    /* Border rather than background, which is what lets one rule cover both
+       states: .timer-chip.running already owns the background at equal
+       specificity, and this block comes later, so a background here would
+       repaint a running chip on hover. */
+    .timer-chip:hover {
+        border-color: var(--text-faint);
+    }
+
     .nw-jump:hover {
         background: var(--blue);
         color: var(--surface);
@@ -1716,6 +1819,8 @@ tr.flash td {
    feedback would flash the already-selected sort button near-white. */
 .sort-btn:not(.active):active,
 .timer-btn:active,
+.timer-adjust-toggle:active,
+.timer-chip:active,
 .reveal-btn:active,
 .post-submit:active,
 .post-menu-item:active,

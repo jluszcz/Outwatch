@@ -128,11 +128,70 @@ export function formatOffsetShort(secs) {
     return `${total}s`;
 }
 
+// A watch-timer correction as a signed m:ss — "+0:45", "−1:15", "±0:00". Unlike
+// formatOffset this must show its sign and must not clamp: a backward
+// correction is the common one (you started the timer before the recap), and
+// hiding its sign would make the control unreadable. Uses U+2212 so it matches
+// the −15s / −1m buttons beside it rather than sitting next to them as a
+// hyphen.
+export function formatAdjust(secs) {
+    const total = Math.abs(Math.round(secs));
+    const sign = secs === 0 ? '±' : secs < 0 ? '−' : '+';
+    return `${sign}${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+}
+
+// A nudge tap's next total: `delta` added to `current`, held inside ±max.
+// Pulled out of WatchTimer so the arithmetic — including the "already at the
+// limit" case, where the result equals `current` and the caller should treat
+// the tap as a no-op — has a test that doesn't need a DOM. `max` is passed in
+// rather than imported, so this file (otherwise dependency-free) doesn't need
+// to reach into shared/session.js for one constant.
+export function clampAdjust(current, delta, max) {
+    return Math.max(-max, Math.min(max, current + delta));
+}
+
+// What a nudge's local total should settle on once its request comes back —
+// or whether it should change at all. `isCurrent` is false when a newer nudge
+// has been sent since this one, mirroring the generation counter
+// refresh-guard.js uses to keep an out-of-order fetch response from
+// overwriting a newer one: two overlapping requests can resolve in either
+// order, and an older response — success or failure — settling after a newer
+// one already has must not speak for it. Returns undefined in that case, for
+// the caller to treat as "leave pendingAdjust alone" rather than a value to
+// apply. Otherwise: the value optimistically applied if the server accepted
+// it, or the last value known to actually be stored there if it didn't —
+// a failed PUT leaves the server's adjust_secs (and so the component's own
+// adjustSecs prop) unchanged, so nothing else notices the rejection and
+// reverts the optimistic update on its own; this is the decision that does.
+export function settledAdjust(isCurrent, ok, next, fallback) {
+    if (!isCurrent) return undefined;
+    return ok ? next : fallback;
+}
+
+// A placement's sort key: tail notes last, then watch offset, then wall-clock
+// time, then post id. Compared lexicographically, this is the ordering the
+// timeline has always used, with the id appended — which is what makes the
+// reply clamp below land a reply *after* its parent rather than before, since
+// a parent's id is always smaller than its reply's.
+function sortKey(entry) {
+    // Tail entries carry a null offset and are ordered among themselves by
+    // wall-clock time, so they must compare equal on this component.
+    return [entry.tail ? 1 : 0, entry.tail ? 0 : entry.offset, entry.created, entry.post.id];
+}
+
+function compareKeys(a, b) {
+    for (let i = 0; i < a.length; i++) {
+        if (a[i] !== b[i]) return a[i] < b[i] ? -1 : 1;
+    }
+    return 0;
+}
+
 // Places every note on one timeline so a conversation written days apart reads
-// in episode order. Returns { post, offset, inferred, tail, created } — `created`
-// is the parsed created_at used as the sort key (and tiebreaker within a tail),
-// returned alongside the rest so callers don't have to re-parse it. Does not
-// mutate the input.
+// in episode order. Returns { post, offset, inferred, tail, created, clamped } —
+// `created` is the parsed created_at used as the sort key (and tiebreaker
+// within a tail), returned alongside the rest so callers don't have to
+// re-parse it; `clamped` is true only when the reply rule below actually moved
+// that entry. Does not mutate the input.
 //
 // An author who ran a timer has real offsets. An author who never did gets an
 // inferred zero — their own earliest note on the episode — so their notes still
@@ -154,20 +213,73 @@ export function orderPosts(posts) {
     const placed = posts.map((post) => {
         const created = Date.parse(post.created_at);
         if (post.offset_secs != null) {
-            return { post, offset: post.offset_secs, inferred: false, tail: false, created };
+            return {
+                post,
+                offset: post.offset_secs,
+                inferred: false,
+                tail: false,
+                created,
+                clamped: false,
+            };
         }
         if (timedAuthors.has(post.user_id)) {
-            return { post, offset: null, inferred: false, tail: true, created };
+            return { post, offset: null, inferred: false, tail: true, created, clamped: false };
         }
         const offset = Math.round((created - zeroByAuthor.get(post.user_id)) / 1000);
-        return { post, offset, inferred: true, tail: false, created };
+        return { post, offset, inferred: true, tail: false, created, clamped: false };
     });
 
-    return placed.sort((a, b) => {
-        if (a.tail !== b.tail) return a.tail ? 1 : -1;
-        if (!a.tail && a.offset !== b.offset) return a.offset - b.offset;
-        return a.created - b.created;
-    });
+    // A reply must never render above the note it answers. It is placed by its
+    // own watch offset like any other note — replies are not threaded — but two
+    // people whose timers disagree can stamp a reply earlier than its parent,
+    // and a note whose author's session went stale lands in the tail while a
+    // reply to it does not. Both put the quote block above the note it quotes.
+    //
+    // The fix is to clamp a reply's sort key to its parent's already-clamped
+    // key, keeping its own id in the last slot so it sorts after its parent —
+    // only after is guaranteed, not immediately after: an unrelated entry that
+    // shares the parent's (tail, offset, created) triple and whose id falls
+    // between the two would sort in between them. Resolved by memoized
+    // recursion so a chain of replies settles in one pass.
+    const byId = new Map(placed.map((entry) => [entry.post.id, entry]));
+    const keys = new Map();
+    const resolving = new Set();
+
+    const clampedKey = (entry) => {
+        const id = entry.post.id;
+        const cached = keys.get(id);
+        if (cached) return cached;
+
+        let key = sortKey(entry);
+        // A cycle cannot be written — a parent has to exist before it can be
+        // replied to, so ids strictly increase down a chain — but the guard
+        // keeps a corrupt response from recursing forever.
+        if (!resolving.has(id)) {
+            resolving.add(id);
+            // reply_to, not reply_to_post_id: the server serializes the parent
+            // as an object, and its locked form carries an id whose post is
+            // deliberately absent from this list — a miss here is the correct
+            // outcome, since an unrendered parent has no order to violate.
+            const parent = entry.post.reply_to && byId.get(entry.post.reply_to.id);
+            if (parent) {
+                const parentKey = clampedKey(parent);
+                if (compareKeys(key, parentKey) < 0) {
+                    key = [parentKey[0], parentKey[1], parentKey[2], id];
+                    entry.clamped = true;
+                }
+            }
+            resolving.delete(id);
+        }
+
+        keys.set(id, key);
+        return key;
+    };
+
+    // Resolved up front rather than inside the comparator, so `clamped` is
+    // settled on every entry before anything reads it.
+    for (const entry of placed) clampedKey(entry);
+
+    return placed.sort((a, b) => compareKeys(keys.get(a.post.id), keys.get(b.post.id)));
 }
 
 // A note reduced to one line for the reply chip: newlines and runs of

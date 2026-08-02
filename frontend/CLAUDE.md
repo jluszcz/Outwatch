@@ -200,7 +200,18 @@ of the root `CLAUDE.md` so it loads only when working on these files.
   earliest note on that episode, so their notes still interleave; and an
   untimed note from an author who _did_ time other notes on the episode (their
   session went stale and they posted again later) is dropped to the tail
-  sorted by wall-clock time, rather than given a fabricated offset.
+  sorted by wall-clock time, rather than given a fabricated offset. A fourth
+  rule sits on top of those three: a reply's sort key is clamped to its
+  parent's already-clamped key, with the post id as the final tiebreaker so a
+  clamped reply sorts after its parent rather than before it — only after is
+  guaranteed, not immediately after, since an unrelated entry sharing the
+  parent's `(tail, offset, created)` triple and whose id falls between the
+  two would sort in between them. A parent's id is always smaller than its
+  reply's, since it had to exist to be replied to — and `tail` participates
+  in the clamp so a timed reply follows a stranded
+  untimed parent into the tail rather than sorting ahead of it by offset
+  alone. The parent is looked up through `reply_to.id`; a locked or deleted
+  parent clamps nothing, since there is no visible order left to violate.
 - A note's meta line is two fixed-width gutters — a `2.5rem` `.post-time` then a
   `4rem` `.post-author` — so every body in a board starts at the same x
   instead of at wherever that note's author's name happened to end. `4rem` holds
@@ -226,9 +237,22 @@ of the root `CLAUDE.md` so it loads only when working on these files.
   block reuses the same `.post-aN` classes for its border, and `authorAccent`
   only picks the slot.
 - A reply renders as a quote block (`Quote` in `post.js`) above the note's own
-  body, not as an indented thread — `orderPosts` is untouched by replies, so a
-  reply sits wherever its own watch offset places it on the shared timeline,
-  same as any other note. The quote takes the _quoted_ author's accent class,
+  body, not as an indented thread. A reply sits at its own watch offset on the
+  shared timeline like any other note — but only up to the note it answers:
+  `orderPosts` clamps a reply's sort key so it never renders above its parent
+  (see the ordering bullet above), and a reply pulled down by that clamp shows
+  `↳` in its time chip rather than a stamp that would read backwards against
+  the note above it (`postTimeText`/`postTimeTitle` in `post.js`; the
+  suppressed stamp moves into the chip's `title`). The marker replaced a blank
+  chip: the `title` is hover-only, so on a phone a blank left a clamped reply
+  with no time information at all — and a clamped _tail_ note worse off than
+  before the clamp existed, since it had been showing a plain date. It also
+  says why the stamp is missing rather than merely omitting it. The span
+  renders either way — a marked chip, not a missing one — since an absent
+  `.post-time` would break the fixed `2.5rem` gutter every note's body lines up
+  against. The `title` says `estimated` rather than `stamped` for an inferred
+  offset, since that one was synthesized by `orderPosts` for an author who
+  never ran a timer. The quote takes the _quoted_ author's accent class,
   not the replier's, since it's read as "this is what they said," and it
   handles the server's three `reply_to` shapes: absent (no quote block), the
   parent's live `{ author_name, body, ... }` (so an edit to the parent shows
@@ -412,7 +436,87 @@ of the root `CLAUDE.md` so it loads only when working on these files.
 - The optional watch timer (`WatchTimer` in `discussion.js`, rule in
   `shared/session.js`) starts, pauses, and resumes per (user, episode); a
   session goes stale after three hours without a start/pause/resume/post, and
-  `pause`/`resume` on a stale session 409 without writing.
+  `pause`/`resume` on a stale session 409 without writing. A ± toggle next to
+  it opens a second row — Reset once the total is non-zero, then −1m / −15s /
+  running total / +15s / +1m — that sets `PUT .../offset` (migration `0008`).
+  There is deliberately **no Pause button**: the chip itself is the
+  pause/resume control, because the thing you want to stop is the number, and
+  a separate button to stop it was a second place to look for one action. That
+  makes `.timer-chip` a `<button>` rather than a `<span>` — hence
+  `font-family: inherit`, which a button does not take from the page on its
+  own — and its `aria-label` names the action _and_ the time, since a button
+  whose accessible name is only "+1:12" says nothing about what a click does.
+  The chip stays a pill while Restart and ± are roundrects: it is the one
+  control in the row that shows state rather than only acting, and the ▶/⏸
+  glyph carries which way a click will go.
+  The ± toggle rides `.timer-btn` for that roundrect and adds only what a plain
+  `.timer-btn` cannot say (`.timer-adjust-toggle`): centring for a single
+  glyph, a `min-width` so a one-character label is not narrower than every
+  other button, and the open state, which takes `.timer-chip.running`'s accent
+  fill rather than inventing a second live-state signal. `.timer-btn` takes its
+  height from `--control-height` rather than from its text — the same
+  `inline-flex` + `min-height` pairing `.reveal-btn` uses — so a word, a single
+  glyph, and `−15s` all come out the same height without anyone pinning them
+  one control at a time. A new control dropped into either timer row inherits
+  that alignment by using the class. One hover rule covers every button in
+  both rows — `.timer-btn:not([aria-expanded='true']):hover` — scoped for the
+  same reason `.sort-btn:hover` excludes `.active`: the ± is the only
+  `.timer-btn` carrying that attribute, and its open state is an
+  equal-specificity selector declared earlier, so an unscoped hover would win
+  on source order and flash an open toggle back to its closed fill.
+  `.timer-chip:hover` sidesteps the same collision the other way, moving
+  `border-color` instead of `background`, since `.timer-chip.running` already
+  owns the background at equal specificity — which is also why the chip is the
+  one control here whose hover is not a fill.
+  Reset _leads_ that row, which reads oddly and is deliberate: the row is
+  pinned to its right edge (`.timer-stack` is `align-items: flex-end`), so
+  whichever end the one control that comes and goes occupies is the end that
+  moves. Trailing, its arrival shoved all four nudge buttons left by a
+  Reset-width the moment the total left zero, sliding `+15s` out from under
+  the finger that had just tapped it; leading, it grows the row leftwards into
+  empty space and nothing else moves. Reserving its width instead — a
+  hidden-but-present Reset — held the buttons still too, but left every
+  visible button a Reset-width shy of the right edge, so the row stopped
+  lining up with the timer above it.
+  The correction is applied on read rather than baked into `posts.offset_secs`,
+  so a nudge moves every note already posted on that episode along with the
+  live chip's own total. It renders in both timer branches, including when no
+  session is live: noticing your notes are misplaced usually happens days
+  later while reading the board, not mid-watch, which is the case the control
+  exists for. `adjusting` (whether that row is open) is local state in
+  `WatchTimer` itself, not episode-scoped state up in `EpisodeBoard` the way
+  `replyTo`/`editingId`/`menuFor` are — the row belongs to this control alone
+  and nothing outside it needs to know whether it's open.
+    - The running total is its own optimistic state, `pendingAdjust`, rather
+      than a read of the `adjustSecs` prop: that prop is the server's last
+      known value, and it only moves forward on the next
+      `GET .../discussion` — two round trips behind a tap that just fired
+      `PUT .../offset` — so reading it directly would drop or stall every tap
+      thrown in quick succession instead of accumulating them. A `nudgeSeqRef`
+      generation counter tags each nudge — the same pattern `refresh-guard.js`
+      uses to stop an out-of-order fetch response from overwriting a newer
+      one, cut down to a single ref since only one thing (`pendingAdjust`) is
+      ever in flight here. Two taps close together can have their PUTs
+      resolve in either order; the counter is what lets a slower response
+      recognize it is no longer the newest and settle nothing rather than
+      stomping a result the server already confirmed. `settledAdjust`
+      (`utils.js`) is the pure decision the ref feeds: advance to the tapped
+      value on success, restore on failure — from `adjustSecsRef`, the last
+      value actually known to be stored, not the `adjustSecs` prop itself,
+      since the closure captured at tap time would restore whatever the prop
+      was _then_ rather than the current server truth — or, when a newer
+      nudge has since taken over, touch nothing at all. Whatever it settles
+      on updates `adjustSecsRef` too, not just `pendingAdjust`: the refetch
+      that would otherwise carry a successful PUT's value back into the
+      `adjustSecs` prop can itself fail, and `useRefreshGuard` swallows that
+      failure, so a ref advanced only by the prop's effect can sit at a value
+      the server has already moved past — and then a _later_ failed nudge
+      would "restore" the control to it. The wire value
+      `PUT .../offset` sends stays the absolute total rather than the tapped
+      delta, even though `pendingAdjust` already tracks the running total
+      locally: a delta would double-apply on a retry, and an absolute value
+      is what keeps the retried PUT idempotent (the same reason the
+      reactions route takes an explicit `on` instead of toggling).
 - The manifest link in `index.html` carries `crossorigin="use-credentials"`,
   which is load-bearing behind Cloudflare Access: a manifest is fetched without
   credentials by default, so Access would redirect it to a login page, the
