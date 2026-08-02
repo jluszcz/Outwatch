@@ -6,7 +6,7 @@ A bell in the header shows what has happened on the board since you last
 checked. It carries a count of unread activity and opens a short, timestamped
 list:
 
-> Alice commented on Season 45 Episode 3 — 3 hours ago
+> Alice posted to Season 45 Episode 3 — 3 hours ago
 
 Clicking a line takes you to that episode's discussion board.
 
@@ -46,7 +46,7 @@ and reactions are per individual, everything about watching is per column.
 There is **no event table**. Events are read from `posts.created_at` live. The
 consequence that makes this the right call: a deleted note leaves the feed on
 its own, and no denormalized row can drift from the note it describes. A
-generic `events` log would leave a stale "Alice commented" line behind after
+generic `events` log would leave a stale "Alice posted" line behind after
 Alice deleted the note — preserving exactly what they unsaid, the same objection
 that made `DELETE /api/posts/:post_id` detach replies rather than leave a
 `[deleted]` ghost.
@@ -54,7 +54,13 @@ that made `DELETE /api/posts/:post_id` detach replies rather than leave a
 ### Grouping
 
 The group key is `(author, season, episode, calendar day)` — one line per
-person per episode per day, with a count when they left several.
+person per episode per day, however many notes they left.
+
+The line carries **no count**. "Alice posted to Season 45 Episode 3" already
+implies one or more, and the number is not something you would act on
+differently: two notes and five notes both mean go read the episode. Leaving it
+out also keeps the line to one phrase with nothing trailing it, which is what
+lets the panel stay a list of sentences rather than a table.
 
 Grouping by author and episode alone would fold a note from three weeks ago
 into today's group and stamp the pair with today's time, so the line would
@@ -64,8 +70,7 @@ an episode does it in one sitting anyway. A "session" rule (notes within N
 hours of each other) would be more precise and much harder to express in SQL,
 for a distinction nobody reading this panel would notice.
 
-The group's timestamp is its **newest** note. Its count is the number of notes
-in the group.
+The group's timestamp is its **newest** note.
 
 The author key is the individual: `posts.author_email` when present, falling
 back to the column's `user_id` for a note predating individual attribution
@@ -91,7 +96,6 @@ already uses, so a note groups and bylines under the same name.
             "author_name": "Alice",
             "season_id": 45,
             "episode": 3,
-            "count": 2,
             "at": "2026-08-02T12:01:00.000Z",
             "unread": true
         }
@@ -105,8 +109,10 @@ already uses, so a note groups and bylines under the same name.
 - `unread` marks a group whose newest note is later than the caller's
   `feed_seen_at`.
 - `unread_count` counts **unread groups in the window**, not unread notes and
-  not only the ten shown, so a badge of 14 with 10 lines is possible and the
-  panel says "and 4 more".
+  not only the ten shown, so a badge of 14 over 10 visible lines is possible
+  and deliberately unexplained — see the no-footer note under Rendering.
+- The group's note count is deliberately **not** in the response. Nothing
+  renders it, and a field the client ignores is a field that will drift.
 - `now` is the server clock, echoed the way
   `GET /api/seasons/:season_id/discussion` already echoes one, so the client
   can render relative times without trusting the device clock.
@@ -130,8 +136,10 @@ This exposes no new class of information. `GET /api/board` already carries a
 names an episode's `authors` on a board the caller has not revealed — the
 project's existing, deliberate position that knowing _who said something_ is
 not a spoiler on a small household board, while knowing _what they said_ is.
-The feed carries names, seasons, episodes, counts, and times, and never a
-body, so the spoiler rule needs no per-line enforcement here.
+The feed carries names, seasons, episodes, and times, and never a body, so the
+spoiler rule needs no per-line enforcement here. Dropping the per-group note
+count narrows it further than the discussion route, which does serialize a
+`count` per episode.
 
 ## Frontend
 
@@ -181,37 +189,48 @@ surfaces nothing: it is not worth an error banner, and the next open retries it.
 A line reads:
 
 ```
-Alice commented on Season 45 Episode 3        × 3
+Alice posted to Season 45 Episode 3
 3 hours ago
 ```
 
 The season subtitle is omitted — `seasonLabel`'s full form is too long for the
-panel's width. The `× N` count renders only when the group holds more than one
-note. Unread lines carry a marker (a dot in the leading gutter) rather than a
-different background, so the list reads as one list.
+panel's width. Unread lines carry a marker (a dot in the leading gutter) rather
+than a different background, so the list reads as one list.
 
 Each line is a link to `#/season/45/episode/3` — a real anchor, not a click
 handler, so it can be opened in a new tab and shows its destination on hover.
 
 Empty state: "Nothing new yet."
 
-Footer, when `unread_count` exceeds the number of unread lines shown: "and N
-more", where N is that difference — unread groups the 10-line cap left out.
+There is deliberately **no "and N more" footer**. When the 10-line cap hides
+older unread groups there is nothing useful to do about it — the panel has no
+second page and the hidden groups are the least recent ones — so the footer
+would only report a number and then decline to act on it. The badge already
+says how much is unread; the list says what is worth opening.
 
 ### Relative time
 
 `relativeTime(iso, nowMs)` in `frontend/utils.js`, pure and tested:
 
-| Age          | Renders                          |
-| ------------ | -------------------------------- |
-| < 60 seconds | `just now`                       |
-| < 60 minutes | `N minutes ago` (`1 minute ago`) |
-| < 24 hours   | `N hours ago` (`1 hour ago`)     |
-| otherwise    | `N days ago` (`1 day ago`)       |
+| Age          | Renders                      |
+| ------------ | ---------------------------- |
+| ≤ 5 minutes  | `just now`                   |
+| < 60 minutes | `N minutes ago`              |
+| < 24 hours   | `N hours ago` (`1 hour ago`) |
+| otherwise    | `N days ago` (`1 day ago`)   |
 
 Each tier truncates toward zero, so 119 minutes is "1 hour ago", not "2 hours
-ago". `nowMs` comes from the server's `now` field rather than `Date.now()`, so
-a device with a wrong clock cannot render "in 3 hours" or age everything by a
+ago".
+
+The five-minute floor is what keeps the panel from being wrong in the most
+visible way: a note posted while you were reading the board reads "just now"
+rather than ticking through "1 minute ago" at a precision nothing else here
+claims. It also means the minutes tier never renders below `5 minutes ago`, so
+`1 minute ago` is unreachable and the singular case exists only at the hours
+and days tiers.
+
+`nowMs` comes from the server's `now` field rather than `Date.now()`, so a
+device with a wrong clock cannot render "in 3 hours" or age everything by a
 day. The client computes the skew once per fetch and applies it.
 
 Nothing older than the 30-day window reaches this function, so there is no
@@ -240,8 +259,8 @@ and collapsing it does not rewrite the hash.
 
 ### Worker — `test/worker/feed.test.js`
 
-- Groups a person's several notes on one episode on one day into one event with
-  a count, stamped with the newest note's time
+- Groups a person's several notes on one episode on one day into a single
+  event, stamped with the newest note's time, carrying no count
 - Does **not** group notes on the same episode from different days
 - Does not group two people's notes on the same episode together
 - Excludes the caller's own notes
@@ -259,9 +278,10 @@ and collapsing it does not rewrite the hash.
 
 ### Frontend
 
-- `relativeTime` tier boundaries in `test/frontend/utils.test.js`: 0s, 59s, 60s,
-  59m, 60m, 23h59m, 24h, multi-day; singular vs plural at each tier; truncation
-  toward zero
+- `relativeTime` tier boundaries in `test/frontend/utils.test.js`: 0s, 5m exactly
+  (still "just now"), 5m01s (first `5 minutes ago`), 59m, 60m, 23h59m, 24h,
+  multi-day; singular vs plural at the hours and days tiers; truncation toward
+  zero
 - `parseHashRoute` in `test/frontend/utils.test.js`: both accepted forms, the
   rejected `0` and leading-zero cases, and unrelated hashes
 
