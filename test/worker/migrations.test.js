@@ -112,3 +112,23 @@ describe('watch offset corrections', () => {
         expect(results).toHaveLength(1);
     });
 });
+
+// Migration 0009. The column arrives by ALTER TABLE, which rewrites the stored
+// CREATE statement, so sqlite_master records whether it applied. It sits on
+// user_emails rather than users because reading the feed is something a person
+// does with their own eyes — a shared column's two logins keep separate badges.
+describe('feed seen marks', () => {
+    it('adds a per-individual feed_seen_at to user_emails', async () => {
+        const row = await env.DB.prepare(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'user_emails'",
+        ).first();
+        expect(row.sql).toContain('feed_seen_at TEXT');
+    });
+
+    it('does not add the column to users', async () => {
+        const row = await env.DB.prepare(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'users'",
+        ).first();
+        expect(row.sql).not.toContain('feed_seen_at');
+    });
+});
