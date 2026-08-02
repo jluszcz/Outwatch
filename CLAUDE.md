@@ -218,10 +218,24 @@ The frontend's conventions, layout rules, and gotchas live in
 - **Never commit real names or email addresses.** The real roster (people's
   names and their emails) lives only in `roster.sql`, which is gitignored.
   Anything committed — migrations, `seed.sql`, `roster.example.sql`, README,
-  CLAUDE.md, tests, `.dev.vars.example` — must use fake placeholders only
-  (generic `user-N` ids, made-up names, `@example.com` emails). The committed
-  fake names must not be the real people's names. When adding or changing the
-  roster, edit `roster.sql`, never a tracked file.
+  CLAUDE.md, `frontend/CLAUDE.md`, design docs and plans under `docs/`, tests,
+  `.dev.vars.example` — must use fake placeholders only (generic `user-N` ids,
+  placeholder names, `@example.com` emails). The committed fake names must not
+  be the real people's names. When adding or changing the roster, edit
+  `roster.sql`, never a tracked file.
+- **Use the standard placeholder names**, the ones `roster.example.sql` and the
+  test suites already share, rather than inventing a new cast per document:
+  `Alice` (a solo column), `Bob & Carol` and `Dave & Erin` (shared columns,
+  whose halves are `Bob`/`Carol` and `Dave`/`Erin`), extending down the
+  alphabet — `Frank`, `Grace` — if a sixth person is ever needed. Emails follow
+  from the name (`alice@example.com`). One cast across the whole repo means an
+  example naming a shared column reads the same everywhere, and a real name
+  slipped into a document stands out instead of blending in.
+- A real name reaching a tracked file is easiest to catch at the moment it
+  arrives, and it usually arrives by being pasted in — a name from a chat
+  message, an issue, or a prompt, carried into a doc or a test fixture without
+  being translated first. Rename to the standard cast as you write, not in a
+  cleanup pass.
 
 ## Configuration Notes
 

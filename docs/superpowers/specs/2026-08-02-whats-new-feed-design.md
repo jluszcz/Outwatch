@@ -1,0 +1,287 @@
+# What's New — a bell with a feed of recent comments
+
+## Goal
+
+A bell in the header shows what has happened on the board since you last
+checked. It carries a count of unread activity and opens a short, timestamped
+list:
+
+> Alice commented on Season 45 Episode 3 — 3 hours ago
+
+Clicking a line takes you to that episode's discussion board.
+
+## Scope
+
+The feed lists **discussion comments only**, grouped per person per episode per
+day. Your own comments are excluded — the feed is about what other people did.
+
+"Bob & Carol started watching Season X" is deliberately **not** in the feed.
+`users.currently_watching_season_id` is a single nullable column with no
+timestamp and no history: there is no record of when it was set, and switching
+seasons overwrites the previous value without a trace. Dating that event needs
+either an append-only log or a new timestamp column, and neither is worth a
+migration for one line in a panel. Comments are already timestamped in `posts`,
+so they cost no new structure at all.
+
+Reactions and reveals are out for the same reason the discussion view does not
+announce them: a reaction is chatty (one note collects several) and a reveal is
+a reading action rather than something said.
+
+## Data
+
+One migration, `0009_feed_seen.sql`:
+
+```sql
+ALTER TABLE user_emails ADD COLUMN feed_seen_at TEXT;
+```
+
+`NULL` means the person has never opened the bell.
+
+It goes on `user_emails`, not `users`, so the seen mark is **per individual**.
+A couple shares a board column, and marking the feed read is a thing a person
+does with their own eyes — Bob opening the bell must not clear Carol's
+badge. This matches the split the rest of the schema already draws: authorship
+and reactions are per individual, everything about watching is per column.
+
+There is **no event table**. Events are read from `posts.created_at` live. The
+consequence that makes this the right call: a deleted note leaves the feed on
+its own, and no denormalized row can drift from the note it describes. A
+generic `events` log would leave a stale "Alice commented" line behind after
+Alice deleted the note — preserving exactly what they unsaid, the same objection
+that made `DELETE /api/posts/:post_id` detach replies rather than leave a
+`[deleted]` ghost.
+
+### Grouping
+
+The group key is `(author, season, episode, calendar day)` — one line per
+person per episode per day, with a count when they left several.
+
+Grouping by author and episode alone would fold a note from three weeks ago
+into today's group and stamp the pair with today's time, so the line would
+claim two notes arrived three hours ago when one arrived three weeks ago. A
+calendar-day boundary is the boring rule that avoids it, and someone watching
+an episode does it in one sitting anyway. A "session" rule (notes within N
+hours of each other) would be more precise and much harder to express in SQL,
+for a distinction nobody reading this panel would notice.
+
+The group's timestamp is its **newest** note. Its count is the number of notes
+in the group.
+
+The author key is the individual: `posts.author_email` when present, falling
+back to the column's `user_id` for a note predating individual attribution
+(migration `0006`). That is the same fallback the discussion route's byline
+already uses, so a note groups and bylines under the same name.
+
+### Window and caps
+
+- **Window**: 30 days. Nothing older ever appears.
+- **Panel**: at most 10 groups, newest first.
+- **Unread with `feed_seen_at` NULL**: everything in the window counts unread.
+
+## API
+
+### `GET /api/feed`
+
+```json
+{
+    "now": "2026-08-02T15:04:05.000Z",
+    "unread_count": 3,
+    "events": [
+        {
+            "author_name": "Alice",
+            "season_id": 45,
+            "episode": 3,
+            "count": 2,
+            "at": "2026-08-02T12:01:00.000Z",
+            "unread": true
+        }
+    ]
+}
+```
+
+- `events` holds at most 10 groups from the past 30 days, newest first,
+  regardless of read state. The panel always has something to show — opening
+  the bell on a quiet day lists recent activity rather than an empty box.
+- `unread` marks a group whose newest note is later than the caller's
+  `feed_seen_at`.
+- `unread_count` counts **unread groups in the window**, not unread notes and
+  not only the ten shown, so a badge of 14 with 10 lines is possible and the
+  panel says "and 4 more".
+- `now` is the server clock, echoed the way
+  `GET /api/seasons/:season_id/discussion` already echoes one, so the client
+  can render relative times without trusting the device clock.
+- **No note bodies, ever.**
+
+403 for a caller who is not on the roster, like every other route.
+
+### `POST /api/feed/seen`
+
+Stamps `user_emails.feed_seen_at` to the server's current time for the caller's
+own email. No request body — the server uses its own clock rather than a
+client-supplied timestamp, so the route cannot be used to backdate or
+forward-date someone's seen mark. Idempotent. Returns `{ feed_seen_at }`.
+
+403 off-roster.
+
+### Disclosure
+
+This exposes no new class of information. `GET /api/board` already carries a
+`post_count` per season, and `GET /api/seasons/:season_id/discussion` already
+names an episode's `authors` on a board the caller has not revealed — the
+project's existing, deliberate position that knowing _who said something_ is
+not a spoiler on a small household board, while knowing _what they said_ is.
+The feed carries names, seasons, episodes, counts, and times, and never a
+body, so the spoiler rule needs no per-line enforcement here.
+
+## Frontend
+
+### Components
+
+New file `frontend/feed.js`, split in two the way `PostMenu`/`PostMenuPanel`
+is in `post.js`:
+
+- `FeedBell` — the trigger button and its unread badge. Always mounted.
+- `FeedPanel` — the scrim, the list, and the close button. Mounts only while
+  open, so its Escape listener and scrim are subscribed only when they can act.
+
+The bell sits in `Header` beside the theme toggle. `Header` renders on both
+routes (`App` draws it outside the route switch), so the bell is reachable from
+a season view as well as the board.
+
+### Layout
+
+Two layouts, one DOM, following the rules `PostMenu` established:
+
+- Pointer device: a dropdown absolutely positioned inside a
+  `position: relative` wrapper in the header, with
+  `position-try-fallbacks: flip-block` in an `@supports` block so the browser
+  measures rather than the app.
+- Below 640px: the same element becomes a `position: fixed` bottom sheet with
+  a dimmed scrim and a close button in its top-right corner — the furthest
+  point from the bottom edge iOS Safari's collapsed toolbar owns.
+
+The scrim renders in both layouts (transparent on a pointer device) and is what
+dismisses on an outside click, covering the trigger so clicking it while open
+reaches the scrim rather than the trigger's own toggle.
+
+### Data flow
+
+`FeedBell` fetches `/api/feed` on mount and on focus, routed through
+`useRefreshGuard` like every other fetch in the app, so a slow response cannot
+overwrite a newer one.
+
+Opening the panel fires `POST /api/feed/seen` and clears the badge
+optimistically. The lines already rendered **keep** their unread marking until
+the next fetch — otherwise every mark would vanish from under you at the moment
+you opened the panel to read them. A failed `seen` restores the badge and
+surfaces nothing: it is not worth an error banner, and the next open retries it.
+
+### Rendering
+
+A line reads:
+
+```
+Alice commented on Season 45 Episode 3        × 3
+3 hours ago
+```
+
+The season subtitle is omitted — `seasonLabel`'s full form is too long for the
+panel's width. The `× N` count renders only when the group holds more than one
+note. Unread lines carry a marker (a dot in the leading gutter) rather than a
+different background, so the list reads as one list.
+
+Each line is a link to `#/season/45/episode/3` — a real anchor, not a click
+handler, so it can be opened in a new tab and shows its destination on hover.
+
+Empty state: "Nothing new yet."
+
+Footer, when `unread_count` exceeds the number of unread lines shown: "and N
+more", where N is that difference — unread groups the 10-line cap left out.
+
+### Relative time
+
+`relativeTime(iso, nowMs)` in `frontend/utils.js`, pure and tested:
+
+| Age          | Renders                          |
+| ------------ | -------------------------------- |
+| < 60 seconds | `just now`                       |
+| < 60 minutes | `N minutes ago` (`1 minute ago`) |
+| < 24 hours   | `N hours ago` (`1 hour ago`)     |
+| otherwise    | `N days ago` (`1 day ago`)       |
+
+Each tier truncates toward zero, so 119 minutes is "1 hour ago", not "2 hours
+ago". `nowMs` comes from the server's `now` field rather than `Date.now()`, so
+a device with a wrong clock cannot render "in 3 hours" or age everything by a
+day. The client computes the skew once per fetch and applies it.
+
+Nothing older than the 30-day window reaches this function, so there is no
+weeks-or-months tier to design.
+
+## Routing
+
+`useHashRoute` (`frontend/hooks.js`) gains an optional episode segment:
+
+- `#/season/45` → `{ seasonId: 45, episode: null }` — unchanged meaning
+- `#/season/45/episode/3` → `{ seasonId: 45, episode: 3 }`
+- anything else → `{ seasonId: null, episode: null }`
+
+The parse moves out of the hook into a pure `parseHashRoute(hash)` in
+`utils.js`, so the regex is testable directly — the same split
+`refresh-guard.js` and `submit-guard.js` already use for their rules. Both
+segments keep the existing `[1-9]\d*` guard: no leading zeros and no bare `0`,
+which would otherwise mount the view and surface the API's raw validation
+error instead of falling back to the board.
+
+`SeasonView` seeds its `openEpisode` state from the route's episode. The
+accordion stays user-controlled after that — landing on an episode opens it,
+and collapsing it does not rewrite the hash.
+
+## Testing
+
+### Worker — `test/worker/feed.test.js`
+
+- Groups a person's several notes on one episode on one day into one event with
+  a count, stamped with the newest note's time
+- Does **not** group notes on the same episode from different days
+- Does not group two people's notes on the same episode together
+- Excludes the caller's own notes
+- A note with no `author_email` groups under its column's name
+- `unread_count` counts every unread group in the window, including groups
+  beyond the ten returned
+- With `feed_seen_at` NULL, everything in the window is unread
+- Notes older than 30 days do not appear
+- At most 10 events are returned, newest first
+- A deleted note drops out of the feed
+- `POST /api/feed/seen` clears unread for that individual and leaves their
+  partner's badge alone
+- Both routes 403 for a caller who is not on the roster
+- No response field carries a note body
+
+### Frontend
+
+- `relativeTime` tier boundaries in `test/frontend/utils.test.js`: 0s, 59s, 60s,
+  59m, 60m, 23h59m, 24h, multi-day; singular vs plural at each tier; truncation
+  toward zero
+- `parseHashRoute` in `test/frontend/utils.test.js`: both accepted forms, the
+  rejected `0` and leading-zero cases, and unrelated hashes
+
+### Migration
+
+`test/worker/migrations.test.js` covers the schema; extend it for the new
+column if it asserts one per migration.
+
+## Documentation
+
+- Root `CLAUDE.md`: the `user_emails.feed_seen_at` column in Database Schema,
+  and `GET /api/feed` / `POST /api/feed/seen` in API Routes
+- `frontend/CLAUDE.md`: the bell's split, its two layouts, the
+  keep-marks-until-refetch rule, and the extended hash route
+- `README.md`: the feature, in the same voice as the discussion and reactions
+  sections
+
+## Out of scope
+
+- Push notifications, email, or any delivery outside the page
+- A per-event read state (the feed has one seen timestamp, not a per-line mark)
+- Started-watching, reaction, and reveal events
+- Marking the feed unread again
