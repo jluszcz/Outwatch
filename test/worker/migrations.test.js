@@ -91,3 +91,24 @@ describe('reply, edit, and reaction schema', () => {
         expect(results[0].n).toBe(1);
     });
 });
+
+// The correction deliberately lives outside watch_sessions: `start` zeroes that
+// row, and zeroing a correction would silently un-shift notes it had already
+// moved. Its own table is what makes it outlive the session that produced it.
+describe('watch offset corrections', () => {
+    it('has a watch_offsets table keyed per user, season, and episode', async () => {
+        const { results } = await env.DB.prepare(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'watch_offsets'",
+        ).all();
+        expect(results).toHaveLength(1);
+        expect(results[0].sql).toContain('adjust_secs');
+        expect(results[0].sql).toContain('PRIMARY KEY (user_id, season_id, episode)');
+    });
+
+    it('indexes the season_id column for efficient reads by season', async () => {
+        const { results } = await env.DB.prepare(
+            "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'idx_watch_offsets_season'",
+        ).all();
+        expect(results).toHaveLength(1);
+    });
+});

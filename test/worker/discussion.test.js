@@ -31,6 +31,7 @@ beforeEach(async () => {
     // Serve the test signing key the way Cloudflare serves the team's real one.
     await stubJwksEndpoint();
     await env.DB.exec('DELETE FROM reactions');
+    await env.DB.exec('DELETE FROM watch_offsets');
     await env.DB.exec('DELETE FROM watch_sessions');
     await env.DB.exec('DELETE FROM reveals');
     await env.DB.exec('DELETE FROM posts');
@@ -1049,5 +1050,241 @@ describe('PUT /api/posts/:post_id/reactions', () => {
             .bind(p.id)
             .all();
         expect(results[0].n).toBe(1);
+    });
+});
+
+const storedAdjust = (userId, seasonId, episode) =>
+    env.DB.prepare(
+        'SELECT adjust_secs FROM watch_offsets WHERE user_id = ? AND season_id = ? AND episode = ?',
+    )
+        .bind(userId, seasonId, episode)
+        .first();
+
+describe('PUT /api/seasons/:season_id/episodes/:episode/offset', () => {
+    it('stores a correction for the caller', async () => {
+        const r = await req('PUT', '/api/seasons/45/episodes/7/offset', {
+            body: { adjust_secs: 45 },
+            email: 'alice@example.com',
+        });
+        expect(r.status).toBe(200);
+        expect(await r.json()).toMatchObject({ season_id: 45, episode: 7, adjust_secs: 45 });
+        expect(await storedAdjust('user-alice', 45, 7)).toMatchObject({ adjust_secs: 45 });
+    });
+
+    // Absolute, not a delta — the client always computes the new total from
+    // what the server last reported, so a retry cannot accumulate.
+    it('is idempotent: the same value twice leaves one row and one value', async () => {
+        for (let i = 0; i < 2; i++) {
+            await req('PUT', '/api/seasons/45/episodes/7/offset', {
+                body: { adjust_secs: -30 },
+                email: 'alice@example.com',
+            });
+        }
+        const { results } = await env.DB.prepare('SELECT adjust_secs FROM watch_offsets').all();
+        expect(results).toEqual([{ adjust_secs: -30 }]);
+    });
+
+    it('replaces an existing correction rather than adding to it', async () => {
+        await req('PUT', '/api/seasons/45/episodes/7/offset', {
+            body: { adjust_secs: 45 },
+            email: 'alice@example.com',
+        });
+        await req('PUT', '/api/seasons/45/episodes/7/offset', {
+            body: { adjust_secs: 60 },
+            email: 'alice@example.com',
+        });
+        expect(await storedAdjust('user-alice', 45, 7)).toMatchObject({ adjust_secs: 60 });
+    });
+
+    // "No correction" gets one representation rather than two.
+    it('removes the row when the correction is zeroed', async () => {
+        await req('PUT', '/api/seasons/45/episodes/7/offset', {
+            body: { adjust_secs: 45 },
+            email: 'alice@example.com',
+        });
+        const r = await req('PUT', '/api/seasons/45/episodes/7/offset', {
+            body: { adjust_secs: 0 },
+            email: 'alice@example.com',
+        });
+        expect(r.status).toBe(200);
+        expect(await storedAdjust('user-alice', 45, 7)).toBeNull();
+    });
+
+    it('scopes a correction to the one episode it names', async () => {
+        await req('PUT', '/api/seasons/45/episodes/7/offset', {
+            body: { adjust_secs: 45 },
+            email: 'alice@example.com',
+        });
+        expect(await storedAdjust('user-alice', 45, 8)).toBeNull();
+    });
+
+    it('attributes to the caller, not a client-supplied id', async () => {
+        await req('PUT', '/api/seasons/45/episodes/7/offset', {
+            body: { adjust_secs: 45, user_id: 'user-bob' },
+            email: 'alice@example.com',
+        });
+        expect(await storedAdjust('user-bob', 45, 7)).toBeNull();
+        expect(await storedAdjust('user-alice', 45, 7)).toMatchObject({ adjust_secs: 45 });
+    });
+
+    // The case the whole feature exists for: you notice your notes are
+    // misplaced days later, with no timer running.
+    it('accepts a correction with no live session', async () => {
+        const r = await req('PUT', '/api/seasons/45/episodes/7/offset', {
+            body: { adjust_secs: -60 },
+            email: 'alice@example.com',
+        });
+        expect(r.status).toBe(200);
+    });
+
+    it('rejects a correction beyond an hour in either direction', async () => {
+        for (const adjust_secs of [3601, -3601]) {
+            const r = await req('PUT', '/api/seasons/45/episodes/7/offset', {
+                body: { adjust_secs },
+                email: 'alice@example.com',
+            });
+            expect(r.status).toBe(400);
+        }
+    });
+
+    it('rejects a non-integer correction', async () => {
+        const r = await req('PUT', '/api/seasons/45/episodes/7/offset', {
+            body: { adjust_secs: 12.5 },
+            email: 'alice@example.com',
+        });
+        expect(r.status).toBe(400);
+    });
+
+    it('404s an episode the season does not have', async () => {
+        const r = await req('PUT', '/api/seasons/45/episodes/99/offset', {
+            body: { adjust_secs: 45 },
+            email: 'alice@example.com',
+        });
+        expect(r.status).toBe(404);
+    });
+
+    it('403s a caller who is not on the roster', async () => {
+        const r = await req('PUT', '/api/seasons/45/episodes/7/offset', {
+            body: { adjust_secs: 45 },
+            email: 'nobody@example.com',
+        });
+        expect(r.status).toBe(403);
+    });
+
+    // The regression the separate table exists to prevent.
+    it('survives a timer restart, which zeroes the session', async () => {
+        await req('PUT', '/api/seasons/45/episodes/7/offset', {
+            body: { adjust_secs: 45 },
+            email: 'alice@example.com',
+        });
+        await req('POST', '/api/seasons/45/episodes/7/timer', {
+            body: { action: 'start' },
+            email: 'alice@example.com',
+        });
+        expect(await storedAdjust('user-alice', 45, 7)).toMatchObject({ adjust_secs: 45 });
+    });
+});
+
+describe('watch-offset corrections in the discussion', () => {
+    const postAt = (email, offsetSecs, body) =>
+        env.DB.prepare(
+            `INSERT INTO posts (season_id, episode, user_id, body, created_at, offset_secs, author_email)
+             VALUES (45, 7, ?, ?, '2026-07-20T21:00:00.000Z', ?, ?)`,
+        )
+            .bind(
+                email === 'alice@example.com' ? 'user-alice' : 'user-bob',
+                body,
+                offsetSecs,
+                email,
+            )
+            .run();
+
+    const episodeSeven = async (email) => {
+        const r = await req('GET', '/api/seasons/45/discussion', { email });
+        const { episodes } = await r.json();
+        return episodes.find((e) => e.episode === 7);
+    };
+
+    beforeEach(async () => {
+        // Both watch the season, so every episode is readable and nothing is
+        // filtered out from under these assertions.
+        await env.DB.exec(
+            'INSERT INTO watched (user_id, season_id, created_at) VALUES ' +
+                "('user-alice', 45, '2026-07-01T00:00:00.000Z'), " +
+                "('user-bob', 45, '2026-07-01T00:00:00.000Z')",
+        );
+    });
+
+    it("shifts a post by its own author's correction", async () => {
+        await postAt('alice@example.com', 600, 'alice note');
+        await req('PUT', '/api/seasons/45/episodes/7/offset', {
+            body: { adjust_secs: 45 },
+            email: 'alice@example.com',
+        });
+        const ep = await episodeSeven('alice@example.com');
+        expect(ep.posts[0].offset_secs).toBe(645);
+    });
+
+    // A post is shifted by its writer's correction, not the reader's — the
+    // correction is a fact about how that person watched.
+    it("leaves another author's posts alone", async () => {
+        await postAt('alice@example.com', 600, 'alice note');
+        await postAt('bob@example.com', 600, 'bob note');
+        await req('PUT', '/api/seasons/45/episodes/7/offset', {
+            body: { adjust_secs: 45 },
+            email: 'alice@example.com',
+        });
+        const ep = await episodeSeven('bob@example.com');
+        const byBody = Object.fromEntries(ep.posts.map((p) => [p.body, p.offset_secs]));
+        expect(byBody).toEqual({ 'alice note': 645, 'bob note': 600 });
+    });
+
+    it('applies only to the episode the correction names', async () => {
+        await postAt('alice@example.com', 600, 'episode seven note');
+        await env.DB.exec(
+            'INSERT INTO posts (season_id, episode, user_id, body, created_at, offset_secs, author_email) ' +
+                "VALUES (45, 8, 'user-alice', 'episode eight note', '2026-07-20T22:00:00.000Z', 600, 'alice@example.com')",
+        );
+        await req('PUT', '/api/seasons/45/episodes/7/offset', {
+            body: { adjust_secs: 45 },
+            email: 'alice@example.com',
+        });
+        const r = await req('GET', '/api/seasons/45/discussion', { email: 'alice@example.com' });
+        const { episodes } = await r.json();
+        expect(episodes.find((e) => e.episode === 7).posts[0].offset_secs).toBe(645);
+        expect(episodes.find((e) => e.episode === 8).posts[0].offset_secs).toBe(600);
+    });
+
+    // Nothing to shift: no timer was running when this note was written.
+    it('leaves an untimed post null', async () => {
+        await postAt('alice@example.com', null, 'untimed note');
+        await req('PUT', '/api/seasons/45/episodes/7/offset', {
+            body: { adjust_secs: 45 },
+            email: 'alice@example.com',
+        });
+        const ep = await episodeSeven('alice@example.com');
+        expect(ep.posts[0].offset_secs).toBeNull();
+    });
+
+    // The live chip ticks locally, so it needs the same number the posts got.
+    it("carries the caller's own correction on the episode", async () => {
+        await req('PUT', '/api/seasons/45/episodes/7/offset', {
+            body: { adjust_secs: -30 },
+            email: 'alice@example.com',
+        });
+        expect((await episodeSeven('alice@example.com')).adjust_secs).toBe(-30);
+        expect((await episodeSeven('bob@example.com')).adjust_secs).toBe(0);
+    });
+
+    it('reports zero for an episode with no correction', async () => {
+        expect((await episodeSeven('alice@example.com')).adjust_secs).toBe(0);
+    });
+
+    // The `me` in `me ? adjustFor(me.id, episode) : 0` (src/index.js) is only
+    // ever falsy for a caller with no roster row — the season and episode
+    // both still resolve, so the response still carries an adjust_secs, just
+    // the identity-less default rather than a lookup with nothing to key on.
+    it('reports zero for a caller with no roster row', async () => {
+        expect((await episodeSeven('stranger@example.com')).adjust_secs).toBe(0);
     });
 });

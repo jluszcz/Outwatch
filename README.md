@@ -37,12 +37,20 @@ watching at different paces don't spoil each other.
 - **An optional watch timer.** Start it when you press play, and your notes
   are stamped with how far into the episode you were, so once a board is
   opened everyone's notes sort into one synced timeline by that offset
-  instead of by when they happened to be typed. Pausing or resuming fails
+  instead of by when they happened to be typed. Click the running time to
+  pause, click it again to resume. Pausing or resuming fails
   (409) if the timer was never started, or if it was but has gone three
   hours idle and is now considered stale — either way you start a new one.
+  Notice your notes landed in the wrong spot on that timeline? The ± control
+  next to the timer corrects it after the fact — one number per episode,
+  shifting every note you've already posted there along with it, so you don't
+  have to catch the drift in the moment.
 - **Replies, reactions, and edits.** A note can answer another note on the same
   episode, and it renders as a quote block above the reply rather than as an
-  indented thread — a reply keeps its own place on the watch-offset timeline.
+  indented thread. A reply keeps its own place on the watch-offset timeline,
+  with one exception: it's never shown above the note it answers, even if its
+  offset would otherwise put it there — a reply pulled down like that shows no
+  offset rather than one that reads backwards.
   Anyone who can see a note can put any emoji on it — four are one tap away in
   the note's menu and a ＋ opens a searchable picker for the rest, up to twelve
   different emoji per note. Reactions are per person rather than per column, so
@@ -248,6 +256,7 @@ never trusted — see [Authentication](#authentication).
 | `POST`   | `/api/seasons/:season_id/episodes/:episode/reveal` | Open one episode's discussion board for reading (permanent)                                                                                                                                                                      |
 | `DELETE` | `/api/posts/:post_id`                              | Delete one of the caller's own discussion notes, scoped to the individual author; a note from before individual attribution stays deletable by the column                                                                        |
 | `POST`   | `/api/seasons/:season_id/episodes/:episode/timer`  | Start, pause, or resume the caller's watch timer for an episode (`{ action }`)                                                                                                                                                   |
+| `PUT`    | `/api/seasons/:season_id/episodes/:episode/offset` | Correct where this episode started for the caller (`{ adjust_secs }`, absolute, within ±3600); shifts every note they have posted on that episode                                                                                |
 
 ## Database Schema
 
@@ -347,6 +356,22 @@ Primary key is `(user_id, season_id, episode)`.
 | `last_activity_at` | TEXT    | Touched by start/pause/resume/post; drives the staleness clock |
 
 Primary key is `(user_id, season_id, episode)`.
+
+**`watch_offsets`** — one revisable correction to where an episode started, per (user, season, episode)
+
+| Column        | Type    | Notes                                       |
+| ------------- | ------- | ------------------------------------------- |
+| `user_id`     | TEXT    | References `users.id`                       |
+| `season_id`   | INTEGER | References `seasons.id`                     |
+| `episode`     | INTEGER | Episode number                              |
+| `adjust_secs` | INTEGER | Signed correction, in seconds, within ±3600 |
+| `updated_at`  | TEXT    | ISO timestamp                               |
+
+Primary key is `(user_id, season_id, episode)`. Deliberately not a column on
+`watch_sessions` — starting a timer zeroes that row, and a correction has to
+survive a restart and be writable even when no session exists at all.
+Applied on read, not stored into `posts.offset_secs`, so a correction stays
+revisable and reaches notes already posted. Added in migration `0008`.
 
 ## Authentication
 

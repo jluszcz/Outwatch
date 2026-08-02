@@ -16,6 +16,36 @@ export function accentClass(source) {
     return accent === 'mine' ? ' post-mine' : accent ? ` post-a${accent}` : '';
 }
 
+// What a note's time chip reads. A clamped reply reads `↳` rather than a
+// stamp: it was pulled below its parent (see orderPosts), so its own stamp now
+// reads lower than the note directly above it, and a number that runs backwards
+// down the column is worse than no number. A marker rather than the blank this
+// started as, because the details it displaces live in the chip's `title`,
+// which is hover-only: on a phone a blank chip left a clamped reply with no
+// time information at all, and a clamped *tail* note strictly worse off than
+// before, since it had been showing a plain date. The marker also says why the
+// stamp is absent instead of merely being absent. The span is rendered by Post
+// either way, so the fixed-width gutter that lines every body up is untouched.
+export function postTimeText(entry) {
+    if (entry.clamped) return '↳';
+    if (entry.tail) return new Date(entry.post.created_at).toLocaleDateString();
+    return `${entry.inferred ? '~' : ''}${formatOffsetShort(entry.offset)}`;
+}
+
+// The chip's tooltip. A clamped reply's suppressed stamp moves in here rather
+// than being lost outright: it is one hover away without being asserted in a
+// column it would contradict. `estimated` rather than `stamped` for an inferred
+// offset — orderPosts synthesized that one from the author's own earliest note
+// because they never ran a timer, so calling it a stamp would assert a timer
+// reading that never existed, which is exactly what the chip's `~` prefix and
+// the tail rule exist to avoid.
+export function postTimeTitle(entry) {
+    const when = new Date(entry.post.created_at).toLocaleString();
+    if (!entry.clamped || entry.offset == null) return when;
+    const how = entry.inferred ? 'estimated' : 'stamped';
+    return `${when} · ${how} ${formatOffsetShort(entry.offset)}`;
+}
+
 export function PostList({
     placed,
     meId,
@@ -420,16 +450,10 @@ function Post({
     onToggleMenu,
     onReact,
 }) {
-    const { post, offset, inferred, tail } = entry;
+    const { post } = entry;
     return html`
         <li class=${'post' + accentClass(post)}>
-            <span class="post-time" title=${new Date(post.created_at).toLocaleString()}>
-                ${
-                    tail
-                        ? new Date(post.created_at).toLocaleDateString()
-                        : `${inferred ? '~' : ''}${formatOffsetShort(offset)}`
-                }
-            </span>
+            <span class="post-time" title=${postTimeTitle(entry)}>${postTimeText(entry)}</span>
             <span class="post-author">${post.mine ? 'You' : post.author_name}</span>
             <div class="post-content">
                 ${post.reply_to && html`<${Quote} quote=${post.reply_to} />`}
