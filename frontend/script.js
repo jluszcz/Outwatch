@@ -16,7 +16,7 @@ function App() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const { theme, toggle: toggleTheme } = useTheme();
-    const routeSeasonId = useHashRoute();
+    const { seasonId: routeSeasonId, episode: routeEpisode } = useHashRoute();
 
     const fetchBoard = useCallback(() => api('/api/board'), []);
     const applyBoard = useCallback((board) => {
@@ -184,7 +184,11 @@ function App() {
                 ${
                     !loading &&
                     routeSeasonId != null &&
-                    html`<${SeasonView} key=${routeSeasonId} seasonId=${routeSeasonId} />`
+                    html`<${SeasonView}
+                        key=${routeSeasonId}
+                        seasonId=${routeSeasonId}
+                        routeEpisode=${routeEpisode}
+                    />`
                 }
                 ${
                     !loading &&

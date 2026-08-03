@@ -18,7 +18,7 @@ import { PostList } from './post.js';
 
 const html = htm.bind(h);
 
-export function SeasonView({ seasonId }) {
+export function SeasonView({ seasonId, routeEpisode }) {
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -26,6 +26,21 @@ export function SeasonView({ seasonId }) {
     // per-board so opening one closes the rest: the boards are a tall stack, and
     // leaving them all open buries the one you just opened.
     const [openEpisode, setOpenEpisode] = useState(null);
+
+    // A feed line links straight at an episode, so the route can name one. An
+    // effect rather than a useState seed because SeasonView is keyed on the
+    // season: following a second link within the same season does not remount,
+    // so an initial value would never re-run.
+    //
+    // It must NOT reveal. Expanding a board and revealing it are separate
+    // actions here (onToggle vs onReveal) and have to stay that way — a reveal
+    // is permanent and one-way, and spending someone's reveal on a tap they
+    // made in a header panel is not something they can undo. Landing on a
+    // locked episode shows the locked board and its Reveal button, which is the
+    // right destination.
+    useEffect(() => {
+        if (routeEpisode != null) setOpenEpisode(routeEpisode);
+    }, [routeEpisode]);
 
     // One request: the discussion response names each note's author itself, so
     // there is no roster to fetch and merge here.

@@ -17,6 +17,7 @@ import {
     settledAdjust,
     relativeTime,
     feedLine,
+    parseHashRoute,
 } from '../../frontend/utils.js';
 
 // ---------------------------------------------------------------------------
@@ -509,5 +510,48 @@ describe('feedLine', () => {
     it('says the same thing however many notes are behind it', () => {
         const one = feedLine({ author_name: 'Bob', season_id: 46, episode: 1 });
         expect(one).toBe('Bob commented on Season 46 Episode 1');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// parseHashRoute
+// ---------------------------------------------------------------------------
+
+describe('parseHashRoute', () => {
+    it('reads a season', () => {
+        expect(parseHashRoute('#/season/45')).toEqual({ seasonId: 45, episode: null });
+    });
+
+    it('reads a season and an episode', () => {
+        expect(parseHashRoute('#/season/45/episode/3')).toEqual({ seasonId: 45, episode: 3 });
+    });
+
+    it('falls back to the board for an empty hash', () => {
+        expect(parseHashRoute('')).toEqual({ seasonId: null, episode: null });
+    });
+
+    it('falls back to the board for an unrelated hash', () => {
+        expect(parseHashRoute('#/settings')).toEqual({ seasonId: null, episode: null });
+    });
+
+    // Season 0 and episode 0 do not exist. Matching them would mount the view
+    // and surface the API's raw validation error instead of showing the board.
+    it('rejects a zero season', () => {
+        expect(parseHashRoute('#/season/0')).toEqual({ seasonId: null, episode: null });
+    });
+
+    it('rejects a zero episode', () => {
+        expect(parseHashRoute('#/season/45/episode/0')).toEqual({ seasonId: null, episode: null });
+    });
+
+    it('rejects a leading zero', () => {
+        expect(parseHashRoute('#/season/045')).toEqual({ seasonId: null, episode: null });
+    });
+
+    it('rejects trailing junk', () => {
+        expect(parseHashRoute('#/season/45/episode/3/x')).toEqual({
+            seasonId: null,
+            episode: null,
+        });
     });
 });

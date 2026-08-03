@@ -339,3 +339,17 @@ export function relativeTime(iso, nowMs) {
 export function feedLine(event) {
     return `${event.author_name} commented on Season ${event.season_id} Episode ${event.episode}`;
 }
+
+// The app's whole routing table. Extracted from useHashRoute so the regex is
+// testable on its own — the same split refresh-guard.js and submit-guard.js
+// draw between a rule and the wiring around it.
+//
+// Both numbers carry the [1-9]\d* guard: no leading zeros and no bare 0. A "0"
+// would otherwise match, mount the season view, and surface the API's raw
+// "season_id must be a positive integer" instead of falling back to the board.
+// An unparseable hash is the board, never a partial route.
+export function parseHashRoute(hash) {
+    const match = /^#\/season\/([1-9]\d*)(?:\/episode\/([1-9]\d*))?$/.exec(hash);
+    if (!match) return { seasonId: null, episode: null };
+    return { seasonId: Number(match[1]), episode: match[2] ? Number(match[2]) : null };
+}
