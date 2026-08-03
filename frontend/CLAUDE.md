@@ -432,7 +432,25 @@ of the root `CLAUDE.md` so it loads only when working on these files.
   One observer per calling component is the price of skipping the context, so
   call it from the narrowest component that needs it (`PostMenuPanel`, not
   `PostMenu`) — if a third caller ever renders per-note, a shared subscription
-  is the better trade.
+  is the better trade. `Header` is the one place that needs the flag and does
+  **not** call the hook: it already receives `theme`, so `theme === 'dark'` is
+  the same answer without a second observer.
+    - `icons.js` is the only icon system. The theme toggle used to hand-write
+      Lucide SVGs at a hardcoded `width="16"` inside `board.js`, and that split
+      caused a real bug: `.bi` sizes in `em`, but a `<button>` does not take
+      the page's font on its own (the trap `.timer-chip` needed
+      `font-family: inherit` for), so a `.bi` glyph in a button with no
+      `font-size` fell back to the UA's ~13.3px — the feed bell drew at 14px
+      beside a moon that was sidestepping the question entirely. **A button
+      hosting a `.bi` needs a `font-size`**; every one of them sets a value
+      (`.post-action` `0.9rem`, `.reveal-btn` `0.85rem`, `.timer-btn` `0.8rem`,
+      and the header pair `0.95rem`, which puts `1.05em` on 16px). Do not
+      reintroduce a second way to draw an icon.
+    - The toggle shows the theme a click switches _to_, so the sun paints only
+      while dark is in effect and the moon only while light is. One flag does
+      both jobs — which glyph, and whether it takes the `-fill` variant — which
+      is also why `sun.outline` and `moon.fill` never render in practice. They
+      are kept so both are ordinary `ICONS` entries rather than a special case.
 - The optional watch timer (`WatchTimer` in `discussion.js`, rule in
   `shared/session.js`) starts, pauses, and resumes per (user, episode); a
   session goes stale after three hours without a start/pause/resume/post, and

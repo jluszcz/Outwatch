@@ -25,46 +25,15 @@ const FLASH_MS = 2500;
 export const prefersReducedMotion = () =>
     window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-// Lucide icons (MIT) — currentColor inherits button color from CSS
-const SunIcon = () => html`
-    <svg
-        xmlns="http://www.w3.org/2000/svg"
-        width="16"
-        height="16"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        aria-hidden="true"
-    >
-        <circle cx="12" cy="12" r="4" />
-        <path
-            d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"
-        />
-    </svg>
-`;
-
-const MoonIcon = () => html`
-    <svg
-        xmlns="http://www.w3.org/2000/svg"
-        width="16"
-        height="16"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        aria-hidden="true"
-    >
-        <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
-    </svg>
-`;
-
 export function Header({ theme, onToggleTheme, showFeed }) {
-    const title = theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
+    // The toggle shows the theme a click switches *to*, so the sun appears
+    // only while dark is in effect and the moon only while light is. That
+    // makes one flag do both jobs: which glyph, and whether it takes the
+    // -fill variant the dark surface needs. Read off the `theme` prop rather
+    // than useIsDark() — this component is already given the answer, so
+    // observing the DOM for it would be a second MutationObserver for nothing.
+    const dark = theme === 'dark';
+    const title = dark ? 'Switch to light mode' : 'Switch to dark mode';
     return html`
         <header class="header">
             <h1 class="title">Outwit, Outplay, Outlast, Outwatch</h1>
@@ -76,7 +45,7 @@ export function Header({ theme, onToggleTheme, showFeed }) {
                     showFeed ? html`<${FeedBell} />` : null
                 }
                 <button class="theme-btn" title=${title} onClick=${onToggleTheme}>
-                    ${theme === 'dark' ? html`<${SunIcon} />` : html`<${MoonIcon} />`}
+                    <${Icon} name=${dark ? 'sun' : 'moon'} filled=${dark} />
                 </button>
             </div>
         </header>
