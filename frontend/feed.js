@@ -12,17 +12,21 @@ const html = htm.bind(h);
 // out of FeedBell so its Escape listener and its scrim are subscribed only
 // while it is open — the same split PostMenu/PostMenuPanel draws, for the same
 // reason.
-function FeedPanel({ data, error, onClose }) {
-    const dark = useIsDark();
+//
+// `onDismiss` (Escape, the scrim, the close button) hands focus back to the
+// bell; `onClose` (choosing a feed line) does not, matching PostMenu's items —
+// a feed line navigates away, so there is nowhere for focus to usefully return
+// to.
+function FeedPanel({ data, error, onClose, onDismiss }) {
     const panelRef = useRef(null);
 
     useEffect(() => {
         const handler = (e) => {
-            if (e.key === 'Escape') onClose();
+            if (e.key === 'Escape') onDismiss();
         };
         document.addEventListener('keydown', handler);
         return () => document.removeEventListener('keydown', handler);
-    }, [onClose]);
+    }, [onDismiss]);
 
     // Focus into the panel so a keyboard user is not left behind on the trigger
     // with a list they cannot reach.
@@ -34,10 +38,10 @@ function FeedPanel({ data, error, onClose }) {
     const nowMs = data ? Date.parse(data.now) : Date.now();
 
     return html`
-        <div class="feed-scrim" onClick=${onClose}></div>
+        <div class="feed-scrim" onClick=${onDismiss}></div>
         <div class="feed-panel" ref=${panelRef} role="group" aria-label="Recent activity">
-            <button class="feed-close" onClick=${onClose} aria-label="Close">
-                <${Icon} name="x" filled=${dark} />
+            <button class="feed-close" onClick=${onDismiss} aria-label="Close">
+                <${Icon} name="x" />
             </button>
             ${
                 error
@@ -86,30 +90,51 @@ export function FeedBell() {
     // you opened the panel to read them.
     const [seen, setSeen] = useState(false);
     const dark = useIsDark();
+    const triggerRef = useRef(null);
 
     const fetchFeed = useCallback(() => api('/api/feed'), []);
     const applyFeed = useCallback((next) => {
         setData(next);
         setSeen(false);
     }, []);
-    const { refresh } = useRefreshGuard(fetchFeed, applyFeed);
+    const { refresh, beginMutation, endMutation } = useRefreshGuard(fetchFeed, applyFeed);
     useRefreshOnFocus(refresh, setError);
 
     useEffect(() => {
         refresh().catch((err) => setError(err.message));
     }, [refresh]);
 
+    const close = useCallback(() => setOpen(false), []);
+    // Escape, the scrim, and the close button leave you where you started, so
+    // they hand focus back to the trigger — matching PostMenu's `dismiss`.
+    // Choosing a feed line does not: it navigates away, so `close` (not this)
+    // is what that path uses.
+    const dismiss = useCallback(() => {
+        triggerRef.current?.focus();
+        close();
+    }, [close]);
+
     const openPanel = useCallback(async () => {
         setOpen(true);
         setSeen(true);
+        // Brackets the same optimistic-write race every other mutation in this
+        // app guards against: a focus refetch landing between the optimistic
+        // setSeen(true) and this POST resolving would otherwise apply a
+        // response fetched before the server was stamped, carrying the old
+        // unread_count — the badge would come back and stay wrong until some
+        // later fetch. beginMutation defers that refetch until endMutation
+        // below lets it through.
+        beginMutation();
         try {
             await api('/api/feed/seen', { method: 'POST' });
         } catch {
             // Not worth a banner in the header: the badge coming back is the
             // whole story, and the next open retries it.
             setSeen(false);
+        } finally {
+            endMutation();
         }
-    }, []);
+    }, [beginMutation, endMutation]);
 
     const unread = seen ? 0 : (data?.unread_count ?? 0);
     const label = unread > 0 ? `What's new (${unread} unread)` : "What's new";
@@ -117,17 +142,26 @@ export function FeedBell() {
     return html`
         <div class="feed-wrap">
             <button
+                ref=${triggerRef}
                 class="feed-btn"
                 aria-haspopup="true"
                 aria-expanded=${open}
                 aria-label=${label}
                 title=${label}
-                onClick=${() => (open ? setOpen(false) : openPanel())}
+                onClick=${() => (open ? close() : openPanel())}
             >
                 <${Icon} name="bell" filled=${dark} />
                 ${unread > 0 ? html`<span class="feed-badge">${unread}</span>` : null}
             </button>
-            ${open && html`<${FeedPanel} data=${data} error=${error} onClose=${() => setOpen(false)} />`}
+            ${
+                open &&
+                html`<${FeedPanel}
+                    data=${data}
+                    error=${error}
+                    onClose=${close}
+                    onDismiss=${dismiss}
+                />`
+            }
         </div>
     `;
 }
