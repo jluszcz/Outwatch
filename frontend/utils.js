@@ -305,3 +305,37 @@ export function quoteSnippet(body, max = 60) {
 export function bodyAfterPost(current, sent) {
     return current === sent ? '' : current;
 }
+
+// How long ago something happened, at the precision the feed actually claims.
+//
+// The five-minute floor is what keeps the panel from being wrong in its most
+// visible case: a note that landed while you were reading the board reads
+// "just now" instead of ticking through "1 minute ago". It also means the
+// minutes tier never renders below five, so "1 minute ago" is unreachable and
+// the singular only exists at the hours and days tiers.
+//
+// `nowMs` is the server's clock (GET /api/feed echoes one), not Date.now(), so
+// a device with a wrong clock cannot age everything by a day. The clamp at zero
+// covers the remaining skew in the other direction — a stamp from the near
+// future reads "just now" rather than "in 3 hours".
+export function relativeTime(iso, nowMs) {
+    const secs = Math.max(0, Math.floor((nowMs - Date.parse(iso)) / 1000));
+    if (secs <= 300) return 'just now';
+
+    const mins = Math.floor(secs / 60);
+    if (mins < 60) return `${mins} minutes ago`;
+
+    const hours = Math.floor(secs / 3600);
+    if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+
+    const days = Math.floor(secs / 86400);
+    return `${days} day${days === 1 ? '' : 's'} ago`;
+}
+
+// One feed event as a sentence. Deliberately carries no note count — "Alice
+// commented on Season 45 Episode 3" already implies one or more, and two notes
+// and five notes both mean the same thing to whoever is reading it. The season
+// subtitle is left out too: seasonLabel's full form is wider than the panel.
+export function feedLine(event) {
+    return `${event.author_name} commented on Season ${event.season_id} Episode ${event.episode}`;
+}
