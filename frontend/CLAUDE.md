@@ -517,6 +517,77 @@ of the root `CLAUDE.md` so it loads only when working on these files.
       locally: a delta would double-apply on a retry, and an absolute value
       is what keeps the retried PUT idempotent (the same reason the
       reactions route takes an explicit `on` instead of toggling).
+- The what's-new bell (`frontend/feed.js`) is split `FeedBell` / `FeedPanel` the
+  same way `PostMenu`/`PostMenuPanel` is: the trigger and its badge always
+  render, while the scrim, the list, and the Escape listener mount only while
+  the panel is open. It sits in `Header` beside the theme toggle rather than in
+  either route's own view, so it is reachable from the board and from a season
+  view alike — and it renders only when `showFeed` is true, since every feed
+  route 403s for someone off the roster and the bell would otherwise be a
+  control that can only fail. Two layouts, one DOM, following the rules
+  `PostMenu` established: an anchored dropdown on a pointer device (with
+  `position-try-fallbacks: flip-block` behind `@supports`) and a bottom sheet
+  with a dimmed scrim below `640px`, its close button in the top-right corner
+  for the same iOS-toolbar reason.
+    - `FeedBell` calls `useIsDark`; `FeedPanel` deliberately does not, even
+      though it is the piece that only mounts while open, the same shape
+      `PostMenuPanel` has. The panel's only icon is `x`, which has no `-fill`
+      variant in `icons.js` — it is already two solid strokes — so subscribing
+      a `MutationObserver` there would spin one up on every panel open for no
+      visual effect. The bell icon does have a `-fill` variant, so `FeedBell`
+      is the narrowest component that actually needs the hook — the icons
+      bullet's "call it from the narrowest component that needs it" rule,
+      applied to a case where the narrowest need turns out to sit on the
+      parent rather than the child.
+    - Opening the panel clears the badge optimistically and `POST`s
+      `/api/feed/seen`, bracketed with `beginMutation()`/`endMutation()` from
+      `useRefreshGuard` (`endMutation()` in a `finally`) — the same race every
+      other mutation in this app guards against: without it, a focus refetch
+      landing between the optimistic clear and the POST resolving could apply
+      a response fetched before the server was stamped, carrying the old
+      `unread_count`, so the badge would come back and stay wrong until some
+      later fetch. The per-event `unread` marks are left alone by this same
+      write: they come from the server's response and only move on the next
+      fetch, deliberately separate from the optimistic badge state — otherwise
+      every mark would vanish from under you at the moment you opened the
+      panel to read them. A failed `seen` restores the badge and raises no
+      banner — the badge returning is the whole story, and the next open
+      retries it.
+    - `FeedPanel` splits `close()` from `dismiss()`, mirroring `PostMenu`'s
+      items-vs-Escape split: Escape, the scrim click, and the sheet's close
+      button all go through `dismiss()`, which hands focus back to the bell
+      via a ref before closing it; choosing a feed line goes through `close()`,
+      which does not, since the line navigates away and there is nowhere
+      useful for focus to return to. Without the split, a keyboard user who
+      closes the panel with Escape would land on `<body>` instead of back on
+      the bell.
+    - The badge can read higher than the list is long, since `unread_count`
+      covers the whole 30-day window and the list stops at ten. There is
+      deliberately no "and N more" footer: the panel has no second page, so it
+      could only name a number nobody can follow.
+    - `relativeTime` (`utils.js`) computes against the server's `now` rather
+      than `Date.now()`, so a device with a wrong clock cannot age the whole
+      panel by a day, and it clamps a future stamp to "just now" rather than
+      rendering "in 3 hours". Its five-minute floor means the minutes tier
+      starts at five and `1 minute ago` is unreachable — the singular exists
+      only at the hours and days tiers.
+- The hash route (`parseHashRoute` in `utils.js`, wired by `useHashRoute`)
+  understands `#/season/45` and `#/season/45/episode/3`. The parse is a pure
+  function so the regex is testable — the same split `refresh-guard.js` and
+  `submit-guard.js` draw. `useHashRoute` returns the _same object_ when a
+  hashchange leaves both values alone, so Preact can bail out instead of
+  re-rendering on every hash event.
+    - `SeasonView` seeds `openEpisode` from `routeEpisode` in an effect rather
+      than a `useState` initialiser, because the view is keyed on the season:
+      following a second feed link within the same season does not remount.
+    - **Arriving from a feed line expands the board and must never reveal it.**
+      Expanding and revealing are separate handlers (`onToggle` vs `onReveal`)
+      and have to stay that way — a reveal is permanent and one-way, and
+      spending someone's reveal on a tap they made in a header panel is not
+      something they can undo. Landing on a locked episode shows the locked
+      board, its authors, and its Reveal button, which is the right
+      destination. There is no DOM suite to assert this, so a reviewer should
+      check that `reveal` in `discussion.js` still has exactly one call site.
 - The manifest link in `index.html` carries `crossorigin="use-credentials"`,
   which is load-bearing behind Cloudflare Access: a manifest is fetched without
   credentials by default, so Access would redirect it to a login page, the

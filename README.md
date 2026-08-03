@@ -60,6 +60,28 @@ watching at different paces don't spoil each other.
   `[deleted]` tombstone, since deleting is an author's "unsay it" and a
   tombstone preserves what they removed.
 
+### What's new
+
+A bell in the header shows what the rest of the group has been saying. Each
+line names one person, one episode, and how long ago — `Alice commented on
+Season 45 Episode 3`, `3 hours ago` — and links straight to that episode's
+board. A badge counts what has landed since you last opened it.
+
+A person's notes on one episode in one sitting collapse to a single line, so a
+lively night is one entry rather than twenty. The line carries no note count:
+two notes and five notes both mean go read the episode. Nothing older than 30
+days appears, and the panel shows the ten most recent entries whether or not
+you have read them, so opening it on a quiet day still tells you what has been
+going on.
+
+The bell is per person rather than per column: both halves of a shared login
+have their own badge, and each sees the other's notes, since the byline is per
+individual too.
+
+Following a line opens that episode's board — it does **not** reveal it. If you
+have not watched the season or revealed the episode, you land on the locked
+board with its Reveal button, and the notes stay hidden until you ask for them.
+
 ## Home Screen Icon
 
 The site is installable: add it to a phone's home screen and it launches
