@@ -212,6 +212,24 @@ npx wrangler d1 execute outwatch --local  --file=roster.sql
 npx wrangler d1 execute outwatch --remote --file=roster.sql
 ```
 
+### Test data
+
+`scripts/insert-test-post.py` inserts one fake discussion post directly into
+the local D1 database, for exercising the discussion UI (long notes, old or
+future timestamps, different authors) without posting through the app. It's
+stdlib-only Python, reads no network, and never touches production — it only
+opens the local SQLite file under `.wrangler/state/`, which `npm run dev`
+must have created at least once.
+
+```bash
+scripts/insert-test-post.py                                     # random author, season 1 episode 1, now
+scripts/insert-test-post.py --author Bob --season 5 --episode 3 --length 60
+scripts/insert-test-post.py --time 5 --unit hours                # 5 hours ago
+scripts/insert-test-post.py --time 2 --unit days --future        # 2 days from now
+```
+
+Run it repeatedly (or in a shell loop) to build up more than one post.
+
 ### Validation
 
 CI runs these checks on every push and pull request to `main`.
