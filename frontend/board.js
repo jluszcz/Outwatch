@@ -11,7 +11,6 @@ import {
     selectableSeasons,
 } from './utils.js';
 import { Icon } from './icons.js';
-import { useIsDark } from './hooks.js';
 import { FeedBell } from './feed.js';
 
 const html = htm.bind(h);
@@ -27,11 +26,10 @@ export const prefersReducedMotion = () =>
 
 export function Header({ theme, onToggleTheme, showFeed }) {
     // The toggle shows the theme a click switches *to*, so the sun appears
-    // only while dark is in effect and the moon only while light is. That
-    // makes one flag do both jobs: which glyph, and whether it takes the
-    // -fill variant the dark surface needs. Read off the `theme` prop rather
-    // than useIsDark() — this component is already given the answer, so
-    // observing the DOM for it would be a second MutationObserver for nothing.
+    // only while dark is in effect and the moon only while light is. This is
+    // the one remaining place a component needs to know the theme to draw an
+    // icon, and it is a choice of *glyph*, not of variant — read off the
+    // `theme` prop this component already receives.
     const dark = theme === 'dark';
     const title = dark ? 'Switch to light mode' : 'Switch to dark mode';
     return html`
@@ -45,14 +43,14 @@ export function Header({ theme, onToggleTheme, showFeed }) {
                     showFeed ? html`<${FeedBell} />` : null
                 }
                 <button class="theme-btn" title=${title} onClick=${onToggleTheme}>
-                    <${Icon} name=${dark ? 'sun' : 'moon'} filled=${dark} />
+                    <${Icon} name=${dark ? 'sun' : 'moon'} />
                 </button>
             </div>
         </header>
     `;
 }
 
-function SeasonRow({ season, users, meId, fullyWatched, flash, dark, onToggle }) {
+function SeasonRow({ season, users, meId, fullyWatched, flash, onToggle }) {
     const { number, subtitle } = seasonParts(season);
     const rowClass = [fullyWatched ? 'watched-all' : '', flash ? 'flash' : '']
         .filter(Boolean)
@@ -70,7 +68,7 @@ function SeasonRow({ season, users, meId, fullyWatched, flash, dark, onToggle })
                     ${
                         season.post_count > 0
                             ? html`<span class="post-badge" title=${`${season.post_count} notes`}
-                                  ><${Icon} name="chat" filled=${dark} />${season.post_count}</span
+                                  ><${Icon} name="chat" />${season.post_count}</span
                               >`
                             : null
                     }
@@ -185,9 +183,6 @@ function NowWatching({ users, seasons, meId, onSetCurrentlyWatching, onJump }) {
 export function Board({ users, seasons, meId, onToggle, onSetCurrentlyWatching }) {
     const [sortMode, setSortMode] = useState('season');
     const [flashId, setFlashId] = useState(null);
-    // Subscribed once for the whole board rather than per row: useIsDark costs a
-    // MutationObserver per calling component, and SeasonRow renders ~50 times.
-    const dark = useIsDark();
     const userCount = users.length;
     const sorted = useMemo(
         () =>
@@ -283,7 +278,6 @@ export function Board({ users, seasons, meId, onToggle, onSetCurrentlyWatching }
                                     meId=${meId}
                                     fullyWatched=${isFullyWatched(s, userCount)}
                                     flash=${s.id === flashId}
-                                    dark=${dark}
                                     onToggle=${onToggle}
                                 />`,
                         )}

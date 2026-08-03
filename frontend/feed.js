@@ -2,7 +2,7 @@ import { h } from 'preact';
 import { useState, useEffect, useCallback, useRef } from 'preact/hooks';
 import htm from 'htm';
 import { api } from './api.js';
-import { useRefreshGuard, useRefreshOnFocus, useIsDark } from './hooks.js';
+import { useRefreshGuard, useRefreshOnFocus } from './hooks.js';
 import { relativeTime, feedLine } from './utils.js';
 import { Icon } from './icons.js';
 
@@ -138,7 +138,6 @@ export function FeedBell() {
     // fetch — otherwise every mark would vanish from under you at the moment
     // you opened the panel to read them.
     const [seen, setSeen] = useState(false);
-    const dark = useIsDark();
     const triggerRef = useRef(null);
 
     const fetchFeed = useCallback(() => api('/api/feed'), []);
@@ -222,7 +221,7 @@ export function FeedBell() {
                 title=${label}
                 onClick=${() => (open ? close() : setOpen(true))}
             >
-                <${Icon} name="bell" filled=${dark} />
+                <${Icon} name="bell" />
                 ${unread > 0 ? html`<span class="feed-badge">${unread}</span>` : null}
             </button>
             ${

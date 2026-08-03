@@ -2,7 +2,7 @@ import { h } from 'preact';
 import { useState, useRef, useEffect } from 'preact/hooks';
 import htm from 'htm';
 import { authorAccent, formatOffsetShort } from './utils.js';
-import { useIsDark, useSubmitGuard } from './hooks.js';
+import { useSubmitGuard } from './hooks.js';
 import { Icon } from './icons.js';
 import { REACTIONS } from '../shared/reactions.js';
 import { FullEmojiPicker, emojiName } from './emoji-picker.js';
@@ -238,9 +238,7 @@ function EmojiPicker({ post, onReact, onOpenFull }) {
 
 // The scrim and the menu itself: everything that exists only while the menu is
 // open. Split from PostMenu so it mounts with the menu rather than with the
-// note, which is what keeps `useIsDark`'s MutationObserver down to the one open
-// menu instead of one per rendered note on the board. Its effects get to key on
-// mount for the same reason.
+// note. Its effects get to key on mount for the same reason.
 //
 // Two layouts, one DOM: a dropdown anchored to the trigger inside the
 // position: relative .post-actions, which the `max-width: 640px` block turns
@@ -267,7 +265,6 @@ function PostMenuPanel({
     onStartEdit,
     onDelete,
 }) {
-    const dark = useIsDark();
     const menuRef = useRef(null);
     // The full picker replaces the menu's body rather than opening a layer of
     // its own: it reuses the same dropdown on a pointer device and the same
@@ -342,7 +339,7 @@ function PostMenuPanel({
                 !full &&
                 html`<div class="post-menu-items">
                     <button class="post-menu-item" onClick=${choose(() => onReply(post))}>
-                        <${Icon} name="reply" filled=${dark} />
+                        <${Icon} name="reply" />
                         <span>Reply</span>
                     </button>
                     ${
@@ -352,7 +349,7 @@ function PostMenuPanel({
                             class="post-menu-item"
                             onClick=${choose(() => onStartEdit(post.id))}
                         >
-                            <${Icon} name="pencil" filled=${dark} />
+                            <${Icon} name="pencil" />
                             <span>Edit</span>
                         </button>`
                     }
@@ -362,7 +359,7 @@ function PostMenuPanel({
                             class="post-menu-item post-menu-item-delete"
                             onClick=${choose(() => onDelete(post.id))}
                         >
-                            <${Icon} name="trash" filled=${dark} />
+                            <${Icon} name="trash" />
                             <span>Delete</span>
                         </button>`
                     }
