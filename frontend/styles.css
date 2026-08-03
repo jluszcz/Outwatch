@@ -859,6 +859,18 @@ tr.flash td {
     anchor-name: --feed-anchor;
 }
 
+/* The one place .bi's em sizing has nothing useful to ride. A <button> does
+   not take the page's font size on its own — the same trap .timer-chip needed
+   `font-family: inherit` for — so this button fell back to the UA's ~13.3px
+   and drew the bell at 14px, beside a theme toggle whose hand-written SVG is a
+   fixed 16px. The two sit side by side, where a 2px difference reads as a
+   mistake rather than a hierarchy. Pinning the box matches the pair exactly;
+   there is no text in here for an em to scale against anyway. */
+.feed-btn .bi {
+    width: 16px;
+    height: 16px;
+}
+
 /* Rides the button's corner rather than sitting beside it, so a two-digit
    count cannot widen the header row. */
 .feed-badge {
