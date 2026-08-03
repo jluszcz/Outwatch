@@ -12,6 +12,7 @@ import {
 } from './utils.js';
 import { Icon } from './icons.js';
 import { useIsDark } from './hooks.js';
+import { FeedBell } from './feed.js';
 
 const html = htm.bind(h);
 
@@ -59,14 +60,22 @@ const MoonIcon = () => html`
     </svg>
 `;
 
-export function Header({ theme, onToggleTheme }) {
+export function Header({ theme, onToggleTheme, showFeed }) {
     const title = theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
     return html`
         <header class="header">
             <h1 class="title">Outwit, Outplay, Outlast, Outwatch</h1>
-            <button class="theme-btn" title=${title} onClick=${onToggleTheme}>
-                ${theme === 'dark' ? html`<${SunIcon} />` : html`<${MoonIcon} />`}
-            </button>
+            <div class="header-actions">
+                ${
+                    // Only for someone on the roster: every feed route 403s for
+                    // anyone else, so the bell would be a control that can only
+                    // fail.
+                    showFeed ? html`<${FeedBell} />` : null
+                }
+                <button class="theme-btn" title=${title} onClick=${onToggleTheme}>
+                    ${theme === 'dark' ? html`<${SunIcon} />` : html`<${MoonIcon} />`}
+                </button>
+            </div>
         </header>
     `;
 }

@@ -155,7 +155,7 @@ function App() {
 
     return html`
         <div class="container">
-            <${Header} theme=${theme} onToggleTheme=${toggleTheme} />
+            <${Header} theme=${theme} onToggleTheme=${toggleTheme} showFeed=${Boolean(meId)} />
             <main class="app">
                 ${error && html`<div class="error">${error}</div>`}
                 ${loading && html`<div class="loading">Loading…</div>`}
