@@ -37,9 +37,21 @@ function FeedPanel({ data, error, onClose, onDismiss }) {
     // rule is that a mark holds until the *next* fetch, not until whichever
     // fetch happens to land while the panel is open, so the panel has to keep
     // looking at the response it was opened with. FeedPanel mounts fresh each
-    // time the panel opens, so a useState initialiser is enough — the
-    // snapshot naturally refreshes on the next open.
-    const [snapshot] = useState(() => data);
+    // time the panel opens, so the snapshot naturally refreshes on the next
+    // open.
+    //
+    // Not a bare useState initialiser, though: the panel can open before the
+    // first fetch has ever resolved, and an initialiser runs once, on mount.
+    // Freezing `null` there left the panel on "Loading…" for as long as it
+    // stayed open — the response arriving was just a new prop into an
+    // already-mounted component, and only closing and reopening it recovered.
+    // So adopt the first non-null response, and only that one: once the
+    // snapshot holds something, this stops firing and a later refetch still
+    // cannot clear the marks out from under a reader.
+    const [snapshot, setSnapshot] = useState(() => data);
+    useEffect(() => {
+        if (snapshot == null && data != null) setSnapshot(data);
+    }, [snapshot, data]);
 
     // Focus the first real item, not the first button: .feed-close leads in
     // DOM order (it's the sheet's top-right corner), so a selector list that
@@ -151,14 +163,7 @@ export function FeedBell() {
         close();
     }, [close]);
 
-    const openPanel = useCallback(async () => {
-        setOpen(true);
-        // Nothing to mark seen yet: opening before the first fetch has ever
-        // resolved would otherwise stamp the server and burn whatever unread
-        // marks are about to arrive without the panel ever having shown them.
-        // FeedPanel's own loading branch covers the same window on the
-        // display side.
-        if (!data) return;
+    const markSeen = useCallback(async () => {
         setSeen(true);
         // Brackets the same optimistic-write race every other mutation in this
         // app guards against: a focus refetch landing between the optimistic
@@ -177,7 +182,31 @@ export function FeedBell() {
         } finally {
             endMutation();
         }
-    }, [data, beginMutation, endMutation]);
+    }, [beginMutation, endMutation]);
+
+    // Marking read is driven by an effect rather than by the click, because
+    // the two things it needs — the panel being open and there being a
+    // response to mark — do not always arrive together. Opening before the
+    // first fetch resolves has nothing to stamp yet, and stamping anyway would
+    // burn unread marks the panel never got to show; but the click has long
+    // since returned by the time the response lands, so nothing was left to
+    // retry it and that opening never marked anything read at all. Keyed on
+    // both, it fires whenever the pair is first satisfied, whichever order
+    // they arrive in.
+    //
+    // The ref makes it once per opening rather than once per response: the
+    // POST's own endMutation can release a queued refetch, and that new `data`
+    // must not stamp the server a second time.
+    const markedRef = useRef(false);
+    useEffect(() => {
+        if (!open) {
+            markedRef.current = false;
+            return;
+        }
+        if (!data || markedRef.current) return;
+        markedRef.current = true;
+        markSeen();
+    }, [open, data, markSeen]);
 
     const unread = seen ? 0 : (data?.unread_count ?? 0);
     const label = unread > 0 ? `What's new (${unread} unread)` : "What's new";
@@ -191,7 +220,7 @@ export function FeedBell() {
                 aria-expanded=${open}
                 aria-label=${label}
                 title=${label}
-                onClick=${() => (open ? close() : openPanel())}
+                onClick=${() => (open ? close() : setOpen(true))}
             >
                 <${Icon} name="bell" filled=${dark} />
                 ${unread > 0 ? html`<span class="feed-badge">${unread}</span>` : null}
