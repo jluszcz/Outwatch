@@ -4,8 +4,10 @@ import htm from 'htm';
 const html = htm.bind(h);
 
 // Path data copied from Bootstrap Icons v1.13.1 (MIT), which is not an npm
-// dependency here: the package ships ~2,000 SVGs and a webfont, and this app
-// draws nine glyphs. Inlining them keeps the bundle self-contained and makes a
+// dependency here: the package ships ~2,000 SVGs and a webfont, against the
+// handful of glyphs this app draws — count them below rather than trusting a
+// number here, which has already gone stale twice. Inlining keeps the bundle
+// self-contained and makes a
 // refresh a copy-paste from https://github.com/twbs/icons/tree/main/icons.
 //
 // Each entry holds a list of path `d` strings, because some icons are more than
