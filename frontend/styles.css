@@ -859,16 +859,17 @@ tr.flash td {
     anchor-name: --feed-anchor;
 }
 
-/* The one place .bi's em sizing has nothing useful to ride. A <button> does
-   not take the page's font size on its own — the same trap .timer-chip needed
-   `font-family: inherit` for — so this button fell back to the UA's ~13.3px
-   and drew the bell at 14px, beside a theme toggle whose hand-written SVG is a
-   fixed 16px. The two sit side by side, where a 2px difference reads as a
-   mistake rather than a hierarchy. Pinning the box matches the pair exactly;
-   there is no text in here for an em to scale against anyway. */
-.feed-btn .bi {
-    width: 16px;
-    height: 16px;
+/* The header's two icon-only buttons. Every other .bi host in this file sets a
+   font-size (.post-action 0.9rem, .reveal-btn 0.85rem, .timer-btn 0.8rem),
+   which is what .bi's em sizing rides; these two had none, because a <button>
+   does not take the page's font on its own — the same trap .timer-chip needed
+   `font-family: inherit` for. They fell back to the UA's ~13.3px, and the bell
+   drew at 14px beside a theme toggle that was sidestepping the whole question
+   with a hardcoded 16px SVG. 0.95rem puts .bi's 1.05em on 16px, so the pair
+   matches and lands where the old hand-written toggle already was. */
+.feed-btn,
+.theme-btn {
+    font-size: 0.95rem;
 }
 
 /* Rides the button's corner rather than sitting beside it, so a two-digit

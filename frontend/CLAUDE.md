@@ -37,12 +37,7 @@ of the root `CLAUDE.md` so it loads only when working on these files.
   the pinned cell flash at all. The phone block overrides only
   `animation-name`, since that layout draws its column divider with the same
   `box-shadow` the flash would otherwise replace for the flash's duration.
-- `Board` calls `useIsDark` once and passes `dark` down to `SeasonRow`, rather
-  than letting each row call it: the hook costs a `MutationObserver` per
-  calling component and the board renders a row per season. This is the "a shared
-  subscription is the better trade" case the icons bullet below anticipates,
-  settled with one level of prop drilling instead of a context.
-- A season row's note count is a pill (`.post-badge`) drawing `bi-chat`, not a
+- A season row's note count is a pill (`.post-badge`) drawing the `chat` icon, not a
   bare `💬 N`. The emoji rendered as a full-colour system glyph that outweighed
   its own number and ignored the theme, and at `0.75rem` beside a `1rem`
   season number the pair was the lightest thing in the row. The chrome supplies
@@ -300,10 +295,9 @@ of the root `CLAUDE.md` so it loads only when working on these files.
     - Split in two: `PostMenu` renders on every note and holds nothing but the
       trigger and the two ways out, while `PostMenuPanel` — the scrim, the
       picker, and the items — mounts only while that note's menu is open. The
-      split is what keeps the per-note cost to a button: `useIsDark`'s
-      `MutationObserver` and the Escape listener are subscribed by the panel, so
-      a board of fifty notes carries one of each (the open menu's) rather than
-      fifty. It also lets both effects key on mount instead of on `open`.
+      split is what keeps the per-note cost to a button: the Escape listener is
+      subscribed by the panel, so a board of fifty notes carries one rather than
+      fifty. It also lets its effects key on mount instead of on `open`.
     - Two layouts, one DOM and no JS measurement: on a pointer device the menu
       is a dropdown absolutely positioned inside `.post-actions`
       (`position: relative`, and deliberately no `z-index`, so no stacking
@@ -416,23 +410,45 @@ of the root `CLAUDE.md` so it loads only when working on these files.
   can't desync from the server. Choosing an emoji closes the menu
   unconditionally, whether the mutation that follows succeeds or not, so unlike
   `saveEdit` there is no response-driven close for a late answer to race against.
-- Icons are Bootstrap Icons path data inlined in `frontend/icons.js`, not the
-  npm package: it ships thousands of SVGs and a webfont, overkill for the
-  handful of glyphs this app draws, and inlining keeps the bundle free of
-  external requests. `Icon` paints with `fill="currentColor"` and sizes in `em`
-  (`.bi`), so a glyph inherits its button's colour — the delete row's red hover
-  included — and its font-size, without a token of its own. The `-fill` variants
-  are used in dark mode, where a 1px outline thins out against the dark surface.
-  That swap is the one thing CSS cannot express (everything else themes through
-  `light-dark()` tokens, which resolve without anyone knowing which theme won),
-  so `useIsDark` (`hooks.js`) observes the `data-theme` attribute `useTheme`
-  writes — the attribute, not the media query, so the manual toggle counts, and
-  a `MutationObserver` rather than a context so nothing has to be threaded
-  through `App → SeasonView → EpisodeBoard → PostList → Post` to reach the menu.
-  One observer per calling component is the price of skipping the context, so
-  call it from the narrowest component that needs it (`PostMenuPanel`, not
-  `PostMenu`) — if a third caller ever renders per-note, a shared subscription
-  is the better trade.
+- Icons come from `lucide-preact`, imported per icon in `frontend/icons.js`.
+  Named imports from a `sideEffects: false` ESM package, so esbuild drops the
+  other ~6,000 exports — the icon module bundles to under 5 KB. It is an
+  ordinary npm package rather than a build-plugin scheme like `unplugin-icons`,
+  which matters because `test/frontend/post.test.js` reaches `icons.js` through
+  `post.js`: a virtual-module import would need the plugin wired into vitest
+  too, spending the "npm test needs no bundle step" property. `Icon` paints with
+  `currentColor` so a glyph inherits its button's colour — the delete row's red
+  hover included — and passes `size={null}` so Lucide's own width/height are
+  dropped and `.bi`'s `em` sizing decides the box.
+    - **There is no dark-mode variant, and no component needs to know the
+      theme to draw an icon.** Dark mode is a pure colour change through
+      `light-dark()`. This replaced an outline/`-fill` swap over inlined
+      Bootstrap path data, which existed because a 1px Bootstrap outline thins
+      out against a dark surface — real, and visible at 16px. Two things
+      retired it: Lucide strokes at 2/24 (~1.33px at 16px) rather than ~1px, so
+      it holds up on dark without help; and a _filled_ glyph overshoots, coming
+      out heavier than the same icon in light mode, so the two themes stopped
+      matching. An outline at a brighter colour matches light mode's weight;
+      a fill does not.
+    - What that deleted: `useIsDark`, its `MutationObserver`, all three of its
+      call sites, and the `dark` prop drilled `Board → SeasonRow`. Do not
+      reintroduce a theme-reading hook to style an icon — if dark mode needs
+      more presence, move the colour, not the shape.
+    - **A button hosting a `.bi` needs a `font-size`**, because `.bi` sizes in
+      `em` and a `<button>` does not take the page's font on its own (the trap
+      `.timer-chip` needed `font-family: inherit` for). Every one of them sets a
+      value: `.post-action` `0.9rem`, `.reveal-btn` `0.85rem`, `.timer-btn`
+      `0.8rem`, and the header pair `0.95rem`, which puts `1.05em` on 16px. A
+      button that sets none falls back to the UA's ~13.3px and draws its glyph
+      at 14px — which is exactly how the feed bell came out undersized beside a
+      theme toggle that was hand-writing a fixed 16px SVG.
+    - `icons.js` is the only icon system. Do not reintroduce a second way to
+      draw an icon; the hand-written-SVG split is what caused the sizing bug
+      above.
+    - `Header` is the one component that still branches on the theme, and it is
+      choosing a _glyph_ (sun while dark is in effect, moon while light is),
+      not a variant. It reads `theme === 'dark'` off the prop it already
+      receives.
 - The optional watch timer (`WatchTimer` in `discussion.js`, rule in
   `shared/session.js`) starts, pauses, and resumes per (user, episode); a
   session goes stale after three hours without a start/pause/resume/post, and
@@ -529,16 +545,6 @@ of the root `CLAUDE.md` so it loads only when working on these files.
   `position-try-fallbacks: flip-block` behind `@supports`) and a bottom sheet
   with a dimmed scrim below `640px`, its close button in the top-right corner
   for the same iOS-toolbar reason.
-    - `FeedBell` calls `useIsDark`; `FeedPanel` deliberately does not, even
-      though it is the piece that only mounts while open, the same shape
-      `PostMenuPanel` has. The panel's only icon is `x`, which has no `-fill`
-      variant in `icons.js` — it is already two solid strokes — so subscribing
-      a `MutationObserver` there would spin one up on every panel open for no
-      visual effect. The bell icon does have a `-fill` variant, so `FeedBell`
-      is the narrowest component that actually needs the hook — the icons
-      bullet's "call it from the narrowest component that needs it" rule,
-      applied to a case where the narrowest need turns out to sit on the
-      parent rather than the child.
     - Opening the panel clears the badge optimistically and `POST`s
       `/api/feed/seen`, bracketed with `beginMutation()`/`endMutation()` from
       `useRefreshGuard` (`endMutation()` in a `finally`) — the same race every
