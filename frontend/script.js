@@ -16,7 +16,7 @@ function App() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const { theme, toggle: toggleTheme } = useTheme();
-    const routeSeasonId = useHashRoute();
+    const { seasonId: routeSeasonId, episode: routeEpisode } = useHashRoute();
 
     const fetchBoard = useCallback(() => api('/api/board'), []);
     const applyBoard = useCallback((board) => {
@@ -155,7 +155,7 @@ function App() {
 
     return html`
         <div class="container">
-            <${Header} theme=${theme} onToggleTheme=${toggleTheme} />
+            <${Header} theme=${theme} onToggleTheme=${toggleTheme} showFeed=${Boolean(meId)} />
             <main class="app">
                 ${error && html`<div class="error">${error}</div>`}
                 ${loading && html`<div class="loading">Loading…</div>`}
@@ -184,7 +184,11 @@ function App() {
                 ${
                     !loading &&
                     routeSeasonId != null &&
-                    html`<${SeasonView} key=${routeSeasonId} seasonId=${routeSeasonId} />`
+                    html`<${SeasonView}
+                        key=${routeSeasonId}
+                        seasonId=${routeSeasonId}
+                        routeEpisode=${routeEpisode}
+                    />`
                 }
                 ${
                     !loading &&

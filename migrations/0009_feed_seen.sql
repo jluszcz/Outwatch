@@ -1,0 +1,13 @@
+-- When each individual last opened the what's-new bell. NULL means never, in
+-- which case everything inside the feed's 30-day window counts unread.
+--
+-- On user_emails rather than users, and so keyed on the person rather than the
+-- board column. A couple shares a column, a screen, and a watch timer, but not
+-- a pair of eyes: Bob opening the bell must not clear Carol's badge. This is
+-- the same split the rest of the schema draws — authorship and reactions are
+-- per individual, everything about watching is per column.
+--
+-- There is deliberately no events table to go with it. The feed reads comments
+-- from posts.created_at live, so a deleted note leaves the feed on its own and
+-- no denormalized row can drift from the note it describes.
+ALTER TABLE user_emails ADD COLUMN feed_seen_at TEXT;

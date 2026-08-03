@@ -15,6 +15,9 @@ import {
     formatAdjust,
     clampAdjust,
     settledAdjust,
+    relativeTime,
+    feedLine,
+    parseHashRoute,
 } from '../../frontend/utils.js';
 
 // ---------------------------------------------------------------------------
@@ -434,5 +437,121 @@ describe('settledAdjust', () => {
 
     it('ignores a stale success once a newer request has already settled', () => {
         expect(settledAdjust(false, true, 30, 0)).toBeUndefined();
+    });
+});
+
+// ---------------------------------------------------------------------------
+// relativeTime
+// ---------------------------------------------------------------------------
+
+describe('relativeTime', () => {
+    const now = Date.parse('2026-08-02T12:00:00.000Z');
+    const ago = (secs) => new Date(now - secs * 1000).toISOString();
+
+    it('calls the present moment just now', () => {
+        expect(relativeTime(ago(0), now)).toBe('just now');
+    });
+
+    it('still says just now at five minutes exactly', () => {
+        expect(relativeTime(ago(300), now)).toBe('just now');
+    });
+
+    it('starts counting minutes just past five', () => {
+        expect(relativeTime(ago(301), now)).toBe('5 minutes ago');
+    });
+
+    it('counts minutes up to the hour', () => {
+        expect(relativeTime(ago(59 * 60), now)).toBe('59 minutes ago');
+    });
+
+    it('switches to hours at sixty minutes', () => {
+        expect(relativeTime(ago(60 * 60), now)).toBe('1 hour ago');
+    });
+
+    it('truncates towards zero rather than rounding', () => {
+        expect(relativeTime(ago(119 * 60), now)).toBe('1 hour ago');
+    });
+
+    it('pluralises hours', () => {
+        expect(relativeTime(ago(3 * 60 * 60), now)).toBe('3 hours ago');
+    });
+
+    it('counts hours up to the day', () => {
+        expect(relativeTime(ago(23 * 60 * 60 + 59 * 60), now)).toBe('23 hours ago');
+    });
+
+    it('switches to days at twenty-four hours', () => {
+        expect(relativeTime(ago(24 * 60 * 60), now)).toBe('1 day ago');
+    });
+
+    it('pluralises days', () => {
+        expect(relativeTime(ago(3 * 24 * 60 * 60), now)).toBe('3 days ago');
+    });
+
+    // A device clock running fast would otherwise produce "in 3 hours".
+    it('clamps a future stamp to just now', () => {
+        expect(relativeTime(new Date(now + 60 * 60 * 1000).toISOString(), now)).toBe('just now');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// feedLine
+// ---------------------------------------------------------------------------
+
+describe('feedLine', () => {
+    it('names the person, the season, and the episode', () => {
+        expect(feedLine({ author_name: 'Alice', season_id: 45, episode: 3 })).toBe(
+            'Alice commented on Season 45 Episode 3',
+        );
+    });
+
+    // No count, however many notes the group holds: two and five both mean go
+    // read the episode.
+    it('says the same thing however many notes are behind it', () => {
+        const one = feedLine({ author_name: 'Bob', season_id: 46, episode: 1 });
+        expect(one).toBe('Bob commented on Season 46 Episode 1');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// parseHashRoute
+// ---------------------------------------------------------------------------
+
+describe('parseHashRoute', () => {
+    it('reads a season', () => {
+        expect(parseHashRoute('#/season/45')).toEqual({ seasonId: 45, episode: null });
+    });
+
+    it('reads a season and an episode', () => {
+        expect(parseHashRoute('#/season/45/episode/3')).toEqual({ seasonId: 45, episode: 3 });
+    });
+
+    it('falls back to the board for an empty hash', () => {
+        expect(parseHashRoute('')).toEqual({ seasonId: null, episode: null });
+    });
+
+    it('falls back to the board for an unrelated hash', () => {
+        expect(parseHashRoute('#/settings')).toEqual({ seasonId: null, episode: null });
+    });
+
+    // Season 0 and episode 0 do not exist. Matching them would mount the view
+    // and surface the API's raw validation error instead of showing the board.
+    it('rejects a zero season', () => {
+        expect(parseHashRoute('#/season/0')).toEqual({ seasonId: null, episode: null });
+    });
+
+    it('rejects a zero episode', () => {
+        expect(parseHashRoute('#/season/45/episode/0')).toEqual({ seasonId: null, episode: null });
+    });
+
+    it('rejects a leading zero', () => {
+        expect(parseHashRoute('#/season/045')).toEqual({ seasonId: null, episode: null });
+    });
+
+    it('rejects trailing junk', () => {
+        expect(parseHashRoute('#/season/45/episode/3/x')).toEqual({
+            seasonId: null,
+            episode: null,
+        });
     });
 });

@@ -15,10 +15,11 @@ import {
 } from './utils.js';
 import { sessionOffsetSecs, MAX_OFFSET_ADJUST_SECS } from '../shared/session.js';
 import { PostList } from './post.js';
+import { prefersReducedMotion } from './board.js';
 
 const html = htm.bind(h);
 
-export function SeasonView({ seasonId }) {
+export function SeasonView({ seasonId, routeEpisode }) {
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -26,6 +27,48 @@ export function SeasonView({ seasonId }) {
     // per-board so opening one closes the rest: the boards are a tall stack, and
     // leaving them all open buries the one you just opened.
     const [openEpisode, setOpenEpisode] = useState(null);
+
+    // A feed line links straight at an episode, so the route can name one. An
+    // effect rather than a useState seed because SeasonView is keyed on the
+    // season: following a second link within the same season does not remount,
+    // so an initial value would never re-run.
+    //
+    // It must NOT reveal. Expanding a board and revealing it are separate
+    // actions here (onToggle vs onReveal) and have to stay that way — a reveal
+    // is permanent and one-way, and spending someone's reveal on a tap they
+    // made in a header panel is not something they can undo. Landing on a
+    // locked episode shows the locked board and its Reveal button, which is the
+    // right destination.
+    useEffect(() => {
+        if (routeEpisode != null) setOpenEpisode(routeEpisode);
+    }, [routeEpisode]);
+
+    // A feed line's whole point is to land you on the episode it names, not
+    // merely expand its board off-screen: a hash navigation lands at the top
+    // of the document, and the opened card can sit hundreds of pixels below
+    // the fold with nothing to show anything happened. Mirrors NowWatching's
+    // jump in board.js, including its prefers-reduced-motion check.
+    //
+    // Keyed on `data` as well as `routeEpisode`, and guarded by a ref rather
+    // than running unconditionally on every dep change: the episode-card div
+    // doesn't exist until the discussion has loaded, so an effect keyed on
+    // routeEpisode alone would find nothing to scroll to on the very load
+    // that set it — and `data` gets a new reference on every refetch
+    // (focus, a mutation's own refresh), so without the ref this would
+    // re-scroll the page out from under someone reading elsewhere on every
+    // one of those, not just the arrival.
+    const scrolledEpisodeRef = useRef(null);
+    useEffect(() => {
+        if (routeEpisode == null || !data) return;
+        if (scrolledEpisodeRef.current === routeEpisode) return;
+        const card = document.getElementById(`episode-card-${routeEpisode}`);
+        if (!card) return;
+        card.scrollIntoView({
+            block: 'center',
+            behavior: prefersReducedMotion() ? 'auto' : 'smooth',
+        });
+        scrolledEpisodeRef.current = routeEpisode;
+    }, [routeEpisode, data]);
 
     // One request: the discussion response names each note's author itself, so
     // there is no roster to fetch and merge here.
@@ -279,7 +322,10 @@ function EpisodeBoard({
     const others = ep.authors.filter((a) => !a.mine).map((a) => a.name);
 
     return html`
-        <div class=${'episode-card' + (ep.readable ? '' : ' locked')}>
+        <div
+            id=${`episode-card-${ep.episode}`}
+            class=${'episode-card' + (ep.readable ? '' : ' locked')}
+        >
             <button class="episode-head" aria-expanded=${open} onClick=${onToggle}>
                 <span class="episode-name">Episode ${ep.episode}</span>
                 <span class="episode-meta">

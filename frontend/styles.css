@@ -97,7 +97,6 @@ body {
 }
 
 .theme-btn {
-    margin-left: auto;
     padding: 6px 8px;
     border: 0;
     background: 0 0;
@@ -814,6 +813,183 @@ tr.flash td {
    claims — see the `max-width: 640px` block. */
 .post-menu-close {
     display: none;
+}
+
+/* The header's controls as one row, so the bell and the theme toggle sit
+   together rather than the bell pushing the title around. margin-left: auto
+   is what right-aligns the pair against .header (display: flex, no
+   justify-content) — it used to live on .theme-btn alone, back when the
+   toggle was .header's only direct flex child and so the only thing that
+   needed to absorb the row's free space. Task 7 wrapped it and the bell in
+   this div, which is content-sized with no flex-grow of its own: the free
+   space collects in .header instead, and an auto margin on a child of
+   .header-actions has nothing left to absorb. Moving the margin here is what
+   pushes the div itself, and so both of its children, back to the edge. */
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-left: auto;
+}
+
+/* The positioning context the dropdown hangs off. Deliberately no z-index: no
+   stacking context forms here, so the panel's z-index competes page-wide the
+   way .post-menu's does. */
+.feed-wrap {
+    position: relative;
+}
+
+.feed-btn {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: var(--control-height);
+    min-height: var(--control-height);
+    background: none;
+    /* Borderless, matching .theme-btn beside it: the two read as one pair of
+       header affordances, and a rimmed bell next to an unrimmed sun looked
+       like a control in a different state rather than a different control.
+       The square footprint still comes from --control-height, so dropping the
+       border does not resize the button or move the badge riding its corner. */
+    border: 0;
+    border-radius: 0.5rem;
+    color: var(--text-subtle);
+    cursor: pointer;
+    anchor-name: --feed-anchor;
+}
+
+/* The one place .bi's em sizing has nothing useful to ride. A <button> does
+   not take the page's font size on its own — the same trap .timer-chip needed
+   `font-family: inherit` for — so this button fell back to the UA's ~13.3px
+   and drew the bell at 14px, beside a theme toggle whose hand-written SVG is a
+   fixed 16px. The two sit side by side, where a 2px difference reads as a
+   mistake rather than a hierarchy. Pinning the box matches the pair exactly;
+   there is no text in here for an em to scale against anyway. */
+.feed-btn .bi {
+    width: 16px;
+    height: 16px;
+}
+
+/* Rides the button's corner rather than sitting beside it, so a two-digit
+   count cannot widen the header row. */
+.feed-badge {
+    position: absolute;
+    top: -0.35rem;
+    right: -0.35rem;
+    min-width: 1.1rem;
+    padding: 0 0.25rem;
+    font-size: 0.7rem;
+    line-height: 1.1rem;
+    font-weight: 600;
+    text-align: center;
+    color: #fff;
+    background: var(--blue);
+    border-radius: 999px;
+}
+
+.feed-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+    background: transparent;
+}
+
+/* display: flex; flex-direction: column matches the .post-menu rule these
+   layout rules were copied from. Without it .feed-panel is a block box, so
+   the mobile block's align-self: flex-end on .feed-close (copied from
+   .post-menu-close, which relies on the flex column above it) is inert, and
+   a block-level width: auto flex box fills its containing block anyway,
+   forcing that rule's margin-left: auto to zero — the ✕ rendered centred in
+   a full-width strip instead of the corner. Column-stacked children read the
+   same as block-stacked ones at every width where this matters, so making
+   the base rule match its precedent costs the dropdown layout nothing. */
+.feed-panel {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-block: 0.25rem;
+    z-index: 21;
+    width: min(22rem, calc(100vw - 2rem));
+    max-height: 70vh;
+    overflow-y: auto;
+    padding: 0.35rem;
+    display: flex;
+    flex-direction: column;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    box-shadow: 0 4px 16px var(--shadow);
+}
+
+/* Same call as .post-menu: let the browser measure. Gated behind @supports
+   rather than layered as duplicate `top` declarations, since a minifier
+   collapses two `top`s in one rule and drops the fallback. */
+@supports (position-try-fallbacks: flip-block) {
+    .feed-panel {
+        position-anchor: --feed-anchor;
+        top: anchor(bottom);
+        right: anchor(right);
+        position-try-fallbacks: flip-block;
+    }
+}
+
+/* Hidden on a pointer device, where clicking off the dropdown already
+   dismisses. The phone layout reveals it — see the mobile block. */
+.feed-close {
+    display: none;
+}
+
+.feed-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.feed-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    padding: 0.5rem 0.6rem;
+    border-radius: 0.35rem;
+    color: var(--text-subtle);
+    text-decoration: none;
+}
+
+/* A dot in the leading gutter rather than a different background: the list
+   should read as one list, with the unread ones marked inside it. */
+.feed-item.unread {
+    position: relative;
+    color: var(--text);
+    font-weight: 600;
+}
+
+.feed-item.unread::before {
+    content: '';
+    position: absolute;
+    left: 0.15rem;
+    top: 0.95rem;
+    width: 0.35rem;
+    height: 0.35rem;
+    border-radius: 999px;
+    background: var(--blue);
+}
+
+.feed-text {
+    font-size: 0.9rem;
+}
+
+.feed-when {
+    font-size: 0.75rem;
+    color: var(--text-faint);
+}
+
+.feed-empty {
+    margin: 0;
+    padding: 1rem 0.6rem;
+    text-align: center;
+    font-size: 0.85rem;
+    color: var(--text-faint);
 }
 
 /* Renders inside .post-body, trailing the note's last line. It used to sit on
@@ -1647,6 +1823,54 @@ tr.flash td {
         padding: 0;
     }
 
+    /* The same element as a bottom sheet. position: fixed escapes .feed-wrap
+       because nothing between it and the root is transformed — the same escape
+       .post-menu relies on. */
+    .feed-panel {
+        position: fixed;
+        inset: auto 0 0 0;
+        /* Content-sized against the bottom edge, so it cannot overflow and has
+           nothing to flip. */
+        position-try-fallbacks: none;
+        width: auto;
+        max-height: 75vh;
+        padding: 0.6rem 0.9rem 1.5rem;
+        border-width: 1px 0 0;
+        border-radius: 0.9rem 0.9rem 0 0;
+        box-shadow: 0 -4px 16px var(--shadow);
+    }
+
+    .feed-scrim {
+        background: light-dark(rgba(0, 0, 0, 0.35), rgba(0, 0, 0, 0.6));
+    }
+
+    /* Top-right, which is the furthest point in the sheet from the bottom edge
+       iOS Safari's collapsed toolbar owns — a tap along that strip expands the
+       toolbar rather than reaching the page. Same reasoning, and same negative
+       margins, as .post-menu-close. */
+    .feed-close {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        align-self: flex-end;
+        margin: -0.4rem -0.5rem 0 auto;
+        min-width: 44px;
+        min-height: 44px;
+        background: none;
+        border: none;
+        border-radius: 0.35rem;
+        color: var(--text-faint);
+        cursor: pointer;
+    }
+
+    .feed-item {
+        padding: 0.7rem 0.6rem;
+    }
+
+    .feed-text {
+        font-size: 1rem;
+    }
+
     .reaction-chip {
         min-height: 32px;
     }
@@ -1810,6 +2034,17 @@ tr.flash td {
     .nw-jump:hover {
         background: var(--blue);
         color: var(--surface);
+    }
+
+    /* Same hover as .theme-btn: with the border gone there is no rim left to
+       raise, so the fill is what has to carry the state. */
+    .feed-btn:hover {
+        color: var(--text);
+        background: var(--surface-hover);
+    }
+
+    .feed-item:hover {
+        background: var(--surface-subtle);
     }
 }
 

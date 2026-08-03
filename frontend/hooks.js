@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'preact/hooks';
 import { createRefreshGuard } from './refresh-guard.js';
 import { createSubmitGuard } from './submit-guard.js';
+import { parseHashRoute } from './utils.js';
 
 // The theme in effect before anything has been rendered: a manual choice if one
 // was stored, otherwise whatever the OS asks for. Shared by useTheme's initial
@@ -139,23 +140,24 @@ export function useSubmitGuard() {
 // a router library. A hash also means Back returns to the board, a reload keeps
 // your place, and a season is a link you can paste into chat.
 export function useHashRoute() {
-    const read = () => {
-        // No leading zero and no bare "0" — season ids are positive integers, and
-        // "0" would otherwise match, mount SeasonView, and surface the API's raw
-        // "season_id must be a positive integer" error instead of falling back
-        // to the board.
-        const match = /^#\/season\/([1-9]\d*)$/.exec(window.location.hash);
-        return match ? Number(match[1]) : null;
-    };
-    const [seasonId, setSeasonId] = useState(read);
+    const [route, setRoute] = useState(() => parseHashRoute(window.location.hash));
 
     useEffect(() => {
-        const handler = () => setSeasonId(read());
+        const handler = () =>
+            setRoute((current) => {
+                const next = parseHashRoute(window.location.hash);
+                // Returning the same object lets Preact bail out. Without this
+                // every hashchange — including one that lands on the hash we
+                // are already on — would be a new object and a re-render.
+                return next.seasonId === current.seasonId && next.episode === current.episode
+                    ? current
+                    : next;
+            });
         window.addEventListener('hashchange', handler);
         return () => window.removeEventListener('hashchange', handler);
     }, []);
 
-    return seasonId;
+    return route;
 }
 
 // Refetch when the tab regains focus, so changes other people made while this
