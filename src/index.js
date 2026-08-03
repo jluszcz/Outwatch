@@ -685,9 +685,15 @@ app.post('/api/seasons/:season_id/episodes/:episode/reveal', async (c) => {
 // ever disagreeing about what a group is.
 //
 // The caller's own notes are excluded in SQL rather than after grouping, so the
-// ten returned are ten they can actually act on. The test mirrors
-// attribute()'s `mine` rule exactly: an attributed note is theirs when the
-// email matches, an unattributed one when the column does.
+// ten returned are ten they can actually act on. The CASE matches
+// attribute()'s `mine` rule for every note the write path can actually
+// produce — an attributed note is excluded when the email matches, an
+// unattributed one when the column does — though it is not literally the same
+// test: the non-null branch skips attribute()'s user_id === me.id conjunct.
+// That only diverges for a note whose author_email and user_id disagree, which
+// the write path never produces (a post's author_email always names the same
+// person its user_id's column resolves to), so the two rules agree in
+// practice without agreeing on paper.
 app.get('/api/feed', async (c) => {
     const me = await callerUser(c);
     if (!me) return c.json({ error: 'Your account is not on the watch list' }, 403);
