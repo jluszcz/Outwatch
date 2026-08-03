@@ -847,7 +847,12 @@ tr.flash td {
     min-width: var(--control-height);
     min-height: var(--control-height);
     background: none;
-    border: 1px solid var(--border);
+    /* Borderless, matching .theme-btn beside it: the two read as one pair of
+       header affordances, and a rimmed bell next to an unrimmed sun looked
+       like a control in a different state rather than a different control.
+       The square footprint still comes from --control-height, so dropping the
+       border does not resize the button or move the badge riding its corner. */
+    border: 0;
     border-radius: 0.5rem;
     color: var(--text-subtle);
     cursor: pointer;
@@ -2019,9 +2024,11 @@ tr.flash td {
         color: var(--surface);
     }
 
+    /* Same hover as .theme-btn: with the border gone there is no rim left to
+       raise, so the fill is what has to carry the state. */
     .feed-btn:hover {
         color: var(--text);
-        border-color: var(--text-faint);
+        background: var(--surface-hover);
     }
 
     .feed-item:hover {
