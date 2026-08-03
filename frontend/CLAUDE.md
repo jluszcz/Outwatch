@@ -546,13 +546,26 @@ of the root `CLAUDE.md` so it loads only when working on these files.
       landing between the optimistic clear and the POST resolving could apply
       a response fetched before the server was stamped, carrying the old
       `unread_count`, so the badge would come back and stay wrong until some
-      later fetch. The per-event `unread` marks are left alone by this same
-      write: they come from the server's response and only move on the next
-      fetch, deliberately separate from the optimistic badge state — otherwise
-      every mark would vanish from under you at the moment you opened the
-      panel to read them. A failed `seen` restores the badge and raises no
-      banner — the badge returning is the whole story, and the next open
-      retries it.
+      later fetch. Both the optimistic clear and the `POST` are skipped
+      outright when `data` is still `null` — opening the bell before the very
+      first fetch has ever resolved has nothing to mark seen, and stamping the
+      server anyway would burn whatever unread marks are about to arrive
+      before the panel ever showed them; `FeedPanel`'s loading branch (below)
+      covers the same window on the display side. A failed `seen` restores the
+      badge and raises no banner — the badge returning is the whole story, and
+      the next open retries it.
+    - The per-event `unread` marks are deliberately separate from the
+      optimistic badge state, and `FeedPanel` snapshots the `data` it opened
+      with in a `useState` initialiser rather than reading the live prop —
+      `data` is the same prop the badge itself reads, and `useRefreshGuard`'s
+      queued-refetch dance around the `seen` `POST` above can apply a fresher
+      response while the panel is still on screen. Reading the prop directly
+      would clear every mark out from under a still-open panel the instant
+      that refetch landed; the snapshot is what holds them for as long as the
+      panel stays open and lets them move only on the _next_ open, which is
+      the invariant this is for. It also gates `FeedPanel`'s branches: `null`
+      reads as "still loading" (see below) rather than being conflated with a
+      genuinely empty response.
     - `FeedPanel` splits `close()` from `dismiss()`, mirroring `PostMenu`'s
       items-vs-Escape split: Escape, the scrim click, and the sheet's close
       button all go through `dismiss()`, which hands focus back to the bell
@@ -561,16 +574,36 @@ of the root `CLAUDE.md` so it loads only when working on these files.
       useful for focus to return to. Without the split, a keyboard user who
       closes the panel with Escape would land on `<body>` instead of back on
       the bell.
+    - Focus on open targets the first `.feed-item`, not the first button —
+      the same `.emoji-btn, .post-menu-item`-style exclusion `PostMenuPanel`
+      documents, for the same reason: `.feed-close` leads in DOM order, and
+      opening the panel onto its own escape hatch is a strange place to land.
+      It also matters functionally here in a way it doesn't for the menu:
+      `.feed-close` is `display: none` on a pointer device, so a selector that
+      could match only it would silently no-op and leave focus in the
+      document. The panel div itself (`tabIndex="-1"`) is the fallback target
+      when there is no item to focus — still loading, empty, or errored.
     - The badge can read higher than the list is long, since `unread_count`
       covers the whole 30-day window and the list stops at ten. There is
       deliberately no "and N more" footer: the panel has no second page, so it
       could only name a number nobody can follow.
-    - `relativeTime` (`utils.js`) computes against the server's `now` rather
-      than `Date.now()`, so a device with a wrong clock cannot age the whole
-      panel by a day, and it clamps a future stamp to "just now" rather than
-      rendering "in 3 hours". Its five-minute floor means the minutes tier
-      starts at five and `1 minute ago` is unreachable — the singular exists
-      only at the hours and days tiers.
+    - `relativeTime` (`utils.js`) takes a `nowMs` the caller computes, not
+      `Date.now()` directly, so a device with a wrong clock cannot age the
+      whole panel by a day, and it clamps a future stamp to "just now" rather
+      than rendering "in 3 hours". `FeedPanel` derives that `nowMs` the same
+      way `discussion.js`'s `serverSkewMs` does: a skew (`snapshot.now` minus
+      `Date.now()`) computed once against the response it opened with, then
+      added back to a live `Date.now()` at render — not the server's `now`
+      used directly as the current time, which would freeze every age at
+      whatever it was the moment the response landed and leave a panel opened
+      forty minutes into a still-focused tab reading "just now" on a note that
+      is anything but. The five-minute floor means the minutes tier starts at
+      five and `1 minute ago` is unreachable — the singular exists only at the
+      hours and days tiers.
+    - Loading, empty, and error are three distinct branches, not two: a
+      `null` snapshot (nothing has ever loaded) reads "Loading…", not
+      "Nothing new yet." — that message is only true once a response has
+      actually come back with no events in it.
 - The hash route (`parseHashRoute` in `utils.js`, wired by `useHashRoute`)
   understands `#/season/45` and `#/season/45/episode/3`. The parse is a pure
   function so the regex is testable — the same split `refresh-guard.js` and
@@ -588,6 +621,21 @@ of the root `CLAUDE.md` so it loads only when working on these files.
       board, its authors, and its Reveal button, which is the right
       destination. There is no DOM suite to assert this, so a reviewer should
       check that `reveal` in `discussion.js` still has exactly one call site.
+    - Arrival also scrolls the opened episode's card into view — expanding it
+      alone leaves a hash navigation sitting at the top of the document with
+      the board it just opened potentially hundreds of pixels below the fold,
+      which shows nothing happened. `EpisodeBoard` carries
+      `id="episode-card-<episode>"` for this to target, and the effect
+      (`scrolledEpisodeRef` in `SeasonView`) mirrors `NowWatching`'s jump in
+      `board.js` — `scrollIntoView` plus its `prefers-reduced-motion` check,
+      via `prefersReducedMotion`, exported from `board.js` rather than
+      duplicated. It has to key on `data` as well as `routeEpisode`: the card
+      doesn't exist until the discussion has loaded, so keying on
+      `routeEpisode` alone would find nothing on the very load that set it.
+      The ref is what stops that same dependency from re-scrolling the page
+      on every later refetch (focus, a mutation's own refresh) — `data` gets a
+      new reference each time, but the ref only lets the jump fire once per
+      distinct `routeEpisode`.
 - The manifest link in `index.html` carries `crossorigin="use-credentials"`,
   which is load-bearing behind Cloudflare Access: a manifest is fetched without
   credentials by default, so Access would redirect it to a login page, the

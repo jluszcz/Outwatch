@@ -28,48 +28,85 @@ function FeedPanel({ data, error, onClose, onDismiss }) {
         return () => document.removeEventListener('keydown', handler);
     }, [onDismiss]);
 
-    // Focus into the panel so a keyboard user is not left behind on the trigger
-    // with a list they cannot reach.
+    // What the panel opened with, frozen for as long as it stays open — not a
+    // read of the live `data` prop, which FeedBell can replace out from under
+    // it. `data` is shared with the badge, and useRefreshGuard can run a
+    // queued refetch (beginMutation/endMutation in openPanel below) while the
+    // panel is still on screen; applying that response here would re-render
+    // the open list with every `unread` mark cleared, mid-read. The spec's
+    // rule is that a mark holds until the *next* fetch, not until whichever
+    // fetch happens to land while the panel is open, so the panel has to keep
+    // looking at the response it was opened with. FeedPanel mounts fresh each
+    // time the panel opens, so a useState initialiser is enough — the
+    // snapshot naturally refreshes on the next open.
+    const [snapshot] = useState(() => data);
+
+    // Focus the first real item, not the first button: .feed-close leads in
+    // DOM order (it's the sheet's top-right corner), so a selector list that
+    // included it would win here the same way PostMenuPanel's focus effect
+    // documents avoiding for '.post-menu-close'. It's also display: none on a
+    // pointer device, where a selector that could only match it would be a
+    // silent no-op and leave a keyboard user's focus in the document instead
+    // of the panel. Falls back to the panel itself — given a tabIndex below
+    // for exactly this — when there is nothing to focus yet: still loading,
+    // empty, or errored.
     useEffect(() => {
-        panelRef.current?.querySelector('.feed-item, .feed-close')?.focus();
+        const first = panelRef.current?.querySelector('.feed-item');
+        (first ?? panelRef.current)?.focus();
     }, []);
 
-    const events = data?.events ?? [];
-    const nowMs = data ? Date.parse(data.now) : Date.now();
+    const events = snapshot?.events ?? [];
+    // Skew, not the frozen fetch-time stamp itself: computed once against
+    // snapshot.now and then applied to a live Date.now(), the same split
+    // discussion.js's serverSkewMs draws, so an age keeps advancing for as
+    // long as the panel stays open instead of stopping the instant the
+    // response landed.
+    const serverSkewMs = snapshot ? Date.parse(snapshot.now) - Date.now() : 0;
+    const nowMs = Date.now() + serverSkewMs;
 
     return html`
         <div class="feed-scrim" onClick=${onDismiss}></div>
-        <div class="feed-panel" ref=${panelRef} role="group" aria-label="Recent activity">
+        <div
+            class="feed-panel"
+            ref=${panelRef}
+            role="group"
+            aria-label="Recent activity"
+            tabindex="-1"
+        >
             <button class="feed-close" onClick=${onDismiss} aria-label="Close">
                 <${Icon} name="x" />
             </button>
             ${
                 error
                     ? html`<p class="feed-empty">Couldn't load activity.</p>`
-                    : events.length === 0
-                      ? html`<p class="feed-empty">Nothing new yet.</p>`
-                      : html`
-                            <ul class="feed-list">
-                                ${events.map(
-                                    (event) => html`
-                                        <li
-                                            key=${`${event.season_id}-${event.episode}-${event.at}`}
-                                        >
-                                            <a
-                                                class=${'feed-item' + (event.unread ? ' unread' : '')}
-                                                href=${`#/season/${event.season_id}/episode/${event.episode}`}
-                                                onClick=${onClose}
-                                            >
-                                                <span class="feed-text">${feedLine(event)}</span>
-                                                <span class="feed-when"
-                                                    >${relativeTime(event.at, nowMs)}</span
-                                                >
-                                            </a>
-                                        </li>
-                                    `,
-                                )}
-                            </ul>
-                        `
+                    : !snapshot
+                      ? html`<p class="feed-empty">Loading…</p>`
+                      : events.length === 0
+                        ? html`<p class="feed-empty">Nothing new yet.</p>`
+                        : html`
+                              <ul class="feed-list">
+                                  ${events.map(
+                                      (event) => html`
+                                          <li
+                                              key=${`${event.season_id}-${event.episode}-${event.at}-${event.author_name}`}
+                                          >
+                                              <a
+                                                  class=${
+                                                      'feed-item' + (event.unread ? ' unread' : '')
+                                                  }
+                                                  href=${`#/season/${event.season_id}/episode/${event.episode}`}
+                                                  onClick=${onClose}
+                                              >
+                                                  <span class="feed-text">${feedLine(event)}</span>
+                                                  <span class="feed-when"
+                                                      >${relativeTime(event.at, nowMs)}</span
+                                                  >
+                                              </a>
+                                          </li>
+                                      `,
+                                  )}
+                              </ul>
+                          `
             }
         </div>
     `;
@@ -116,6 +153,12 @@ export function FeedBell() {
 
     const openPanel = useCallback(async () => {
         setOpen(true);
+        // Nothing to mark seen yet: opening before the first fetch has ever
+        // resolved would otherwise stamp the server and burn whatever unread
+        // marks are about to arrive without the panel ever having shown them.
+        // FeedPanel's own loading branch covers the same window on the
+        // display side.
+        if (!data) return;
         setSeen(true);
         // Brackets the same optimistic-write race every other mutation in this
         // app guards against: a focus refetch landing between the optimistic
@@ -134,7 +177,7 @@ export function FeedBell() {
         } finally {
             endMutation();
         }
-    }, [beginMutation, endMutation]);
+    }, [data, beginMutation, endMutation]);
 
     const unread = seen ? 0 : (data?.unread_count ?? 0);
     const label = unread > 0 ? `What's new (${unread} unread)` : "What's new";

@@ -20,7 +20,10 @@ const html = htm.bind(h);
 // scroll settles, short enough that it is gone before you act on it.
 const FLASH_MS = 2500;
 
-const prefersReducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+// Shared with discussion.js, whose feed-arrival scroll follows the same
+// respect-the-setting rule this file's NowWatching jump established.
+export const prefersReducedMotion = () =>
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 // Lucide icons (MIT) — currentColor inherits button color from CSS
 const SunIcon = () => html`
