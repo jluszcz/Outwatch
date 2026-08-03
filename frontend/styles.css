@@ -816,6 +816,146 @@ tr.flash td {
     display: none;
 }
 
+/* The header's controls as one row, so the bell and the theme toggle sit
+   together rather than the bell pushing the title around. */
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+/* The positioning context the dropdown hangs off. Deliberately no z-index: no
+   stacking context forms here, so the panel's z-index competes page-wide the
+   way .post-menu's does. */
+.feed-wrap {
+    position: relative;
+}
+
+.feed-btn {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: var(--control-height);
+    min-height: var(--control-height);
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    color: var(--text-subtle);
+    cursor: pointer;
+    anchor-name: --feed-anchor;
+}
+
+/* Rides the button's corner rather than sitting beside it, so a two-digit
+   count cannot widen the header row. */
+.feed-badge {
+    position: absolute;
+    top: -0.35rem;
+    right: -0.35rem;
+    min-width: 1.1rem;
+    padding: 0 0.25rem;
+    font-size: 0.7rem;
+    line-height: 1.1rem;
+    font-weight: 600;
+    text-align: center;
+    color: #fff;
+    background: var(--blue);
+    border-radius: 999px;
+}
+
+.feed-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+    background: transparent;
+}
+
+.feed-panel {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-block: 0.25rem;
+    z-index: 21;
+    width: min(22rem, calc(100vw - 2rem));
+    max-height: 70vh;
+    overflow-y: auto;
+    padding: 0.35rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    box-shadow: 0 4px 16px var(--shadow);
+}
+
+/* Same call as .post-menu: let the browser measure. Gated behind @supports
+   rather than layered as duplicate `top` declarations, since a minifier
+   collapses two `top`s in one rule and drops the fallback. */
+@supports (position-try-fallbacks: flip-block) {
+    .feed-panel {
+        position-anchor: --feed-anchor;
+        top: anchor(bottom);
+        right: anchor(right);
+        position-try-fallbacks: flip-block;
+    }
+}
+
+/* Hidden on a pointer device, where clicking off the dropdown already
+   dismisses. The phone layout reveals it — see the mobile block. */
+.feed-close {
+    display: none;
+}
+
+.feed-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.feed-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    padding: 0.5rem 0.6rem;
+    border-radius: 0.35rem;
+    color: var(--text-subtle);
+    text-decoration: none;
+}
+
+/* A dot in the leading gutter rather than a different background: the list
+   should read as one list, with the unread ones marked inside it. */
+.feed-item.unread {
+    position: relative;
+    color: var(--text);
+    font-weight: 600;
+}
+
+.feed-item.unread::before {
+    content: '';
+    position: absolute;
+    left: 0.15rem;
+    top: 0.95rem;
+    width: 0.35rem;
+    height: 0.35rem;
+    border-radius: 999px;
+    background: var(--blue);
+}
+
+.feed-text {
+    font-size: 0.9rem;
+}
+
+.feed-when {
+    font-size: 0.75rem;
+    color: var(--text-faint);
+}
+
+.feed-empty {
+    margin: 0;
+    padding: 1rem 0.6rem;
+    text-align: center;
+    font-size: 0.85rem;
+    color: var(--text-faint);
+}
+
 /* Renders inside .post-body, trailing the note's last line. It used to sit on
    the meta line between the author and the content, where — being present on
    some notes and not others — it pushed every edited note's body right and
@@ -1647,6 +1787,54 @@ tr.flash td {
         padding: 0;
     }
 
+    /* The same element as a bottom sheet. position: fixed escapes .feed-wrap
+       because nothing between it and the root is transformed — the same escape
+       .post-menu relies on. */
+    .feed-panel {
+        position: fixed;
+        inset: auto 0 0 0;
+        /* Content-sized against the bottom edge, so it cannot overflow and has
+           nothing to flip. */
+        position-try-fallbacks: none;
+        width: auto;
+        max-height: 75vh;
+        padding: 0.6rem 0.9rem 1.5rem;
+        border-width: 1px 0 0;
+        border-radius: 0.9rem 0.9rem 0 0;
+        box-shadow: 0 -4px 16px var(--shadow);
+    }
+
+    .feed-scrim {
+        background: light-dark(rgba(0, 0, 0, 0.35), rgba(0, 0, 0, 0.6));
+    }
+
+    /* Top-right, which is the furthest point in the sheet from the bottom edge
+       iOS Safari's collapsed toolbar owns — a tap along that strip expands the
+       toolbar rather than reaching the page. Same reasoning, and same negative
+       margins, as .post-menu-close. */
+    .feed-close {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        align-self: flex-end;
+        margin: -0.4rem -0.5rem 0 auto;
+        min-width: 44px;
+        min-height: 44px;
+        background: none;
+        border: none;
+        border-radius: 0.35rem;
+        color: var(--text-faint);
+        cursor: pointer;
+    }
+
+    .feed-item {
+        padding: 0.7rem 0.6rem;
+    }
+
+    .feed-text {
+        font-size: 1rem;
+    }
+
     .reaction-chip {
         min-height: 32px;
     }
@@ -1810,6 +1998,15 @@ tr.flash td {
     .nw-jump:hover {
         background: var(--blue);
         color: var(--surface);
+    }
+
+    .feed-btn:hover {
+        color: var(--text);
+        border-color: var(--text-faint);
+    }
+
+    .feed-item:hover {
+        background: var(--surface-subtle);
     }
 }
 
