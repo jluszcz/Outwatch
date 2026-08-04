@@ -641,6 +641,124 @@ describe('POST /api/seasons/:season_id/episodes/:episode/timer', () => {
     });
 });
 
+const skip = (email, episode, delta_secs) =>
+    req('POST', `/api/seasons/45/episodes/${episode}/timer`, {
+        body: { action: 'skip', delta_secs },
+        email,
+    });
+
+describe('POST /api/seasons/:season_id/episodes/:episode/timer { action: "skip" }', () => {
+    it('advances elapsed_secs by delta_secs while paused', async () => {
+        await timer('alice@example.com', 7, 'start');
+        await env.DB.prepare(
+            'UPDATE watch_sessions SET elapsed_secs = 300, running_since = NULL WHERE user_id = ?',
+        )
+            .bind('user-alice')
+            .run();
+
+        const { session } = await (await skip('alice@example.com', 7, 60)).json();
+        expect(session.elapsed_secs).toBe(360);
+        expect(session.running_since).toBeNull();
+    });
+
+    it('advances elapsed_secs while running, without touching running_since', async () => {
+        const { session: started } = await (await timer('alice@example.com', 7, 'start')).json();
+
+        const { session, offset_secs } = await (await skip('alice@example.com', 7, 120)).json();
+        expect(session.elapsed_secs).toBe(120);
+        expect(session.running_since).toBe(started.running_since);
+        expect(offset_secs).toBeGreaterThanOrEqual(120);
+        expect(offset_secs).toBeLessThan(125);
+    });
+
+    it('supports a backward skip', async () => {
+        await timer('alice@example.com', 7, 'start');
+        await env.DB.prepare(
+            'UPDATE watch_sessions SET elapsed_secs = 300, running_since = NULL WHERE user_id = ?',
+        )
+            .bind('user-alice')
+            .run();
+
+        const { session } = await (await skip('alice@example.com', 7, -60)).json();
+        expect(session.elapsed_secs).toBe(240);
+    });
+
+    it('clamps a backward skip at zero rather than going negative', async () => {
+        await timer('alice@example.com', 7, 'start');
+        await env.DB.prepare(
+            'UPDATE watch_sessions SET elapsed_secs = 30, running_since = NULL WHERE user_id = ?',
+        )
+            .bind('user-alice')
+            .run();
+
+        const { session } = await (await skip('alice@example.com', 7, -100)).json();
+        expect(session.elapsed_secs).toBe(0);
+    });
+
+    it('rejects a zero delta_secs, a non-integer, and a value beyond the bound', async () => {
+        await timer('alice@example.com', 7, 'start');
+        for (const delta_secs of [0, 12.5, 3601, -3601]) {
+            const r = await skip('alice@example.com', 7, delta_secs);
+            expect(r.status).toBe(400);
+        }
+    });
+
+    it('requires delta_secs for a skip action', async () => {
+        const r = await req('POST', '/api/seasons/45/episodes/7/timer', {
+            body: { action: 'skip' },
+            email: 'alice@example.com',
+        });
+        expect(r.status).toBe(400);
+    });
+
+    it('refuses to skip with no session', async () => {
+        const r = await skip('alice@example.com', 7, 60);
+        expect(r.status).toBe(409);
+    });
+
+    it('refuses to skip a stale session and leaves it untouched', async () => {
+        await timer('alice@example.com', 7, 'start');
+        const stale = new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString();
+        await env.DB.prepare('UPDATE watch_sessions SET running_since = ?, last_activity_at = ?')
+            .bind(stale, stale)
+            .run();
+
+        const r = await skip('alice@example.com', 7, 60);
+        expect(r.status).toBe(409);
+        const { error } = await r.json();
+        expect(error).toMatch(/expired/i);
+
+        const row = await env.DB.prepare(
+            'SELECT elapsed_secs, running_since FROM watch_sessions WHERE user_id = ?',
+        )
+            .bind('user-alice')
+            .first();
+        expect(row.elapsed_secs).toBe(0);
+        expect(row.running_since).toBe(stale);
+    });
+
+    // The core behavior this whole feature is for: a skip must never reach
+    // back and move a note that already froze its offset_secs.
+    it('leaves a note posted before the skip unmoved, and shifts one posted after it', async () => {
+        await timer('alice@example.com', 7, 'start');
+        const { post: before } = await (
+            await post('alice@example.com', 7, 'before the skip')
+        ).json();
+        expect(before.offset_secs).toBeLessThan(5);
+
+        await skip('alice@example.com', 7, 300);
+
+        const { post: after } = await (await post('alice@example.com', 7, 'after the skip')).json();
+        expect(after.offset_secs).toBeGreaterThanOrEqual(300);
+        expect(after.offset_secs).toBeLessThan(305);
+
+        const row = await env.DB.prepare('SELECT offset_secs FROM posts WHERE id = ?')
+            .bind(before.id)
+            .first();
+        expect(row.offset_secs).toBe(before.offset_secs);
+    });
+});
+
 // postNote, revealEpisode, watchSeason, and episodeView were `post`, `reveal`,
 // `watch`, and `discussion` inside this describe block, scoped there because
 // they collided with the narrower, older module-level `post`/`discussion`

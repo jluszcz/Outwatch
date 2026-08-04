@@ -3,7 +3,11 @@ import { HTTPException } from 'hono/http-exception';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 
-import { sessionOffsetSecs, MAX_OFFSET_ADJUST_SECS } from '../shared/session.js';
+import {
+    sessionOffsetSecs,
+    MAX_OFFSET_ADJUST_SECS,
+    MAX_SKIP_DELTA_SECS,
+} from '../shared/session.js';
 import { MAX_REACTIONS_PER_POST, isReactionEmoji } from '../shared/reactions.js';
 import { accessTokenEmail } from './access.js';
 import { groupNotes, FEED_WINDOW_MS, FEED_MAX_EVENTS } from './feed.js';
@@ -29,11 +33,27 @@ const currentlyWatchingUpdate = z.object({
         .nullable(),
 });
 
-const timerAction = z.object({
-    action: z.enum(['start', 'pause', 'resume'], {
-        message: 'action must be start, pause, or resume',
-    }),
-});
+const timerAction = z
+    .object({
+        action: z.enum(['start', 'pause', 'resume', 'skip'], {
+            message: 'action must be start, pause, resume, or skip',
+        }),
+        delta_secs: z
+            .number()
+            .int({ message: 'delta_secs must be a whole number of seconds' })
+            .min(-MAX_SKIP_DELTA_SECS, {
+                message: `delta_secs must be within ${MAX_SKIP_DELTA_SECS} seconds of zero`,
+            })
+            .max(MAX_SKIP_DELTA_SECS, {
+                message: `delta_secs must be within ${MAX_SKIP_DELTA_SECS} seconds of zero`,
+            })
+            .refine((v) => v !== 0, { message: 'delta_secs must not be zero' })
+            .optional(),
+    })
+    .refine((data) => data.action !== 'skip' || data.delta_secs !== undefined, {
+        message: 'delta_secs is required for a skip action',
+        path: ['delta_secs'],
+    });
 
 const offsetAdjust = z.object({
     adjust_secs: z
@@ -1005,7 +1025,7 @@ app.post(
                         .bind(banked, now, ...key)
                         .run();
                 }
-            } else {
+            } else if (action === 'resume') {
                 // Resume only restarts the clock; the banked total is
                 // untouched. A session already running is left untouched.
                 if (existing.running_since === null) {
@@ -1016,6 +1036,27 @@ app.post(
                         .bind(now, now, ...key)
                         .run();
                 }
+            } else {
+                // Skip jumps elapsed_secs by delta_secs, forward or backward,
+                // whether the session is running or paused — the total a read
+                // reports is elapsed_secs plus whatever the running segment
+                // adds (shared/session.js), so bumping elapsed_secs moves
+                // that total regardless of state, and running_since needs no
+                // change. The floor at zero mirrors the running segment's own
+                // clamp: a skip back further than the session has banked
+                // lands at zero rather than going negative. Nothing here
+                // touches posts.offset_secs — that's frozen at write time
+                // (see currentOffsetSecs above), which is what keeps this
+                // forward-only: only a post written after this update reads
+                // the new elapsed_secs.
+                const { delta_secs } = c.req.valid('json');
+                await c.env.DB.prepare(
+                    `UPDATE watch_sessions
+                     SET elapsed_secs = MAX(0, elapsed_secs + ?), last_activity_at = ?
+                     WHERE user_id = ? AND season_id = ? AND episode = ?`,
+                )
+                    .bind(delta_secs, now, ...key)
+                    .run();
             }
         }
 
