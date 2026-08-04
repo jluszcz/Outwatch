@@ -528,17 +528,17 @@ of the root `CLAUDE.md` so it loads only when working on these files.
     `replyTo`/`editingId`/`menuFor` are — the row belongs to this control alone
     and nothing outside it needs to know whether it's open.
 
-- **An ⓘ toggle inside each panel variant** (`.timer-info-toggle`,
-  `aria-expanded` like `.timer-adjust-toggle` — not a bare hover `title`,
-  since a phone has no hover) reveals one line naming what that panel does
-  and how to reach the other one. It exists because which panel you're
-  looking at is a consequence of session state the control doesn't otherwise
-  narrate, and a first-time user watching a note land in the wrong place has
-  no way to discover the other mode without being told. Deliberately its own
-  class rather than riding `.timer-btn`: that class's hover/active rules
-  already assume "the ± is the only `.timer-btn` carrying `aria-expanded`,"
-  and giving the info toggle a separate class keeps that true instead of
-  quietly breaking it.
+    - **An ⓘ toggle inside each panel variant** (`.timer-info-toggle`,
+      `aria-expanded` like `.timer-adjust-toggle` — not a bare hover `title`,
+      since a phone has no hover) reveals one line naming what that panel does
+      and how to reach the other one. It exists because which panel you're
+      looking at is a consequence of session state the control doesn't otherwise
+      narrate, and a first-time user watching a note land in the wrong place has
+      no way to discover the other mode without being told. Deliberately its own
+      class rather than riding `.timer-btn`: that class's hover/active rules
+      already assume "the ± is the only `.timer-btn` carrying `aria-expanded`,"
+      and giving the info toggle a separate class keeps that true instead of
+      quietly breaking it.
     - The running total is its own optimistic state, `pendingAdjust`, rather
       than a read of the `adjustSecs` prop: that prop is the server's last
       known value, and it only moves forward on the next
@@ -569,6 +569,7 @@ of the root `CLAUDE.md` so it loads only when working on these files.
       locally: a delta would double-apply on a retry, and an absolute value
       is what keeps the retried PUT idempotent (the same reason the
       reactions route takes an explicit `on` instead of toggling).
+
 - The what's-new bell (`frontend/feed.js`) is split `FeedBell` / `FeedPanel` the
   same way `PostMenu`/`PostMenuPanel` is: the trigger and its badge always
   render, while the scrim, the list, and the Escape listener mount only while

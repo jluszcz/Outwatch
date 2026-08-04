@@ -514,11 +514,17 @@ function WatchTimer({ session, adjustSecs, serverSkewMs, onAction, onAdjust, onS
     // — at which point this resets to zero. Keyed on the session's own
     // primitives rather than the object reference, which changes on every
     // refetch (focus, another mutation) whether or not this episode's
-    // session actually moved.
+    // session actually moved. `last_activity_at`, not `running_since`: the
+    // server stamps `last_activity_at` unconditionally on every accepted
+    // timer action, including a skip clamped to exactly zero effect (already
+    // at the floor), where `elapsed_secs` numerically doesn't change and
+    // `running_since` isn't touched either — keying on those two alone would
+    // never fire there, leaving `pendingSkip` stuck at a nonzero optimistic
+    // value the server never actually reflected.
     const [pendingSkip, setPendingSkip] = useState(0);
     useEffect(() => {
         setPendingSkip(0);
-    }, [session?.elapsed_secs, session?.running_since]);
+    }, [session?.elapsed_secs, session?.last_activity_at]);
 
     useEffect(() => {
         if (!session?.running_since) return;

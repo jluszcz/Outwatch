@@ -1063,20 +1063,33 @@ app.post(
                 // reports is elapsed_secs plus whatever the running segment
                 // adds (shared/session.js), so bumping elapsed_secs moves
                 // that total regardless of state, and running_since needs no
-                // change. The floor at zero mirrors the running segment's own
-                // clamp: a skip back further than the session has banked
-                // lands at zero rather than going negative. Nothing here
-                // touches posts.offset_secs — that's frozen at write time
-                // (see currentOffsetSecs above), which is what keeps this
-                // forward-only: only a post written after this update reads
-                // the new elapsed_secs.
+                // change. Nothing here touches posts.offset_secs — that's
+                // frozen at write time (see currentOffsetSecs above), which
+                // is what keeps this forward-only: only a post written after
+                // this update reads the new elapsed_secs.
+                //
+                // Clamped against the total offset (elapsed_secs plus
+                // whatever the running segment currently adds — `banked`,
+                // already computed above for the staleness check), not
+                // against elapsed_secs alone: elapsed_secs sits at zero for a
+                // session that's been running continuously since start (the
+                // default flow), so clamping elapsed_secs alone made every
+                // backward skip silently a no-op there. Relative rather than
+                // absolute so two concurrent skips still compose instead of
+                // one clobbering the other; the stored elapsed_secs can go
+                // transiently negative while running (self-corrects on the
+                // next pause, which always writes the freshly recomputed
+                // `banked` total) — sessionOffsetSecs only cares about the
+                // sum, not either term. `banked` is guaranteed non-null here:
+                // the branch above already returned a 409 if it were null.
                 const { delta_secs } = c.req.valid('json');
+                const applied = Math.max(delta_secs, -banked);
                 await c.env.DB.prepare(
                     `UPDATE watch_sessions
-                     SET elapsed_secs = MAX(0, elapsed_secs + ?), last_activity_at = ?
+                     SET elapsed_secs = elapsed_secs + ?, last_activity_at = ?
                      WHERE user_id = ? AND season_id = ? AND episode = ?`,
                 )
-                    .bind(delta_secs, now, ...key)
+                    .bind(applied, now, ...key)
                     .run();
             }
         }

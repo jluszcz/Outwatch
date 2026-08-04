@@ -695,6 +695,38 @@ describe('POST /api/seasons/:season_id/episodes/:episode/timer { action: "skip" 
         expect(session.elapsed_secs).toBe(0);
     });
 
+    it('clamps a backward skip against the total offset, not elapsed_secs alone, on a running session', async () => {
+        await timer('alice@example.com', 7, 'start');
+        // Rewrite running_since to a known 1200s ago so the running segment
+        // alone accounts for the whole total — elapsed_secs stays 0, which is
+        // exactly the state that silently swallowed every backward skip before
+        // this fix.
+        const since = new Date(Date.now() - 1200_000).toISOString();
+        await env.DB.prepare(
+            'UPDATE watch_sessions SET running_since = ?, last_activity_at = ? WHERE user_id = ?',
+        )
+            .bind(since, since, 'user-alice')
+            .run();
+
+        const { offset_secs } = await (await skip('alice@example.com', 7, -60)).json();
+        expect(offset_secs).toBeGreaterThanOrEqual(1140);
+        expect(offset_secs).toBeLessThan(1145);
+    });
+
+    it('clamps a backward skip at zero on a running session when it would take the total negative', async () => {
+        await timer('alice@example.com', 7, 'start');
+        const since = new Date(Date.now() - 30_000).toISOString();
+        await env.DB.prepare(
+            'UPDATE watch_sessions SET running_since = ?, last_activity_at = ? WHERE user_id = ?',
+        )
+            .bind(since, since, 'user-alice')
+            .run();
+
+        const { offset_secs } = await (await skip('alice@example.com', 7, -3600)).json();
+        expect(offset_secs).toBeGreaterThanOrEqual(0);
+        expect(offset_secs).toBeLessThan(5);
+    });
+
     it('rejects a zero delta_secs, a non-integer, and a value beyond the bound', async () => {
         await timer('alice@example.com', 7, 'start');
         for (const delta_secs of [0, 12.5, 3601, -3601]) {
