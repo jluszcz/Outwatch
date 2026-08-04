@@ -1338,17 +1338,24 @@ tr.flash td {
 /* Wraps the button row (.timer-adjust) and the optional caption beneath it,
    so the caption gets its own line instead of squeezing into the same
    0.35rem-gap flex row as the nudge buttons. */
+/* position: relative is the fallback anchor for .timer-info-text below, for a
+   browser without CSS anchor positioning — that fallback places the tooltip
+   under the whole row rather than snug to the ⓘ button, which is close
+   enough; browsers with support override it to anchor to the button itself. */
 .timer-adjust-panel {
     display: flex;
     flex-direction: column;
     align-items: flex-end;
     gap: 0.3rem;
+    position: relative;
 }
 
 /* Deliberately not .timer-btn: it also carries aria-expanded, and .timer-btn's
    hover/active rules already scope themselves to "the ± is the only .timer-btn
    with that attribute" (see the hover block below) — giving this its own class
-   keeps that assumption true instead of quietly breaking it. */
+   keeps that assumption true instead of quietly breaking it.
+   anchor-name is only ever read by .timer-info-text's anchor positioning below
+   — a browser without support ignores it and loses nothing. */
 .timer-info-toggle {
     display: inline-flex;
     align-items: center;
@@ -1361,23 +1368,55 @@ tr.flash td {
     color: var(--text-muted);
     cursor: pointer;
     font-size: 0.8rem;
+    anchor-name: --timer-info-anchor;
 }
 
-/* Always rendered rather than conditionally mounted, so the hover rule below
-   can reveal it in pure CSS on a pointer device without JS ever knowing a
-   hover happened. Hidden by default; .open (tap/click, via infoOpen — the
-   only path that exists on a phone) is the one JS-driven way to show it. */
+/* A floating card, not an inline caption — it used to sit in normal flow and
+   push the nudge buttons down every time it opened, which is exactly what a
+   tooltip must not do. Always rendered rather than conditionally mounted, so
+   the hover rule further down can reveal it in pure CSS on a pointer device
+   without JS ever knowing a hover happened. Hidden by default; .open
+   (tap/click, via infoOpen — the only path that exists on a phone, which has
+   no hover) is the one JS-driven way to show it. The fallback position
+   (before the @supports block below) is relative to .timer-adjust-panel,
+   since this element isn't a DOM child of the button it's meant to sit under
+   and so has no closer positioned ancestor to fall back to. */
 .timer-info-text {
     display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 5;
+    margin-top: 0.3rem;
     max-width: 16rem;
-    margin: 0;
+    padding: 0.5rem 0.6rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    box-shadow: 0 4px 16px var(--shadow);
     font-size: 0.75rem;
     color: var(--text-subtle);
-    text-align: right;
+    text-align: left;
 }
 
 .timer-info-text.open {
     display: block;
+}
+
+/* Anchors the tooltip to the ⓘ button itself rather than the whole panel,
+   with the browser doing the measuring — the same call .post-menu already
+   makes and for the same reason (see its @supports block). flip-block
+   reopens it above the button when there's no room below; without support
+   the fallback two rules up stands and it opens downward as it always would.
+   Support (Chrome 125+, Firefox 132+, Safari 26+) is already this file's
+   floor for position-try-fallbacks elsewhere. */
+@supports (position-try-fallbacks: flip-block) {
+    .timer-info-text {
+        position-anchor: --timer-info-anchor;
+        top: anchor(bottom);
+        left: anchor(left);
+        position-try-fallbacks: flip-block;
+    }
 }
 
 .post-form {
@@ -1732,9 +1771,12 @@ tr.flash td {
         min-width: 44px;
     }
 
+    /* max-width against the viewport rather than 100% of .timer-adjust-panel:
+       that container is shrink-to-fit in this flex-column layout and can be
+       narrower than the card, which would otherwise cramp the tooltip's text
+       into a column a few characters wide. */
     .timer-info-text {
-        max-width: 100%;
-        text-align: left;
+        max-width: calc(100vw - 2rem);
     }
 
     .reveal-btn,
