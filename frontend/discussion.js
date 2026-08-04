@@ -464,8 +464,13 @@ function WatchTimer({ session, adjustSecs, serverSkewMs, onAction, onAdjust, onS
     // EpisodeBoard: the row belongs to this control, and nothing outside it
     // needs to know whether it is open.
     const [adjusting, setAdjusting] = useState(false);
-    // Whether the panel's short explanation is showing. Also local — it dies
-    // with the panel, and the panel dies with `adjusting`.
+    // Whether the panel's short explanation is showing via tap/click — the
+    // only way it can show on a phone, which has no hover. On a pointer
+    // device it can also appear on hover/focus of the ⓘ button without this
+    // ever changing, purely in CSS (`.timer-info-toggle:hover`/`:focus-visible`
+    // via `:has()` in styles.css) — the paragraph always renders, and this
+    // state only controls its `.open` class, the tap/keyboard path. Also
+    // local — it dies with the panel, and the panel dies with `adjusting`.
     const [infoOpen, setInfoOpen] = useState(false);
 
     // The running total taps accumulate against, seeded from the server's
@@ -644,7 +649,6 @@ function WatchTimer({ session, adjustSecs, serverSkewMs, onAction, onAdjust, onS
                                   class="timer-info-toggle"
                                   aria-expanded=${infoOpen}
                                   aria-label="What does Correct do?"
-                                  title="What does Correct do?"
                                   onClick=${() => setInfoOpen((v) => !v)}
                               >
                                   <${Icon} name="info" />
@@ -669,13 +673,10 @@ function WatchTimer({ session, adjustSecs, serverSkewMs, onAction, onAdjust, onS
                                   +1m
                               </button>
                           </div>
-                          ${
-                              infoOpen &&
-                              html`<p class="timer-info-text">
-                                  Moves every note on this episode, including ones you've already
-                                  posted. Start the timer again to go back to adjusting live.
-                              </p>`
-                          }
+                          <p class=${'timer-info-text' + (infoOpen ? ' open' : '')}>
+                              Moves every note on this episode, including ones you've already
+                              posted. Start the timer again to go back to adjusting live.
+                          </p>
                       </div>`
                     : html`<div class="timer-adjust-panel">
                           <div
@@ -687,7 +688,6 @@ function WatchTimer({ session, adjustSecs, serverSkewMs, onAction, onAdjust, onS
                                   class="timer-info-toggle"
                                   aria-expanded=${infoOpen}
                                   aria-label="What does Skip do?"
-                                  title="What does Skip do?"
                                   onClick=${() => setInfoOpen((v) => !v)}
                               >
                                   <${Icon} name="info" />
@@ -699,14 +699,11 @@ function WatchTimer({ session, adjustSecs, serverSkewMs, onAction, onAdjust, onS
                               <button class="timer-btn" onClick=${() => applySkip(15)}>+15s</button>
                               <button class="timer-btn" onClick=${() => applySkip(60)}>+1m</button>
                           </div>
-                          ${
-                              infoOpen &&
-                              html`<p class="timer-info-text">
-                                  Moves your timer without changing notes you've already posted. Tap
-                                  Stop to fix where this episode started instead — that moves
-                                  everything.
-                              </p>`
-                          }
+                          <p class=${'timer-info-text' + (infoOpen ? ' open' : '')}>
+                              Moves your timer without changing notes you've already posted. Tap
+                              Stop to fix where this episode started instead — that moves
+                              everything.
+                          </p>
                       </div>`)
             }
         </div>

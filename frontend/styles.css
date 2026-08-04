@@ -1363,12 +1363,21 @@ tr.flash td {
     font-size: 0.8rem;
 }
 
+/* Always rendered rather than conditionally mounted, so the hover rule below
+   can reveal it in pure CSS on a pointer device without JS ever knowing a
+   hover happened. Hidden by default; .open (tap/click, via infoOpen — the
+   only path that exists on a phone) is the one JS-driven way to show it. */
 .timer-info-text {
+    display: none;
     max-width: 16rem;
     margin: 0;
     font-size: 0.75rem;
     color: var(--text-subtle);
     text-align: right;
+}
+
+.timer-info-text.open {
+    display: block;
 }
 
 .post-form {
@@ -2076,6 +2085,23 @@ tr.flash td {
 
     .timer-info-toggle:hover {
         color: var(--text);
+    }
+
+    /* Reveals .timer-info-text on hover or keyboard focus of its toggle, with
+       no JS involved — the caption already renders unconditionally (see
+       .timer-info-text above) and infoOpen only ever adds .open, so this is
+       purely additive to the tap/click path rather than a second source of
+       truth for the same state. :has() rather than an adjacent-sibling
+       selector because the toggle sits inside .timer-adjust while the
+       caption is .timer-adjust's own sibling, one level up — nothing shorter
+       reaches across that gap. Support (Chrome 105+, Safari 15.4+, Firefox
+       121+) is well inside this file's existing light-dark() floor. Gated on
+       (hover: hover) for the same reason every other hover rule here is:
+       a phone has no hover to trigger this with, and only ever reaches the
+       caption through infoOpen. */
+    .timer-adjust-panel:has(.timer-info-toggle:hover) .timer-info-text,
+    .timer-adjust-panel:has(.timer-info-toggle:focus-visible) .timer-info-text {
+        display: block;
     }
 
     .nw-jump:hover {
