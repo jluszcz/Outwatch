@@ -109,6 +109,16 @@ app.onError((err, c) => {
     return c.json({ error: 'Internal error' }, 500);
 });
 
+// Every API response is per-caller and immediately stale: the board changes
+// under you, and the spoiler gate means two people asking for the same URL get
+// different bodies. Set before the handler runs rather than after, so the
+// responses app.onError builds — which never come back through this middleware,
+// since a throw rejects next() — carry it too.
+app.use('/api/*', async (c, next) => {
+    c.header('Cache-Control', 'no-store');
+    await next();
+});
+
 // Cloudflare Access authenticates at the edge and forwards the identity two ways:
 // a plaintext Cf-Access-Authenticated-User-Email header and a signed JWT in
 // Cf-Access-Jwt-Assertion. We use only the signed one. The header is trustworthy
@@ -310,6 +320,19 @@ async function resolveEpisode(c) {
     return { season, episode };
 }
 
+// The pair of lookups every episode-scoped route opens with: who is asking, and
+// whether the episode exists. Neither depends on the other, so they go together
+// rather than one after the other — a D1 round-trip is most of what these routes
+// spend, and the write path was serializing four or five of them.
+//
+// A helper rather than an inlined Promise.all at each of the four call sites so
+// the reason lives in one place. Callers still decide what to do with each
+// half, and they all check `me` first: answering 404 for an imaginary episode
+// before 403 for a caller off the roster would let a stranger map the seasons.
+function callerAndEpisode(c) {
+    return Promise.all([callerUser(c), resolveEpisode(c)]);
+}
+
 // The single-post form of the spoiler gate. GET /discussion evaluates
 // readability per episode; the routes that act on one post by id need the same
 // predicate for one row. Returns the post when the caller may see it — the
@@ -362,10 +385,8 @@ app.post(
     '/api/seasons/:season_id/episodes/:episode/posts',
     zValidator('json', postCreate, onInvalid),
     async (c) => {
-        const me = await callerUser(c);
+        const [me, resolved] = await callerAndEpisode(c);
         if (!me) return c.json({ error: 'Your account is not on the watch list' }, 403);
-
-        const resolved = await resolveEpisode(c);
         if (resolved.error) return c.json({ error: resolved.error }, resolved.status);
         const { season, episode } = resolved;
 
@@ -679,10 +700,8 @@ app.get('/api/seasons/:season_id/discussion', async (c) => {
 // `watched`, so un-marking a season (usually a mis-click correction) does not
 // take back an episode you have already read.
 app.post('/api/seasons/:season_id/episodes/:episode/reveal', async (c) => {
-    const me = await callerUser(c);
+    const [me, resolved] = await callerAndEpisode(c);
     if (!me) return c.json({ error: 'Your account is not on the watch list' }, 403);
-
-    const resolved = await resolveEpisode(c);
     if (resolved.error) return c.json({ error: resolved.error }, resolved.status);
     const { season, episode } = resolved;
 
@@ -780,10 +799,26 @@ app.get('/api/feed', async (c) => {
 // Marks the feed read for the individual, not their column — the same reason
 // feed_seen_at sits on user_emails.
 //
-// No request body on purpose. The stamp is the server's own clock, so a caller
-// cannot backdate the mark to keep a badge lit or forward-date it to silence
-// one. Idempotent: calling it twice just moves the mark forward.
+// The body is ignored on purpose. The stamp is the server's own clock, so a
+// caller cannot backdate the mark to keep a badge lit or forward-date it to
+// silence one. Idempotent: calling it twice just moves the mark forward.
 app.post('/api/feed/seen', async (c) => {
+    // Ignoring the body is not the same as accepting a request without one. A
+    // POST carrying no body and no content type is a CORS *simple* request, so
+    // a hostile page could fire one cross-site with the Access cookie attached
+    // and clear someone's badge — no preflight to refuse, and it does not need
+    // to read the response to have had its effect. Every other mutation here is
+    // already out of reach: they run through zValidator, and Hono's json
+    // validator hands a non-JSON content type an empty object, which their
+    // schemas reject with a 400. This route has no required field to reject
+    // with, so it asks for the content type directly. Requiring a header that
+    // is not CORS-safelisted is what forces the preflight this app answers for
+    // nobody.
+    const contentType = c.req.header('Content-Type') ?? '';
+    if (!/^application\/json\b/i.test(contentType)) {
+        return c.json({ error: 'Content-Type must be application/json' }, 415);
+    }
+
     const me = await callerUser(c);
     if (!me) return c.json({ error: 'Your account is not on the watch list' }, 403);
 
@@ -960,10 +995,8 @@ app.post(
     '/api/seasons/:season_id/episodes/:episode/timer',
     zValidator('json', timerAction, onInvalid),
     async (c) => {
-        const me = await callerUser(c);
+        const [me, resolved] = await callerAndEpisode(c);
         if (!me) return c.json({ error: 'Your account is not on the watch list' }, 403);
-
-        const resolved = await resolveEpisode(c);
         if (resolved.error) return c.json({ error: resolved.error }, resolved.status);
         const { season, episode } = resolved;
 
@@ -1129,10 +1162,8 @@ app.put(
     '/api/seasons/:season_id/episodes/:episode/offset',
     zValidator('json', offsetAdjust, onInvalid),
     async (c) => {
-        const me = await callerUser(c);
+        const [me, resolved] = await callerAndEpisode(c);
         if (!me) return c.json({ error: 'Your account is not on the watch list' }, 403);
-
-        const resolved = await resolveEpisode(c);
         if (resolved.error) return c.json({ error: resolved.error }, resolved.status);
         const { season, episode } = resolved;
 

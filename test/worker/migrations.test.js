@@ -113,6 +113,32 @@ describe('watch offset corrections', () => {
     });
 });
 
+// Migration 0010. GET /api/feed filters posts on created_at alone, which
+// idx_posts_board (season_id, episode, id) cannot serve — its leading column is
+// not in the query — so before this index the bell scanned the whole table on
+// every page load. Asserted through the query planner as well as sqlite_master:
+// the index existing is not the property worth having, being used is, and a
+// later index or a rewritten WHERE clause could take that away while leaving
+// the CREATE statement sitting there looking correct.
+describe('feed window index', () => {
+    it('creates idx_posts_created', async () => {
+        const { results } = await env.DB.prepare(
+            "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'idx_posts_created'",
+        ).all();
+        expect(results).toHaveLength(1);
+    });
+
+    it('plans the feed window scan through it', async () => {
+        const { results } = await env.DB.prepare(
+            'EXPLAIN QUERY PLAN SELECT id FROM posts WHERE created_at >= ?',
+        )
+            .bind('2026-01-01T00:00:00.000Z')
+            .all();
+        const plan = results.map((row) => row.detail).join(' ');
+        expect(plan).toContain('idx_posts_created');
+    });
+});
+
 // Migration 0009. The column arrives by ALTER TABLE, which rewrites the stored
 // CREATE statement, so sqlite_master records whether it applied. It sits on
 // user_emails rather than users because reading the feed is something a person
