@@ -78,7 +78,7 @@ whatever is already in `public/`, so always go through the npm scripts.
 ## Validation
 
 `.github/workflows/ci.yml` is a thin caller of
-`jluszcz/github-utils/.github/workflows/node-ci.yml@v1` — the steps live in that
+`jluszcz/github-utils/.github/workflows/node-ci.yml` — the steps live in that
 shared workflow, not in this repo. On every push and PR to `main` it runs, in
 order, on Node 22:
 
