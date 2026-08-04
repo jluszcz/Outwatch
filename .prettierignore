@@ -6,3 +6,10 @@ public/styles.css.map
 node_modules/
 .github/
 .superpowers/
+
+# Working documents (brainstorming specs, implementation plans): hand-authored,
+# routinely quote real source files verbatim for exact old_string/new_string
+# matches, and are deleted once the feature they describe ships — not worth
+# reformatting, and reformatting a quoted code block silently breaks the match
+# it exists for.
+docs/superpowers/
