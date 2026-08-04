@@ -3,6 +3,7 @@ import htm from 'htm';
 import {
     Bell,
     ChevronLeft,
+    Info,
     MessageCircle,
     MoreHorizontal,
     Moon,
@@ -37,6 +38,7 @@ const ICONS = {
     bell: Bell,
     sun: Sun,
     moon: Moon,
+    info: Info,
 };
 
 // Painted with `currentColor` (Lucide's default) so a glyph inherits its

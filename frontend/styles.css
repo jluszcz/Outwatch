@@ -1335,6 +1335,42 @@ tr.flash td {
     text-align: center;
 }
 
+/* Wraps the button row (.timer-adjust) and the optional caption beneath it,
+   so the caption gets its own line instead of squeezing into the same
+   0.35rem-gap flex row as the nudge buttons. */
+.timer-adjust-panel {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.3rem;
+}
+
+/* Deliberately not .timer-btn: it also carries aria-expanded, and .timer-btn's
+   hover/active rules already scope themselves to "the ± is the only .timer-btn
+   with that attribute" (see the hover block below) — giving this its own class
+   keeps that assumption true instead of quietly breaking it. */
+.timer-info-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: var(--control-height);
+    min-width: var(--control-height);
+    padding: 0.25rem;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.8rem;
+}
+
+.timer-info-text {
+    max-width: 16rem;
+    margin: 0;
+    font-size: 0.75rem;
+    color: var(--text-subtle);
+    text-align: right;
+}
+
 .post-form {
     display: flex;
     /* The box grows downward as you type, so the button tracks its bottom edge
@@ -1682,8 +1718,14 @@ tr.flash td {
     /* min-width alongside the group below's min-height: a one-character label
        would otherwise leave this the one control in the row too narrow to hit
        reliably, however tall it got. */
-    .timer-adjust-toggle {
+    .timer-adjust-toggle,
+    .timer-info-toggle {
         min-width: 44px;
+    }
+
+    .timer-info-text {
+        max-width: 100%;
+        text-align: left;
     }
 
     .reveal-btn,
@@ -2030,6 +2072,10 @@ tr.flash td {
        repaint a running chip on hover. */
     .timer-chip:hover {
         border-color: var(--text-faint);
+    }
+
+    .timer-info-toggle:hover {
+        color: var(--text);
     }
 
     .nw-jump:hover {
