@@ -118,6 +118,8 @@ def main():
         sys.exit("--length must be at least 1.")
     if args.time < 0:
         sys.exit("--time must not be negative; use --future to shift forward instead.")
+    if args.episode < 1:
+        sys.exit("--episode must be at least 1.")
 
     db_path = find_db_path()
     conn = sqlite3.connect(db_path)
