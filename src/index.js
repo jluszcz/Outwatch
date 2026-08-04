@@ -3,7 +3,11 @@ import { HTTPException } from 'hono/http-exception';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 
-import { sessionOffsetSecs, MAX_OFFSET_ADJUST_SECS } from '../shared/session.js';
+import {
+    sessionOffsetSecs,
+    MAX_OFFSET_ADJUST_SECS,
+    MAX_SKIP_DELTA_SECS,
+} from '../shared/session.js';
 import { MAX_REACTIONS_PER_POST, isReactionEmoji } from '../shared/reactions.js';
 import { accessTokenEmail } from './access.js';
 import { groupNotes, FEED_WINDOW_MS, FEED_MAX_EVENTS } from './feed.js';
@@ -29,11 +33,27 @@ const currentlyWatchingUpdate = z.object({
         .nullable(),
 });
 
-const timerAction = z.object({
-    action: z.enum(['start', 'pause', 'resume'], {
-        message: 'action must be start, pause, or resume',
-    }),
-});
+const timerAction = z
+    .object({
+        action: z.enum(['start', 'pause', 'resume', 'skip', 'stop'], {
+            message: 'action must be start, pause, resume, skip, or stop',
+        }),
+        delta_secs: z
+            .number()
+            .int({ message: 'delta_secs must be a whole number of seconds' })
+            .min(-MAX_SKIP_DELTA_SECS, {
+                message: `delta_secs must be within ${MAX_SKIP_DELTA_SECS} seconds of zero`,
+            })
+            .max(MAX_SKIP_DELTA_SECS, {
+                message: `delta_secs must be within ${MAX_SKIP_DELTA_SECS} seconds of zero`,
+            })
+            .refine((v) => v !== 0, { message: 'delta_secs must not be zero' })
+            .optional(),
+    })
+    .refine((data) => data.action !== 'skip' || data.delta_secs !== undefined, {
+        message: 'delta_secs is required for a skip action',
+        path: ['delta_secs'],
+    });
 
 const offsetAdjust = z.object({
     adjust_secs: z
@@ -928,11 +948,14 @@ app.delete('/api/posts/:post_id', async (c) => {
     return c.json({ success: true, post_id: postId });
 });
 
-// The watch timer. There is no stop action: a session simply goes stale after
-// three hours without a start, pause, resume, or post (see shared/session.js).
-// Sessions are per (user, episode) and deliberately not mutually exclusive —
-// a forgotten one on another episode is harmless, because offsets freeze onto
-// the post at write time and the stale session stamps nothing.
+// The watch timer. A session also goes stale after three hours without a
+// start, pause, resume, or post (see shared/session.js) — stop is the
+// explicit, on-demand way to reach that same "no session" state, for whoever
+// doesn't want to wait three hours for the retroactive correction
+// (PUT .../offset) to become reachable in the UI. Sessions are per (user,
+// episode) and deliberately not mutually exclusive — a forgotten one on
+// another episode is harmless, because offsets freeze onto the post at write
+// time and the stale session stamps nothing.
 app.post(
     '/api/seasons/:season_id/episodes/:episode/timer',
     zValidator('json', timerAction, onInvalid),
@@ -962,6 +985,24 @@ app.post(
             )
                 .bind(...key, now, now)
                 .run();
+        } else if (action === 'stop') {
+            // Idempotent: deleting a row that's already gone, or was never
+            // there, is still success — the caller only cares that there's no
+            // session afterward. Returns straight away rather than falling
+            // into the shared session/offset_secs response below, since
+            // there's no row left to select back.
+            await c.env.DB.prepare(
+                `DELETE FROM watch_sessions WHERE user_id = ? AND season_id = ? AND episode = ?`,
+            )
+                .bind(...key)
+                .run();
+            return c.json({
+                success: true,
+                season_id: season.id,
+                episode,
+                session: null,
+                offset_secs: null,
+            });
         } else {
             // Pause and resume both act on an existing session, and neither may
             // revive one that has already gone stale — that is precisely the
@@ -1005,7 +1046,7 @@ app.post(
                         .bind(banked, now, ...key)
                         .run();
                 }
-            } else {
+            } else if (action === 'resume') {
                 // Resume only restarts the clock; the banked total is
                 // untouched. A session already running is left untouched.
                 if (existing.running_since === null) {
@@ -1016,6 +1057,40 @@ app.post(
                         .bind(now, now, ...key)
                         .run();
                 }
+            } else {
+                // Skip jumps elapsed_secs by delta_secs, forward or backward,
+                // whether the session is running or paused — the total a read
+                // reports is elapsed_secs plus whatever the running segment
+                // adds (shared/session.js), so bumping elapsed_secs moves
+                // that total regardless of state, and running_since needs no
+                // change. Nothing here touches posts.offset_secs — that's
+                // frozen at write time (see currentOffsetSecs above), which
+                // is what keeps this forward-only: only a post written after
+                // this update reads the new elapsed_secs.
+                //
+                // Clamped against the total offset (elapsed_secs plus
+                // whatever the running segment currently adds — `banked`,
+                // already computed above for the staleness check), not
+                // against elapsed_secs alone: elapsed_secs sits at zero for a
+                // session that's been running continuously since start (the
+                // default flow), so clamping elapsed_secs alone made every
+                // backward skip silently a no-op there. Relative rather than
+                // absolute so two concurrent skips still compose instead of
+                // one clobbering the other; the stored elapsed_secs can go
+                // transiently negative while running (self-corrects on the
+                // next pause, which always writes the freshly recomputed
+                // `banked` total) — sessionOffsetSecs only cares about the
+                // sum, not either term. `banked` is guaranteed non-null here:
+                // the branch above already returned a 409 if it were null.
+                const { delta_secs } = c.req.valid('json');
+                const applied = Math.max(delta_secs, -banked);
+                await c.env.DB.prepare(
+                    `UPDATE watch_sessions
+                     SET elapsed_secs = elapsed_secs + ?, last_activity_at = ?
+                     WHERE user_id = ? AND season_id = ? AND episode = ?`,
+                )
+                    .bind(applied, now, ...key)
+                    .run();
             }
         }
 

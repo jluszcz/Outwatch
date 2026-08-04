@@ -16,6 +16,7 @@ import {
 import { sessionOffsetSecs, MAX_OFFSET_ADJUST_SECS } from '../shared/session.js';
 import { PostList } from './post.js';
 import { prefersReducedMotion } from './board.js';
+import { Icon } from './icons.js';
 
 const html = htm.bind(h);
 
@@ -185,6 +186,24 @@ export function SeasonView({ seasonId, routeEpisode }) {
             }),
         );
 
+    // Skip sends its own delta rather than an absolute total the way
+    // setOffsetAdjust does: each tap is a distinct, intentional jump — the
+    // same as pause banking a running segment — not a display total to
+    // converge on, so there's no accumulation-on-retry hazard for an
+    // absolute value to guard against. See WatchTimer's applySkip for how a
+    // failed tap still reverts exactly, regardless of what order two
+    // overlapping taps' responses land in.
+    const setTimerSkip = (episode, deltaSecs) =>
+        mutate(
+            () =>
+                api(`/api/seasons/${seasonId}/episodes/${episode}/timer`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'skip', delta_secs: deltaSecs }),
+                }),
+            { suppressError: (err) => err.status === 409 },
+        );
+
     if (loading) return html`<div class="loading">Loading…</div>`;
     // Only a failure with nothing to show yet (the initial load) gets the view to
     // itself. Once there is data, an error is a banner *above* it, the way the
@@ -239,6 +258,7 @@ export function SeasonView({ seasonId, routeEpisode }) {
                             onReact=${setReaction}
                             onTimer=${setTimer}
                             onOffsetAdjust=${setOffsetAdjust}
+                            onSkip=${setTimerSkip}
                         />`,
                 )}
             </div>
@@ -261,6 +281,7 @@ function EpisodeBoard({
     onReact,
     onTimer,
     onOffsetAdjust,
+    onSkip,
 }) {
     const placed = useMemo(() => orderPosts(ep.posts), [ep.posts]);
 
@@ -371,6 +392,7 @@ function EpisodeBoard({
                                             serverSkewMs=${serverSkewMs}
                                             onAction=${(action) => onTimer(ep.episode, action)}
                                             onAdjust=${(secs) => onOffsetAdjust(ep.episode, secs)}
+                                            onSkip=${(delta) => onSkip(ep.episode, delta)}
                                         />`
                                     }
                                 </div>
@@ -418,18 +440,38 @@ function EpisodeBoard({
 // the server uses (shared/session.js), because showing a number the server would
 // refuse to stamp would be a promise the post cannot keep.
 //
-// The ± button opens a second row of nudges. Everyone watches separately, so
-// timers drift by a constant shift — one person started before the "previously
-// on", another skipped the recap — and one number corrects it. That number is
-// applied on read, so a nudge also moves every note you have already posted on
-// this episode, which is the point: you discover the drift by seeing your note
-// land in the wrong place.
-function WatchTimer({ session, adjustSecs, serverSkewMs, onAction, onAdjust }) {
+// The ± button opens a panel whose contents are modal on whether a session is
+// live — not a manual switch, because the two things it can show disagree
+// about what an already-posted note should do, and modality means there's no
+// state where the wrong one is a single accidental tap away from the right
+// one:
+//
+// - Live session → Skip: jumps the timer itself (POST .../timer
+//   {action:'skip'}), forward or back, without moving anything already
+//   posted — the point is to keep pace with the show, not to relitigate
+//   notes that already landed correctly.
+// - No session (never started, Stopped, or gone stale) → Correct: the
+//   original retroactive nudge, unchanged. It moves every note on the
+//   episode, including ones already posted, which is exactly right once
+//   there's no "going forward" left to distinguish from "already posted."
+//
+// Stop, beside Restart, is the deliberate way to reach "no session" without
+// waiting three hours for staleness — it's what makes Correct reachable on
+// demand once you're done watching.
+function WatchTimer({ session, adjustSecs, serverSkewMs, onAction, onAdjust, onSkip }) {
     const [tick, setTick] = useState(0);
     // Local to the timer and deliberately not episode-scoped state up in
     // EpisodeBoard: the row belongs to this control, and nothing outside it
     // needs to know whether it is open.
     const [adjusting, setAdjusting] = useState(false);
+    // Whether the panel's short explanation is showing via tap/click — the
+    // only way it can show on a phone, which has no hover. On a pointer
+    // device it can also appear on hover/focus of the ⓘ button without this
+    // ever changing, purely in CSS (`.timer-info-toggle:hover`/`:focus-visible`
+    // via `:has()` in styles.css) — the paragraph always renders, and this
+    // state only controls its `.open` class, the tap/keyboard path. Also
+    // local — it dies with the panel, and the panel dies with `adjusting`.
+    const [infoOpen, setInfoOpen] = useState(false);
 
     // The running total taps accumulate against, seeded from the server's
     // adjust_secs and reconciled below. Not read straight off the adjustSecs
@@ -470,13 +512,33 @@ function WatchTimer({ session, adjustSecs, serverSkewMs, onAction, onAdjust }) {
         setPendingAdjust(adjustSecs);
     }, [adjustSecs]);
 
+    // The skip amount not yet reflected in the session prop. Unlike
+    // pendingAdjust there's no separate stored total to seed from or settle
+    // to: a skip is folded straight into elapsed_secs server-side, so once a
+    // fresh session prop arrives it already carries every skip that's landed
+    // — at which point this resets to zero. Keyed on the session's own
+    // primitives rather than the object reference, which changes on every
+    // refetch (focus, another mutation) whether or not this episode's
+    // session actually moved. `last_activity_at`, not `running_since`: the
+    // server stamps `last_activity_at` unconditionally on every accepted
+    // timer action, including a skip clamped to exactly zero effect (already
+    // at the floor), where `elapsed_secs` numerically doesn't change and
+    // `running_since` isn't touched either — keying on those two alone would
+    // never fire there, leaving `pendingSkip` stuck at a nonzero optimistic
+    // value the server never actually reflected.
+    const [pendingSkip, setPendingSkip] = useState(0);
+    useEffect(() => {
+        setPendingSkip(0);
+    }, [session?.elapsed_secs, session?.last_activity_at]);
+
     useEffect(() => {
         if (!session?.running_since) return;
         const id = setInterval(() => setTick((t) => t + 1), 1000);
         return () => clearInterval(id);
     }, [session?.running_since]);
 
-    const offset = sessionOffsetSecs(session, Date.now() + serverSkewMs, pendingAdjust);
+    const rawOffset = sessionOffsetSecs(session, Date.now() + serverSkewMs, pendingAdjust);
+    const offset = rawOffset === null ? null : rawOffset + pendingSkip;
     // `tick` only exists to force this re-render each second.
     void tick;
 
@@ -496,7 +558,7 @@ function WatchTimer({ session, adjustSecs, serverSkewMs, onAction, onAdjust }) {
     // own success boolean (SeasonView), so there is nothing to poll: a
     // rejected PUT already left an error banner up in SeasonView, this just
     // stops the control from disagreeing with it once the dust settles.
-    const apply = async (next) => {
+    const applyAdjust = async (next) => {
         setPendingAdjust(next);
         const seq = (nudgeSeqRef.current += 1);
         const ok = await onAdjust(next);
@@ -516,12 +578,25 @@ function WatchTimer({ session, adjustSecs, serverSkewMs, onAction, onAdjust }) {
     // instead of collecting a 400 banner per tap. Against pendingAdjust, not
     // the prop, so consecutive taps within one round trip accumulate instead
     // of each computing the same total from a stale base.
-    const nudge = (delta) => {
+    const nudgeAdjust = (delta) => {
         const next = clampAdjust(pendingAdjust, delta, MAX_OFFSET_ADJUST_SECS);
-        if (next !== pendingAdjust) apply(next);
+        if (next !== pendingAdjust) applyAdjust(next);
     };
 
-    const reset = () => apply(0);
+    const resetAdjust = () => applyAdjust(0);
+
+    // Skip needs none of applyAdjust's settle-to-absolute machinery: each tap
+    // sends its own delta rather than a total the client owns, and reverting
+    // one tap's optimistic bump is exact subtraction regardless of what order
+    // two overlapping taps' responses arrive in — (+a then +b), then a late
+    // failure of a subtracts a back out, leaving b either way. The effect
+    // above is what clears any leftover pendingSkip once the server's own
+    // total (the session prop) catches up.
+    const applySkip = async (delta) => {
+        setPendingSkip((p) => p + delta);
+        const ok = await onSkip(delta);
+        if (!ok) setPendingSkip((p) => p - delta);
+    };
 
     const chip =
         offset === null
@@ -544,6 +619,7 @@ function WatchTimer({ session, adjustSecs, serverSkewMs, onAction, onAdjust }) {
                       ${session.running_since ? '▶' : '⏸'} ${formatOffset(offset)}
                   </button>
                   <button class="timer-btn" onClick=${() => onAction('start')}>Restart</button>
+                  <button class="timer-btn" onClick=${() => onAction('stop')}>Stop</button>
               `;
 
     return html`
@@ -562,28 +638,72 @@ function WatchTimer({ session, adjustSecs, serverSkewMs, onAction, onAdjust }) {
             </div>
             ${
                 adjusting &&
-                html`<div class="timer-adjust" role="group" aria-label="Timer adjustment">
-                    ${
-                        // Reset leads the row, which reads oddly and is load-bearing. It is the
-                        // one control here that comes and goes, and this row is pinned to its
-                        // right edge (.timer-stack is align-items: flex-end), so whichever end
-                        // Reset occupies is the end that moves. At the trailing end its arrival
-                        // shoved all four nudge buttons left by a Reset-width the instant the
-                        // total left zero — sliding +15s out from under the finger that had just
-                        // tapped it. At the leading end it grows the row leftwards into empty
-                        // space and nothing else moves at all. Reserving its width instead (a
-                        // hidden-but-present Reset) also held the buttons still, but then every
-                        // visible button sat a Reset-width shy of the right edge, so the row no
-                        // longer lined up with the timer above it.
-                        pendingAdjust !== 0 &&
-                        html`<button class="timer-btn subtle" onClick=${reset}>Reset</button>`
-                    }
-                    <button class="timer-btn" onClick=${() => nudge(-60)}>−1m</button>
-                    <button class="timer-btn" onClick=${() => nudge(-15)}>−15s</button>
-                    <span class="timer-adjust-total">${formatAdjust(pendingAdjust)}</span>
-                    <button class="timer-btn" onClick=${() => nudge(15)}>+15s</button>
-                    <button class="timer-btn" onClick=${() => nudge(60)}>+1m</button>
-                </div>`
+                (offset === null
+                    ? html`<div class="timer-adjust-panel">
+                          <div
+                              class="timer-adjust"
+                              role="group"
+                              aria-label="Correct this episode's start"
+                          >
+                              <button
+                                  class="timer-info-toggle"
+                                  aria-expanded=${infoOpen}
+                                  aria-label="What does Correct do?"
+                                  onClick=${() => setInfoOpen((v) => !v)}
+                              >
+                                  <${Icon} name="info" />
+                              </button>
+                              ${
+                                  pendingAdjust !== 0 &&
+                                  html`<button class="timer-btn subtle" onClick=${resetAdjust}>
+                                      Reset
+                                  </button>`
+                              }
+                              <button class="timer-btn" onClick=${() => nudgeAdjust(-60)}>
+                                  −1m
+                              </button>
+                              <button class="timer-btn" onClick=${() => nudgeAdjust(-15)}>
+                                  −15s
+                              </button>
+                              <span class="timer-adjust-total">${formatAdjust(pendingAdjust)}</span>
+                              <button class="timer-btn" onClick=${() => nudgeAdjust(15)}>
+                                  +15s
+                              </button>
+                              <button class="timer-btn" onClick=${() => nudgeAdjust(60)}>
+                                  +1m
+                              </button>
+                          </div>
+                          <p class=${'timer-info-text' + (infoOpen ? ' open' : '')}>
+                              Moves every note on this episode, including ones you've already
+                              posted. Start the timer again to go back to adjusting live.
+                          </p>
+                      </div>`
+                    : html`<div class="timer-adjust-panel">
+                          <div
+                              class="timer-adjust"
+                              role="group"
+                              aria-label="Skip this episode's timer"
+                          >
+                              <button
+                                  class="timer-info-toggle"
+                                  aria-expanded=${infoOpen}
+                                  aria-label="What does Skip do?"
+                                  onClick=${() => setInfoOpen((v) => !v)}
+                              >
+                                  <${Icon} name="info" />
+                              </button>
+                              <button class="timer-btn" onClick=${() => applySkip(-60)}>−1m</button>
+                              <button class="timer-btn" onClick=${() => applySkip(-15)}>
+                                  −15s
+                              </button>
+                              <button class="timer-btn" onClick=${() => applySkip(15)}>+15s</button>
+                              <button class="timer-btn" onClick=${() => applySkip(60)}>+1m</button>
+                          </div>
+                          <p class=${'timer-info-text' + (infoOpen ? ' open' : '')}>
+                              Moves your timer, adjusting where future notes land. Stop to adjust
+                              every note posted.
+                          </p>
+                      </div>`)
             }
         </div>
     `;

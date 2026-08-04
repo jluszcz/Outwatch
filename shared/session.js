@@ -15,6 +15,13 @@ export const SESSION_IDLE_LIMIT_SECS = 3 * 60 * 60;
 // clamp and the API's 400 are the same number.
 export const MAX_OFFSET_ADJUST_SECS = 3600;
 
+// The largest single skip anyone may apply to a live timer, in seconds either
+// direction. Its own constant rather than reusing MAX_OFFSET_ADJUST_SECS: the
+// two bound different things — one a correction to an episode's zero point,
+// the other a single live jump — and only happen to start out at the same
+// value.
+export const MAX_SKIP_DELTA_SECS = 3600;
+
 // Accumulated watch time right now, or null when there is no live session.
 // `nowMs` is a millisecond epoch so callers can pass the server clock rather
 // than a possibly-skewed local one.
