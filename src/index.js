@@ -35,8 +35,8 @@ const currentlyWatchingUpdate = z.object({
 
 const timerAction = z
     .object({
-        action: z.enum(['start', 'pause', 'resume', 'skip'], {
-            message: 'action must be start, pause, resume, or skip',
+        action: z.enum(['start', 'pause', 'resume', 'skip', 'stop'], {
+            message: 'action must be start, pause, resume, skip, or stop',
         }),
         delta_secs: z
             .number()
@@ -948,11 +948,14 @@ app.delete('/api/posts/:post_id', async (c) => {
     return c.json({ success: true, post_id: postId });
 });
 
-// The watch timer. There is no stop action: a session simply goes stale after
-// three hours without a start, pause, resume, or post (see shared/session.js).
-// Sessions are per (user, episode) and deliberately not mutually exclusive —
-// a forgotten one on another episode is harmless, because offsets freeze onto
-// the post at write time and the stale session stamps nothing.
+// The watch timer. A session also goes stale after three hours without a
+// start, pause, resume, or post (see shared/session.js) — stop is the
+// explicit, on-demand way to reach that same "no session" state, for whoever
+// doesn't want to wait three hours for the retroactive correction
+// (PUT .../offset) to become reachable in the UI. Sessions are per (user,
+// episode) and deliberately not mutually exclusive — a forgotten one on
+// another episode is harmless, because offsets freeze onto the post at write
+// time and the stale session stamps nothing.
 app.post(
     '/api/seasons/:season_id/episodes/:episode/timer',
     zValidator('json', timerAction, onInvalid),
@@ -982,6 +985,24 @@ app.post(
             )
                 .bind(...key, now, now)
                 .run();
+        } else if (action === 'stop') {
+            // Idempotent: deleting a row that's already gone, or was never
+            // there, is still success — the caller only cares that there's no
+            // session afterward. Returns straight away rather than falling
+            // into the shared session/offset_secs response below, since
+            // there's no row left to select back.
+            await c.env.DB.prepare(
+                `DELETE FROM watch_sessions WHERE user_id = ? AND season_id = ? AND episode = ?`,
+            )
+                .bind(...key)
+                .run();
+            return c.json({
+                success: true,
+                season_id: season.id,
+                episode,
+                session: null,
+                offset_secs: null,
+            });
         } else {
             // Pause and resume both act on an existing session, and neither may
             // revive one that has already gone stale — that is precisely the

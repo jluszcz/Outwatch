@@ -636,7 +636,7 @@ describe('POST /api/seasons/:season_id/episodes/:episode/timer', () => {
     });
 
     it('returns 400 for an unknown action and 403 for a stranger', async () => {
-        expect((await timer('alice@example.com', 7, 'stop')).status).toBe(400);
+        expect((await timer('alice@example.com', 7, 'bogus')).status).toBe(400);
         expect((await timer('stranger@example.com', 7, 'start')).status).toBe(403);
     });
 });
@@ -1404,5 +1404,61 @@ describe('watch-offset corrections in the discussion', () => {
     // the identity-less default rather than a lookup with nothing to key on.
     it('reports zero for a caller with no roster row', async () => {
         expect((await episodeSeven('stranger@example.com')).adjust_secs).toBe(0);
+    });
+});
+
+describe('POST /api/seasons/:season_id/episodes/:episode/timer { action: "stop" }', () => {
+    it('deletes the session', async () => {
+        await timer('alice@example.com', 7, 'start');
+        const r = await timer('alice@example.com', 7, 'stop');
+        expect(r.status).toBe(200);
+        const { session, offset_secs } = await r.json();
+        expect(session).toBeNull();
+        expect(offset_secs).toBeNull();
+
+        const row = await env.DB.prepare('SELECT * FROM watch_sessions WHERE user_id = ?')
+            .bind('user-alice')
+            .first();
+        expect(row).toBeNull();
+    });
+
+    it('is idempotent with no session to stop', async () => {
+        const r = await timer('alice@example.com', 7, 'stop');
+        expect(r.status).toBe(200);
+        const { session } = await r.json();
+        expect(session).toBeNull();
+    });
+
+    it('is idempotent when called twice', async () => {
+        await timer('alice@example.com', 7, 'start');
+        await timer('alice@example.com', 7, 'stop');
+        const r = await timer('alice@example.com', 7, 'stop');
+        expect(r.status).toBe(200);
+    });
+
+    it('makes a note posted afterward untimed', async () => {
+        await timer('alice@example.com', 7, 'start');
+        await timer('alice@example.com', 7, 'stop');
+        const { post: note } = await (await post('alice@example.com', 7, 'after stop')).json();
+        expect(note.offset_secs).toBeNull();
+    });
+
+    it('leaves an existing retroactive correction untouched', async () => {
+        await timer('alice@example.com', 7, 'start');
+        await req('PUT', '/api/seasons/45/episodes/7/offset', {
+            body: { adjust_secs: 45 },
+            email: 'alice@example.com',
+        });
+
+        await timer('alice@example.com', 7, 'stop');
+
+        const row = await env.DB.prepare('SELECT adjust_secs FROM watch_offsets WHERE user_id = ?')
+            .bind('user-alice')
+            .first();
+        expect(row.adjust_secs).toBe(45);
+    });
+
+    it('403s for a stranger', async () => {
+        expect((await timer('stranger@example.com', 7, 'stop')).status).toBe(403);
     });
 });
