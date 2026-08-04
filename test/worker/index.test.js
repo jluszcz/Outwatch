@@ -92,6 +92,47 @@ describe('static assets', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Cache headers
+// ---------------------------------------------------------------------------
+
+// Every API response is per-caller and immediately stale — the spoiler gate
+// alone means two people asking for the same URL get different bodies — so none
+// of it may be held by a browser or an intermediary.
+describe('cache headers', () => {
+    it('marks a successful API response no-store', async () => {
+        const r = await req('GET', '/api/board', { email: 'alice@example.com' });
+        expect(r.headers.get('Cache-Control')).toBe('no-store');
+    });
+
+    it('marks the unknown-endpoint 404 no-store', async () => {
+        const r = await req('GET', '/api/nope');
+        expect(r.headers.get('Cache-Control')).toBe('no-store');
+    });
+
+    // The header is set before the handler runs precisely so this case is
+    // covered: a throw rejects next(), so a response built by app.onError never
+    // comes back through the middleware to be decorated on the way out.
+    it('marks an error response no-store', async () => {
+        const r = await req('GET', '/api/board', {
+            envOverrides: {
+                DB: {
+                    prepare() {
+                        throw new Error('boom');
+                    },
+                },
+            },
+        });
+        expect(r.status).toBe(500);
+        expect(r.headers.get('Cache-Control')).toBe('no-store');
+    });
+
+    it('leaves static assets alone', async () => {
+        const r = await req('GET', '/');
+        expect(r.headers.get('Cache-Control')).toBeNull();
+    });
+});
+
+// ---------------------------------------------------------------------------
 // Error handling
 // ---------------------------------------------------------------------------
 

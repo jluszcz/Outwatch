@@ -22,7 +22,7 @@
     "author": "Jacob Luszcz",
     "license": "MIT",
     "engines": {
-        "node": ">=20"
+        "node": ">=22"
     },
     "overrides": {
         "undici": "^7.24.6",

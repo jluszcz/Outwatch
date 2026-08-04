@@ -173,7 +173,16 @@ export function FeedBell() {
         // below lets it through.
         beginMutation();
         try {
-            await api('/api/feed/seen', { method: 'POST' });
+            // The empty body is not a payload — the server stamps its own clock
+            // and ignores whatever arrives. It is the content type that matters:
+            // the route requires it so that a cross-site POST has to clear a
+            // preflight first (see the route in src/index.js), and a request
+            // announcing JSON should carry some.
+            await api('/api/feed/seen', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: '{}',
+            });
         } catch {
             // Not worth a banner in the header: the badge coming back is the
             // whole story, and the next open retries it.

@@ -134,7 +134,7 @@ reason to serve it.
 
 ### Prerequisites
 
-- Node.js and npm
+- Node.js 22+ and npm — the version CI builds and tests on
 - A Cloudflare account with Workers and D1 access
 
 ### Setup
@@ -281,137 +281,51 @@ rather than trusting it unchecked.
 All routes derive the caller's identity from the signed Cloudflare Access token in
 the `Cf-Access-Jwt-Assertion` header (or `DEV_USER_EMAIL` locally). Clients never
 send a user id, and the plaintext `Cf-Access-Authenticated-User-Email` header is
-never trusted — see [Authentication](#authentication).
+never trusted — see [Authentication](#authentication). Everything lives under
+`/api/`, speaks JSON, is marked `Cache-Control: no-store`, and answers 403 for a
+caller who is not on the roster.
 
-| Method   | Path                                               | Description                                                                                                                                                                                                                      |
-| -------- | -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET`    | `/api/board`                                       | Current user, all users, and all seasons with watched state, episode counts, and post counts                                                                                                                                     |
-| `POST`   | `/api/watched`                                     | Mark the caller as having watched a season (`{ season_id }`)                                                                                                                                                                     |
-| `DELETE` | `/api/watched/:season_id`                          | Unmark the caller for a season                                                                                                                                                                                                   |
-| `PUT`    | `/api/currently-watching`                          | Set the caller's currently-watching season, or clear it (`{ season_id }`, nullable)                                                                                                                                              |
-| `POST`   | `/api/seasons/:season_id/episodes/:episode/posts`  | Add a discussion note, stamped with the caller's live watch-timer offset and their author email (`{ body, reply_to_post_id? }`)                                                                                                  |
-| `PATCH`  | `/api/posts/:post_id`                              | Rewrite one of the caller's own notes and mark it edited (`{ body }`); never touches its timestamp, watch offset, or reply target, so an edit cannot move it on the timeline                                                     |
-| `PUT`    | `/api/posts/:post_id/reactions`                    | Add or remove one emoji on a note the caller can see (`{ emoji, on }`); any single emoji is accepted, up to 12 distinct per note; idempotent in both directions and attributed to the individual rather than their column        |
-| `GET`    | `/api/seasons/:season_id/discussion`               | Per-episode discussion state for a season, gated by the spoiler rule; each post carries its byline and the caller's own ownership flag, and each episode's `authors` names its bylined individuals — emails are never serialized |
-| `POST`   | `/api/seasons/:season_id/episodes/:episode/reveal` | Open one episode's discussion board for reading (permanent)                                                                                                                                                                      |
-| `DELETE` | `/api/posts/:post_id`                              | Delete one of the caller's own discussion notes, scoped to the individual author; a note from before individual attribution stays deletable by the column                                                                        |
-| `POST`   | `/api/seasons/:season_id/episodes/:episode/timer`  | Start, pause, or resume the caller's watch timer for an episode (`{ action }`)                                                                                                                                                   |
-| `PUT`    | `/api/seasons/:season_id/episodes/:episode/offset` | Correct where this episode started for the caller (`{ adjust_secs }`, absolute, within ±3600); shifts every note they have posted on that episode                                                                                |
+Broadly, the routes cover:
+
+- **The board** — who is on it, which seasons each person has watched, and what
+  each person is currently watching.
+- **The discussion boards** — the notes on a season's episodes, plus replies,
+  edits, deletes, and emoji reactions. All of it sits behind the spoiler rule:
+  someone else's note is readable only once you have watched the season or
+  explicitly revealed that episode, and a hidden body is never serialized at all.
+- **The watch timer** — the optional per-episode timer that stamps each note with
+  how far into the episode its writer was, and its two corrections: a live skip
+  and a retroactive shift.
+- **The what's-new feed** — recent notes by other people, and the per-person mark
+  that clears the bell's badge.
+
+**The route-by-route contract — request and response shapes, status codes, and
+the reasoning behind each rule — lives in
+[`CLAUDE.md`](CLAUDE.md#api-routes).** It is deliberately not repeated here: the
+table this section used to hold had quietly fallen three features behind the code
+it described, which is what a second copy of an API reference is always drifting
+towards.
 
 ## Database Schema
 
-**`users`** — board columns (a person or a couple)
+Nine tables in D1 (SQLite): `users` and `user_emails` (the roster — board
+columns, and the login emails that map onto them), `seasons` (reference data,
+seeded by migration `0002`), `watched`, `posts`, `reactions`, `reveals`,
+`watch_sessions`, and `watch_offsets`.
 
-| Column                         | Type    | Notes                                                      |
-| ------------------------------ | ------- | ---------------------------------------------------------- |
-| `id`                           | TEXT PK | Generic id, e.g. `user-1`                                  |
-| `name`                         | TEXT    | Column header (e.g. `Bob & Carol`)                         |
-| `sort_order`                   | INTEGER | Column order                                               |
-| `currently_watching_season_id` | INTEGER | References `seasons.id`; `NULL` when not watching a season |
+One distinction runs through all of them: **a `users` row is a board column, not
+a person.** A couple shares one column, one checkbox, and one watch timer, so
+everything about _watching_ is keyed on `users.id` — while authorship, reactions,
+and the feed's read mark are keyed on the individual's email, because a byline
+and an unread badge belong to a person rather than to a household.
 
-**`user_emails`** — maps each Access login email to a column
+`users` and `user_emails` are populated from the gitignored `roster.sql` rather
+than by a migration — see [The roster](#the-roster). Every other table is created
+by `migrations/*.sql`, which carry their own commentary on why each column exists.
 
-| Column    | Type    | Notes                                                                 |
-| --------- | ------- | --------------------------------------------------------------------- |
-| `email`   | TEXT PK | Cloudflare Access email; `COLLATE NOCASE`                             |
-| `user_id` | TEXT    | References `users.id`; a couple's column has two rows                 |
-| `name`    | TEXT    | Display name on a discussion note; NULL falls back to the column name |
-
-Both tables are populated from the gitignored `roster.sql`, not a migration —
-see [The roster](#the-roster).
-
-**`seasons`** — _Survivor_ seasons (reference data, seeded in migration `0002`)
-
-| Column          | Type       | Notes                                                                                    |
-| --------------- | ---------- | ---------------------------------------------------------------------------------------- |
-| `id`            | INTEGER PK | The season number                                                                        |
-| `subtitle`      | TEXT       | Official subtitle without the `Survivor: ` prefix; empty for the modern numbered seasons |
-| `wikipedia_url` | TEXT       | Link to the season's Wikipedia article                                                   |
-| `episode_count` | INTEGER    | Episode count from Wikipedia's episode table; added in migration `0005`                  |
-
-**`watched`** — one row per (user, season) watched; presence means watched
-
-| Column       | Type    | Notes                   |
-| ------------ | ------- | ----------------------- |
-| `user_id`    | TEXT    | References `users.id`   |
-| `season_id`  | INTEGER | References `seasons.id` |
-| `created_at` | TEXT    | ISO timestamp           |
-
-Primary key is `(user_id, season_id)`.
-
-**`posts`** — one row per discussion note
-
-| Column             | Type       | Notes                                                                                                                                                |
-| ------------------ | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`               | INTEGER PK | Autoincrement                                                                                                                                        |
-| `season_id`        | INTEGER    | References `seasons.id`                                                                                                                              |
-| `episode`          | INTEGER    | Episode number within the season                                                                                                                     |
-| `user_id`          | TEXT       | References `users.id`; the note's column (the individual author, when known, is `author_email`)                                                      |
-| `body`             | TEXT       | Note text                                                                                                                                            |
-| `created_at`       | TEXT       | ISO timestamp                                                                                                                                        |
-| `offset_secs`      | INTEGER    | Author's watch-timer offset at post time; `NULL` if no timer was running                                                                             |
-| `author_email`     | TEXT       | References `user_emails.email`; who wrote the note. NULL on notes predating individual attribution                                                   |
-| `reply_to_post_id` | INTEGER    | References `posts.id`; the note being answered. NULL for an ordinary note, and for a reply whose parent was later deleted. Added in migration `0007` |
-| `edited_at`        | TEXT       | ISO timestamp of the last rewrite; NULL on a note never edited. Added in migration `0007`                                                            |
-
-A reply is always in the same season and episode as the note it answers — the
-API enforces that at write time, so no read path re-checks it.
-
-**`reactions`** — one row per (note, person, emoji); presence means that person put that emoji on that note (migration `0007`)
-
-| Column       | Type    | Notes                                                         |
-| ------------ | ------- | ------------------------------------------------------------- |
-| `post_id`    | INTEGER | References `posts.id`                                         |
-| `email`      | TEXT    | References `user_emails.email`; `COLLATE NOCASE`, never NULL  |
-| `emoji`      | TEXT    | Any single emoji (`isReactionEmoji` in `shared/reactions.js`) |
-| `created_at` | TEXT    | ISO timestamp                                                 |
-
-Primary key is `(post_id, email, emoji)`. Keyed on the email rather than a
-column, so both halves of a shared login react separately — the same call as a
-note's byline, and the opposite of the column-level watched checkbox.
-
-`created_at` is read, not just recorded: a note's chips are ordered by when each
-emoji first appeared on it, so a chip does not change places as counts move.
-
-**`reveals`** — presence means that user opened that episode's board for reading (one-way)
-
-| Column       | Type    | Notes                   |
-| ------------ | ------- | ----------------------- |
-| `user_id`    | TEXT    | References `users.id`   |
-| `season_id`  | INTEGER | References `seasons.id` |
-| `episode`    | INTEGER | Episode number          |
-| `created_at` | TEXT    | ISO timestamp           |
-
-Primary key is `(user_id, season_id, episode)`.
-
-**`watch_sessions`** — a running or paused watch timer, stale after three hours idle
-
-| Column             | Type    | Notes                                                          |
-| ------------------ | ------- | -------------------------------------------------------------- |
-| `user_id`          | TEXT    | References `users.id`                                          |
-| `season_id`        | INTEGER | References `seasons.id`                                        |
-| `episode`          | INTEGER | Episode number                                                 |
-| `elapsed_secs`     | INTEGER | Banked time from completed segments                            |
-| `running_since`    | TEXT    | Start of the current segment; `NULL` while paused              |
-| `last_activity_at` | TEXT    | Touched by start/pause/resume/post; drives the staleness clock |
-
-Primary key is `(user_id, season_id, episode)`.
-
-**`watch_offsets`** — one revisable correction to where an episode started, per (user, season, episode)
-
-| Column        | Type    | Notes                                       |
-| ------------- | ------- | ------------------------------------------- |
-| `user_id`     | TEXT    | References `users.id`                       |
-| `season_id`   | INTEGER | References `seasons.id`                     |
-| `episode`     | INTEGER | Episode number                              |
-| `adjust_secs` | INTEGER | Signed correction, in seconds, within ±3600 |
-| `updated_at`  | TEXT    | ISO timestamp                               |
-
-Primary key is `(user_id, season_id, episode)`. Deliberately not a column on
-`watch_sessions` — starting a timer zeroes that row, and a correction has to
-survive a restart and be writable even when no session exists at all.
-Applied on read, not stored into `posts.offset_secs`, so a correction stays
-revisable and reaches notes already posted. Added in migration `0008`.
+**The column-by-column schema lives in
+[`CLAUDE.md`](CLAUDE.md#database-schema)**, kept in one place for the same reason
+the API is.
 
 ## Authentication
 

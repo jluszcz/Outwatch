@@ -597,6 +597,14 @@ of the root `CLAUDE.md` so it loads only when working on these files.
       covers the same window on the display side. A failed `seen` restores the
       badge and raises no banner — the badge returning is the whole story, and
       the next open retries it.
+      That `POST` sends `Content-Type: application/json` and a `{}` body, and
+      neither is decoration to be tidied away later: the route ignores the body
+      but **requires** the header, because a POST carrying neither is a CORS
+      simple request a hostile page could fire cross-site with the Access
+      cookie attached to clear someone's badge. The header is not
+      CORS-safelisted, so sending it is what puts the request behind a
+      preflight; drop it and the route answers 415. Full reasoning sits on the
+      route in `src/index.js`.
     - The per-event `unread` marks are deliberately separate from the
       optimistic badge state, and `FeedPanel` snapshots the `data` it opened
       with in a `useState` initialiser rather than reading the live prop —

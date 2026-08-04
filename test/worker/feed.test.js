@@ -343,13 +343,66 @@ describe('feed routes', () => {
     });
 
     describe('POST /api/feed/seen', () => {
+        // The route ignores the body but insists on the content type, because a
+        // POST without one is a CORS simple request: a hostile page could fire
+        // it cross-site with the Access cookie attached and clear the badge. The
+        // header is not CORS-safelisted, so asking for it forces a preflight.
+        // Checked ahead of the roster lookup, so a malformed request is refused
+        // before it costs a query.
+        it('415s a POST carrying no content type', async () => {
+            const res = await req('POST', '/api/feed/seen', { email: 'bob@example.com' });
+            expect(res.status).toBe(415);
+
+            const row = await env.DB.prepare('SELECT feed_seen_at FROM user_emails WHERE email = ?')
+                .bind('bob@example.com')
+                .first();
+            expect(row.feed_seen_at).toBeNull();
+        });
+
+        it('415s the text/plain content type a cross-site POST could send', async () => {
+            const res = await worker.fetch(
+                new Request('https://example.com/api/feed/seen', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'text/plain;charset=UTF-8',
+                        'Cf-Access-Jwt-Assertion': await signAccessToken({
+                            email: 'bob@example.com',
+                        }),
+                    },
+                    body: '{}',
+                }),
+                makeEnv(),
+            );
+            expect(res.status).toBe(415);
+        });
+
+        it('accepts a content type carrying a charset parameter', async () => {
+            const res = await worker.fetch(
+                new Request('https://example.com/api/feed/seen', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json;charset=UTF-8',
+                        'Cf-Access-Jwt-Assertion': await signAccessToken({
+                            email: 'bob@example.com',
+                        }),
+                    },
+                    body: '{}',
+                }),
+                makeEnv(),
+            );
+            expect(res.status).toBe(200);
+        });
+
         it('403s for a caller who is not on the roster', async () => {
-            const res = await req('POST', '/api/feed/seen', { email: 'nobody@example.com' });
+            const res = await req('POST', '/api/feed/seen', {
+                email: 'nobody@example.com',
+                body: {},
+            });
             expect(res.status).toBe(403);
         });
 
         it('stamps the caller and returns the mark', async () => {
-            const res = await req('POST', '/api/feed/seen', { email: 'bob@example.com' });
+            const res = await req('POST', '/api/feed/seen', { email: 'bob@example.com', body: {} });
             expect(res.status).toBe(200);
             const data = await res.json();
             expect(Number.isNaN(Date.parse(data.feed_seen_at))).toBe(false);
@@ -361,7 +414,7 @@ describe('feed routes', () => {
         });
 
         it('leaves the other half of a shared column unmarked', async () => {
-            await req('POST', '/api/feed/seen', { email: 'bob@example.com' });
+            await req('POST', '/api/feed/seen', { email: 'bob@example.com', body: {} });
             const row = await env.DB.prepare('SELECT feed_seen_at FROM user_emails WHERE email = ?')
                 .bind('carol@example.com')
                 .first();
@@ -381,7 +434,7 @@ describe('feed routes', () => {
             ).json();
             expect(before.unread_count).toBe(1);
 
-            await req('POST', '/api/feed/seen', { email: 'bob@example.com' });
+            await req('POST', '/api/feed/seen', { email: 'bob@example.com', body: {} });
 
             const after = await (
                 await req('GET', '/api/feed', { email: 'bob@example.com' })
@@ -392,10 +445,10 @@ describe('feed routes', () => {
 
         it('is idempotent', async () => {
             const first = await (
-                await req('POST', '/api/feed/seen', { email: 'bob@example.com' })
+                await req('POST', '/api/feed/seen', { email: 'bob@example.com', body: {} })
             ).json();
             const second = await (
-                await req('POST', '/api/feed/seen', { email: 'bob@example.com' })
+                await req('POST', '/api/feed/seen', { email: 'bob@example.com', body: {} })
             ).json();
             expect(Date.parse(second.feed_seen_at)).toBeGreaterThanOrEqual(
                 Date.parse(first.feed_seen_at),
