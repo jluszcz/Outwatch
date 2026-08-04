@@ -452,57 +452,93 @@ of the root `CLAUDE.md` so it loads only when working on these files.
 - The optional watch timer (`WatchTimer` in `discussion.js`, rule in
   `shared/session.js`) starts, pauses, and resumes per (user, episode); a
   session goes stale after three hours without a start/pause/resume/post, and
-  `pause`/`resume` on a stale session 409 without writing. A ± toggle next to
-  it opens a second row — Reset once the total is non-zero, then −1m / −15s /
-  running total / +15s / +1m — that sets `PUT .../offset` (migration `0008`).
-  There is deliberately **no Pause button**: the chip itself is the
-  pause/resume control, because the thing you want to stop is the number, and
-  a separate button to stop it was a second place to look for one action. That
-  makes `.timer-chip` a `<button>` rather than a `<span>` — hence
-  `font-family: inherit`, which a button does not take from the page on its
-  own — and its `aria-label` names the action _and_ the time, since a button
-  whose accessible name is only "+1:12" says nothing about what a click does.
-  The chip stays a pill while Restart and ± are roundrects: it is the one
-  control in the row that shows state rather than only acting, and the ▶/⏸
-  glyph carries which way a click will go.
-  The ± toggle rides `.timer-btn` for that roundrect and adds only what a plain
-  `.timer-btn` cannot say (`.timer-adjust-toggle`): centring for a single
-  glyph, a `min-width` so a one-character label is not narrower than every
-  other button, and the open state, which takes `.timer-chip.running`'s accent
-  fill rather than inventing a second live-state signal. `.timer-btn` takes its
-  height from `--control-height` rather than from its text — the same
-  `inline-flex` + `min-height` pairing `.reveal-btn` uses — so a word, a single
-  glyph, and `−15s` all come out the same height without anyone pinning them
-  one control at a time. A new control dropped into either timer row inherits
-  that alignment by using the class. One hover rule covers every button in
-  both rows — `.timer-btn:not([aria-expanded='true']):hover` — scoped for the
-  same reason `.sort-btn:hover` excludes `.active`: the ± is the only
-  `.timer-btn` carrying that attribute, and its open state is an
-  equal-specificity selector declared earlier, so an unscoped hover would win
-  on source order and flash an open toggle back to its closed fill.
-  `.timer-chip:hover` sidesteps the same collision the other way, moving
-  `border-color` instead of `background`, since `.timer-chip.running` already
-  owns the background at equal specificity — which is also why the chip is the
-  one control here whose hover is not a fill.
-  Reset _leads_ that row, which reads oddly and is deliberate: the row is
-  pinned to its right edge (`.timer-stack` is `align-items: flex-end`), so
-  whichever end the one control that comes and goes occupies is the end that
-  moves. Trailing, its arrival shoved all four nudge buttons left by a
-  Reset-width the moment the total left zero, sliding `+15s` out from under
-  the finger that had just tapped it; leading, it grows the row leftwards into
-  empty space and nothing else moves. Reserving its width instead — a
-  hidden-but-present Reset — held the buttons still too, but left every
-  visible button a Reset-width shy of the right edge, so the row stopped
-  lining up with the timer above it.
-  The correction is applied on read rather than baked into `posts.offset_secs`,
-  so a nudge moves every note already posted on that episode along with the
-  live chip's own total. It renders in both timer branches, including when no
-  session is live: noticing your notes are misplaced usually happens days
-  later while reading the board, not mid-watch, which is the case the control
-  exists for. `adjusting` (whether that row is open) is local state in
-  `WatchTimer` itself, not episode-scoped state up in `EpisodeBoard` the way
-  `replyTo`/`editingId`/`menuFor` are — the row belongs to this control alone
-  and nothing outside it needs to know whether it's open.
+  `pause`/`resume` on a stale session 409 without writing.
+  Two more actions exist alongside those three: `skip` (`POST .../timer
+{action:'skip', delta_secs}`) jumps `elapsed_secs` by a signed delta, and
+  `stop` (`POST .../timer {action:'stop'}`) deletes the session outright,
+  idempotently — the deliberate way to reach "no session" without waiting
+  three hours for staleness. `Stop` sits beside Restart in the main row,
+  visible only while a session is live.
+  A ± toggle next to it opens a panel whose contents are modal on whether a
+  session is live, not a manually chosen tab — there is no state where the
+  wrong one is a single accidental tap away from the right one:
+
+    - **Live session → Skip.** `−1m −15s +15s +1m` call the `skip` action
+      directly. No running total and no Reset: each tap is folded permanently
+      into `elapsed_secs` the moment it lands, the same way `pause` permanently
+      banks a running segment — there's no separate value to revert to, only
+      the opposite-direction tap. `applySkip`'s optimistic bump (a local
+      `pendingSkip`) is exact commutative subtraction on failure rather than
+      `applyAdjust`'s settle-to-absolute dance below: skip sends a delta, not a
+      total the client owns, so two overlapping taps' responses can land in
+      either order and a late failure still only ever backs out its own
+      contribution. `pendingSkip` resets to zero whenever `session.elapsed_secs`
+      / `running_since` change — a fresh session prop already carries every
+      committed skip, so there's nothing left pending.
+    - **No session → Correct.** Unchanged from before: Reset once the total is
+      non-zero, then −1m / −15s / running total / +15s / +1m, all against
+      `PUT .../offset` (migration `0008`).
+
+    There is deliberately no Pause button: the chip itself is the pause/resume
+    control, because the thing you want to stop is the number, and a separate
+    button to stop it was a second place to look for one action. That
+    makes `.timer-chip` a `<button>` rather than a `<span>` — hence
+    `font-family: inherit`, which a button does not take from the page on its
+    own — and its `aria-label` names the action _and_ the time, since a button
+    whose accessible name is only "+1:12" says nothing about what a click does.
+    The chip stays a pill while Restart and ± are roundrects: it is the one
+    control in the row that shows state rather than only acting, and the ▶/⏸
+    glyph carries which way a click will go.
+    The ± toggle rides `.timer-btn` for that roundrect and adds only what a plain
+    `.timer-btn` cannot say (`.timer-adjust-toggle`): centring for a single
+    glyph, a `min-width` so a one-character label is not narrower than every
+    other button, and the open state, which takes `.timer-chip.running`'s accent
+    fill rather than inventing a second live-state signal. `.timer-btn` takes its
+    height from `--control-height` rather than from its text — the same
+    `inline-flex` + `min-height` pairing `.reveal-btn` uses — so a word, a single
+    glyph, and `−15s` all come out the same height without anyone pinning them
+    one control at a time. A new control dropped into either timer row inherits
+    that alignment by using the class. One hover rule covers every button in
+    both rows — `.timer-btn:not([aria-expanded='true']):hover` — scoped for the
+    same reason `.sort-btn:hover` excludes `.active`: the ± is the only
+    `.timer-btn` carrying that attribute, and its open state is an
+    equal-specificity selector declared earlier, so an unscoped hover would win
+    on source order and flash an open toggle back to its closed fill.
+    `.timer-chip:hover` sidesteps the same collision the other way, moving
+    `border-color` instead of `background`, since `.timer-chip.running` already
+    owns the background at equal specificity — which is also why the chip is the
+    one control here whose hover is not a fill.
+    Reset _leads_ that row, which reads oddly and is deliberate: the row is
+    pinned to its right edge (`.timer-stack` is `align-items: flex-end`), so
+    whichever end the one control that comes and goes occupies is the end that
+    moves. Trailing, its arrival shoved all four nudge buttons left by a
+    Reset-width the moment the total left zero, sliding `+15s` out from under
+    the finger that had just tapped it; leading, it grows the row leftwards into
+    empty space and nothing else moves. Reserving its width instead — a
+    hidden-but-present Reset — held the buttons still too, but left every
+    visible button a Reset-width shy of the right edge, so the row stopped
+    lining up with the timer above it.
+    The correction is applied on read rather than baked into `posts.offset_secs`,
+    so a nudge moves every note already posted on that episode along with the
+    live chip's own total. It renders in both timer branches, including when no
+    session is live: noticing your notes are misplaced usually happens days
+    later while reading the board, not mid-watch, which is the case the control
+    exists for. `adjusting` (whether that row is open) is local state in
+    `WatchTimer` itself, not episode-scoped state up in `EpisodeBoard` the way
+    `replyTo`/`editingId`/`menuFor` are — the row belongs to this control alone
+    and nothing outside it needs to know whether it's open.
+
+- **An ⓘ toggle inside each panel variant** (`.timer-info-toggle`,
+  `aria-expanded` like `.timer-adjust-toggle` — not a bare hover `title`,
+  since a phone has no hover) reveals one line naming what that panel does
+  and how to reach the other one. It exists because which panel you're
+  looking at is a consequence of session state the control doesn't otherwise
+  narrate, and a first-time user watching a note land in the wrong place has
+  no way to discover the other mode without being told. Deliberately its own
+  class rather than riding `.timer-btn`: that class's hover/active rules
+  already assume "the ± is the only `.timer-btn` carrying `aria-expanded`,"
+  and giving the info toggle a separate class keeps that true instead of
+  quietly breaking it.
     - The running total is its own optimistic state, `pendingAdjust`, rather
       than a read of the `adjustSecs` prop: that prop is the server's last
       known value, and it only moves forward on the next
