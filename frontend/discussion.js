@@ -700,9 +700,8 @@ function WatchTimer({ session, adjustSecs, serverSkewMs, onAction, onAdjust, onS
                               <button class="timer-btn" onClick=${() => applySkip(60)}>+1m</button>
                           </div>
                           <p class=${'timer-info-text' + (infoOpen ? ' open' : '')}>
-                              Moves your timer without changing notes you've already posted. Tap
-                              Stop to fix where this episode started instead — that moves
-                              everything.
+                              Moves your timer, adjusting where future notes land. Stop to adjust
+                              every note posted.
                           </p>
                       </div>`)
             }
