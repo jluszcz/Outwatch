@@ -12,6 +12,7 @@ import {
     settledAdjust,
     quoteSnippet,
     bodyAfterPost,
+    shouldScrollToEpisode,
 } from './utils.js';
 import { sessionOffsetSecs, MAX_OFFSET_ADJUST_SECS } from '../shared/session.js';
 import { PostList } from './post.js';
@@ -50,18 +51,21 @@ export function SeasonView({ seasonId, routeEpisode }) {
     // the fold with nothing to show anything happened. Mirrors NowWatching's
     // jump in board.js, including its prefers-reduced-motion check.
     //
-    // Keyed on `data` as well as `routeEpisode`, and guarded by a ref rather
-    // than running unconditionally on every dep change: the episode-card div
-    // doesn't exist until the discussion has loaded, so an effect keyed on
-    // routeEpisode alone would find nothing to scroll to on the very load
-    // that set it — and `data` gets a new reference on every refetch
-    // (focus, a mutation's own refresh), so without the ref this would
-    // re-scroll the page out from under someone reading elsewhere on every
-    // one of those, not just the arrival.
+    // When to jump is `shouldScrollToEpisode` (utils.js), which is where each of
+    // its conditions is explained and tested; this is the wiring. The deps are
+    // every input that rule reads — `openEpisode` and `loading` included, since
+    // the commit that gets a card rendered and expanded is one or two renders
+    // later than the one that sets the route, and the effect has to run again on
+    // it rather than measuring a document that has no cards in it yet.
     const scrolledEpisodeRef = useRef(null);
     useEffect(() => {
-        if (routeEpisode == null || !data) return;
-        if (scrolledEpisodeRef.current === routeEpisode) return;
+        const jump = shouldScrollToEpisode({
+            routeEpisode,
+            openEpisode,
+            ready: !loading && Boolean(data),
+            scrolled: scrolledEpisodeRef.current,
+        });
+        if (!jump) return;
         const card = document.getElementById(`episode-card-${routeEpisode}`);
         if (!card) return;
         card.scrollIntoView({
@@ -69,7 +73,7 @@ export function SeasonView({ seasonId, routeEpisode }) {
             behavior: prefersReducedMotion() ? 'auto' : 'smooth',
         });
         scrolledEpisodeRef.current = routeEpisode;
-    }, [routeEpisode, data]);
+    }, [routeEpisode, openEpisode, data, loading]);
 
     // One request: the discussion response names each note's author itself, so
     // there is no roster to fetch and merge here.

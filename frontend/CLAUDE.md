@@ -680,13 +680,32 @@ of the root `CLAUDE.md` so it loads only when working on these files.
       (`scrolledEpisodeRef` in `SeasonView`) mirrors `NowWatching`'s jump in
       `board.js` — `scrollIntoView` plus its `prefers-reduced-motion` check,
       via `prefersReducedMotion`, exported from `board.js` rather than
-      duplicated. It has to key on `data` as well as `routeEpisode`: the card
-      doesn't exist until the discussion has loaded, so keying on
-      `routeEpisode` alone would find nothing on the very load that set it.
-      The ref is what stops that same dependency from re-scrolling the page
-      on every later refetch (focus, a mutation's own refresh) — `data` gets a
-      new reference each time, but the ref only lets the jump fire once per
-      distinct `routeEpisode`.
+      duplicated. **Whether to jump on a given render is
+      `shouldScrollToEpisode` (`utils.js`), not a condition inlined in the
+      effect** — the same rule-vs-wiring split `parseHashRoute` and
+      `refresh-guard.js` draw, and what makes this testable at all. The effect
+      watches one dep per input that rule reads — `routeEpisode`,
+      `openEpisode`, `data`, `loading` — and the ref is what stops those same
+      deps from re-scrolling the page on every later refetch (focus, a
+      mutation's own refresh) or when a board is collapsed and reopened by
+      hand: the jump fires once per distinct `routeEpisode`. Both of the
+      rule's non-obvious conditions are bugs that shipped:
+        - **It waits on `loading`, not on `data`.** `setData` and
+          `setLoading(false)` land in two separate renders (the fetch applies
+          the response, its `finally` clears the flag), and `SeasonView`
+          returns `Loading…` for the first of them — so an effect keyed on
+          `data` alone ran against a document holding no `.episode-card` at
+          all, found nothing, and never ran again, because both of its deps
+          had already stopped changing. That was the bug: arriving from a feed
+          line expanded the right board and left the page at the top.
+        - **It also waits for `openEpisode` to equal `routeEpisode`.** The
+          effect that expands the board and the one that jumps to it run in
+          the same commit, so on the render a new route arrives on, the DOM
+          still has the _previous_ episode expanded and this one collapsed.
+          `scrollIntoView` fixes its pixel target once, and the collapse that
+          follows slides the destination out from under it — following a
+          second feed line from inside a season you were already in landed a
+          few hundred pixels off.
 - The manifest link in `index.html` carries `crossorigin="use-credentials"`,
   which is load-bearing behind Cloudflare Access: a manifest is fetched without
   credentials by default, so Access would redirect it to a login page, the

@@ -18,6 +18,7 @@ import {
     relativeTime,
     feedLine,
     parseHashRoute,
+    shouldScrollToEpisode,
 } from '../../frontend/utils.js';
 
 // ---------------------------------------------------------------------------
@@ -553,5 +554,48 @@ describe('parseHashRoute', () => {
             seasonId: null,
             episode: null,
         });
+    });
+});
+
+// ---------------------------------------------------------------------------
+// shouldScrollToEpisode
+// ---------------------------------------------------------------------------
+
+describe('shouldScrollToEpisode', () => {
+    // The arrival state: the discussion has loaded, the board named by the
+    // route is the open one, and this route episode has not been jumped to yet.
+    const arrived = { routeEpisode: 3, openEpisode: 3, ready: true, scrolled: null };
+
+    it('jumps on arrival', () => {
+        expect(shouldScrollToEpisode(arrived)).toBe(true);
+    });
+
+    it('does not jump when the route names no episode', () => {
+        expect(shouldScrollToEpisode({ ...arrived, routeEpisode: null, openEpisode: null })).toBe(
+            false,
+        );
+    });
+
+    // The bug this function exists for: `data` and `loading` settle in two
+    // separate renders, and the episode cards only exist after the second, so a
+    // check that reads "the response arrived" fires against a DOM that still
+    // holds nothing but "Loading…" — and nothing re-runs it afterwards.
+    it('does not jump while the view is still loading', () => {
+        expect(shouldScrollToEpisode({ ...arrived, ready: false })).toBe(false);
+    });
+
+    // The other half: the effect that opens the board and the one that jumps to
+    // it run in the same commit, so the jump would measure a layout in which the
+    // previously open board is still expanded and this one is still collapsed.
+    it('waits for the open board to catch up with the route', () => {
+        expect(shouldScrollToEpisode({ ...arrived, openEpisode: 8 })).toBe(false);
+    });
+
+    it('does not jump twice for the same route episode', () => {
+        expect(shouldScrollToEpisode({ ...arrived, scrolled: 3 })).toBe(false);
+    });
+
+    it('jumps again when the route names a different episode', () => {
+        expect(shouldScrollToEpisode({ ...arrived, scrolled: 8 })).toBe(true);
     });
 });
