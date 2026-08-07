@@ -266,6 +266,14 @@ The frontend's conventions, layout rules, and gotchas live in
 
 ## Configuration Notes
 
+Workers Logs is on (`[observability]` in `wrangler.toml`, unsampled), so a
+report like "it wouldn't submit" has a durable record to check against rather
+than only the reporter's memory: which requests arrived, and what they answered.
+A request Access turned away never reaches the Worker, so a **missing** line is
+itself the answer that separates an expired session from a status the app chose.
+Retention is 3 days on the free plan, and the setting only takes effect from the
+next `npm run deploy`.
+
 The `database_id` in `wrangler.toml` is a routing identifier, not a secret — it
 is safe to commit (consistent with the Seen project). Using the database still
 requires valid Cloudflare authentication.

@@ -7,6 +7,28 @@ compatibility_flags = ["nodejs_compat"]
 # runtime. They are secrets (`wrangler secret put ACCESS_TEAM_DOMAIN` /
 # `ACCESS_AUD`) rather than committed [vars] — see README → Authentication.
 
+# Workers Logs, pinned on here rather than left to the account default. A bug
+# that only happens on someone else's phone leaves nothing behind on the client
+# — the state that caused it dies with the app being closed, which is usually
+# also what "fixed" it — so the request log is the only durable record of what
+# happened. Absence is evidence too: a request Access turns away never reaches
+# the Worker, so a missing line separates an expired session from a 4xx the app
+# itself answered.
+#
+# `enabled` defaults to true for newly created Workers, but what an omitted
+# block does to an existing one on deploy is undocumented, and the Wrangler
+# config is meant to be the source of truth — so it is stated rather than
+# assumed.
+#
+# head_sampling_rate = 1 keeps every request. That is the point: a sampled log
+# is no use when there is exactly one report to explain. Free at this scale,
+# well inside the free plan's 200k events/day, and retention is 3 days there —
+# short enough that this only ever helps if it was already on before the report
+# arrives.
+[observability]
+enabled = true
+head_sampling_rate = 1
+
 [assets]
 directory = "public"
 binding = "ASSETS"

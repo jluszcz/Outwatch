@@ -276,6 +276,25 @@ can sign in: without them the Worker cannot verify an Access token and refuses
 every request that carries one (500, "Access verification is not configured")
 rather than trusting it unchecked.
 
+### Logs
+
+`[observability]` in `wrangler.toml` keeps Workers Logs on and unsampled, so a
+deployed Worker records every request it answers. That is usually the only
+durable evidence left over from a bug someone else hit on their phone — the
+state that caused it dies with the app being closed, which is often also what
+appeared to fix it. Read them in the Cloudflare dashboard (Workers & Pages →
+outwatch → Logs), or watch live while someone reproduces:
+
+```bash
+npx wrangler tail
+```
+
+A request Cloudflare Access turns away never reaches the Worker at all, so a
+**missing** line is itself the answer: an expired session looks like the request
+was never made, while anything the app itself refused is there with its status.
+Retention is three days on the free plan, so this only helps for a report that
+arrives while the evidence still exists.
+
 ## API
 
 All routes derive the caller's identity from the signed Cloudflare Access token in
