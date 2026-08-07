@@ -398,7 +398,12 @@ app.post(
         if (replyToId != null) {
             const parent = await visiblePost(c, replyToId, me);
             if (!parent || parent.season_id !== season.id || parent.episode !== episode) {
-                return c.json({ error: 'Unknown post' }, 404);
+                // Worded for the one reader who actually sees it: someone whose
+                // reply target was deleted while they were writing, watching
+                // this land in the season view's error banner. The status is
+                // still the same 404 all three cases answer with, so it
+                // distinguishes nothing a bare "Unknown post" didn't.
+                return c.json({ error: 'The note you replied to is gone' }, 404);
             }
         }
 

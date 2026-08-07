@@ -10,6 +10,7 @@ import {
     selectableSeasons,
     setWatched,
     clearsCurrentlyWatching,
+    replyTargetGone,
     quoteSnippet,
     bodyAfterPost,
     formatAdjust,
@@ -357,6 +358,27 @@ describe('bodyAfterPost', () => {
 
     it('keeps text typed on top of the note while it was in flight', () => {
         expect(bodyAfterPost('a thought and more', 'a thought')).toBe('a thought and more');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// replyTargetGone
+// ---------------------------------------------------------------------------
+
+describe('replyTargetGone', () => {
+    it('reads a 404 on a reply as a parent that is gone for good', () => {
+        expect(replyTargetGone(12, { status: 404 })).toBe(true);
+    });
+
+    it('leaves an ordinary note alone, since it has no chip to drop', () => {
+        expect(replyTargetGone(null, { status: 404 })).toBe(false);
+    });
+
+    it('keeps the chip through a failure the next attempt could survive', () => {
+        // A 500 or a dropped connection says nothing about the parent, and the
+        // reply is still worth sending as a reply.
+        expect(replyTargetGone(12, { status: 500 })).toBe(false);
+        expect(replyTargetGone(12, new Error('Load failed'))).toBe(false);
     });
 });
 
