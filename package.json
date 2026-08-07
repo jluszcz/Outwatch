@@ -25,7 +25,7 @@
         "node": ">=22"
     },
     "overrides": {
-        "undici": "^7.24.6",
+        "undici": "^7.29.0",
         "picomatch": "^4.0.4",
         "postcss": "^8.5.23",
         "brace-expansion": "^5.0.8"
