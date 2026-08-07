@@ -12,6 +12,7 @@ import {
     settledAdjust,
     quoteSnippet,
     bodyAfterPost,
+    replyTargetGone,
     shouldScrollToEpisode,
 } from './utils.js';
 import { sessionOffsetSecs, MAX_OFFSET_ADJUST_SECS } from '../shared/session.js';
@@ -96,7 +97,7 @@ export function SeasonView({ seasonId, routeEpisode }) {
     // (PostForm keeps the user's typed text on failure rather than clearing a box
     // it never actually posted) can gate on it; the other callers just ignore it.
     const mutate = useCallback(
-        async (run, { suppressError } = {}) => {
+        async (run, { suppressError, onFailure } = {}) => {
             beginMutation();
             try {
                 await run();
@@ -109,6 +110,11 @@ export function SeasonView({ seasonId, routeEpisode }) {
                 setError(null);
                 return true;
             } catch (err) {
+                // A caller may need to know *why* it failed, not only that it
+                // did: PostForm's reply chip is dropped on a 404, because the
+                // chip is the thing that will keep failing. Notification only —
+                // it runs before the banner decision and does not change it.
+                onFailure?.(err);
                 // Some failures are expected and already self-explanatory in the
                 // UI (a stale timer session 409s and the chip falls back to its
                 // expired state on refetch) — those skip the error banner but
@@ -131,13 +137,17 @@ export function SeasonView({ seasonId, routeEpisode }) {
             api(`/api/seasons/${seasonId}/episodes/${episode}/reveal`, { method: 'POST' }),
         );
 
-    const addPost = (episode, body, replyToId) =>
-        mutate(() =>
-            api(`/api/seasons/${seasonId}/episodes/${episode}/posts`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ body, reply_to_post_id: replyToId }),
-            }),
+    // `onFailure` is how EpisodeBoard learns a reply's parent is gone; see
+    // submitPost there, and replyTargetGone in utils.js for why that matters.
+    const addPost = (episode, body, replyToId, onFailure) =>
+        mutate(
+            () =>
+                api(`/api/seasons/${seasonId}/episodes/${episode}/posts`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ body, reply_to_post_id: replyToId }),
+                }),
+            { onFailure },
         );
 
     const removePost = (postId) => mutate(() => api(`/api/posts/${postId}`, { method: 'DELETE' }));
@@ -321,8 +331,22 @@ function EpisodeBoard({
     };
 
     const submitPost = async (body) => {
-        const posted = await onPost(ep.episode, body, replyTo?.id ?? null);
-        if (posted) setReplyTo(null);
+        const replyToId = replyTo?.id ?? null;
+        // A chip whose note was deleted mid-compose can only keep failing, and
+        // it takes the whole compose box down with it: the text stays (a failed
+        // post must not discard it), so every later attempt sends the same dead
+        // parent id and fails identically. Dropping the chip lets the next
+        // attempt go out as an ordinary note; the banner says what happened.
+        //
+        // Both paths clear through a functional update keyed on the id, for the
+        // reason saveEdit's does: the user may have raised a chip on a
+        // different note while this was in flight, and neither a late success
+        // nor a dead parent should close over it.
+        const clearChip = () => setReplyTo((cur) => (cur?.id === replyToId ? null : cur));
+        const posted = await onPost(ep.episode, body, replyToId, (err) => {
+            if (replyTargetGone(replyToId, err)) clearChip();
+        });
+        if (posted) clearChip();
         return posted;
     };
 

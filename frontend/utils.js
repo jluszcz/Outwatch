@@ -306,6 +306,23 @@ export function bodyAfterPost(current, sent) {
     return current === sent ? '' : current;
 }
 
+// Whether a failed post leaves behind a reply chip that can never succeed.
+//
+// A reply's parent id is frozen when the chip is raised, while the parent's
+// visibility is recomputed on every read — so a note deleted while the reply was
+// being written answers 404, and keeps answering it. The chip survives a failed
+// submit (the text has to), which means every later attempt to send that note
+// fails identically, with nothing on screen tying the refusal to the quote
+// sitting above the box. Dropping the chip turns a dead compose box back into a
+// working one and keeps what was typed; the note goes out as an ordinary note.
+//
+// Keyed on the chip being present rather than on the message, because the post
+// route also answers 404 for a season or episode that does not exist — which
+// cannot happen from a rendered board, and would cost only the quote if it did.
+export function replyTargetGone(replyToId, err) {
+    return replyToId != null && err?.status === 404;
+}
+
 // How long ago something happened, at the precision the feed actually claims.
 //
 // The five-minute floor is what keeps the panel from being wrong in its most

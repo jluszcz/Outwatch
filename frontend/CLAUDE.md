@@ -17,6 +17,32 @@ of the root `CLAUDE.md` so it loads only when working on these files.
   the last mutation to settle rather than started against pre-mutation state.
   The state machine is a plain factory so `test/frontend/refresh-guard.test.js`
   can drive it directly — keep the rules there, not in the hook.
+- **Every request through `api()` (`api.js`) carries a timeout**, and
+  `REQUEST_TIMEOUT_MS` (20s) is a bug fix rather than tuning. `useSubmitGuard`
+  holds `busy` until the promise it awaits settles, and the compose box's
+  submit path is gated on it — so a fetch that never settles (a phone
+  suspending a backgrounded page mid-request, which is what a standalone
+  home-screen app does) greys the Post button out and silently refuses Enter
+  for the life of the mounted form. Nothing in the app recovers that; closing
+  and reopening it is the only way back, which is exactly how it was reported.
+  `useRefreshGuard` is exposed the same way, its `mutationsInFlight` counter
+  deferring every later refetch forever. **An in-memory guard is a one-way door
+  unless the request it waits on is guaranteed to settle** — so a new await
+  added around a network call needs the same question asked of it. Deliberately
+  generous, because a timeout the server would have beaten is not free: the
+  request may already have been delivered, so a retry posts the note twice.
+- `api()` also sends `redirect: 'manual'`, which is what makes an expired
+  Cloudflare Access session legible. Access answers one with a redirect to its
+  login page; followed, that lands on a cross-origin page with no CORS headers
+  and the fetch rejects with the same untyped TypeError as being offline
+  ("Load failed" on Safari), so a signed-out app reads as a network blip.
+  Unfollowed it is an opaque redirect (`type: 'opaqueredirect'`, status 0),
+  which — along with a 401, a status this API never issues, since someone off
+  the roster gets a 403 — is what `signedOut()` recognises. A 403 is
+  deliberately excluded: that one is ours. The error carries `.signedOut` and a
+  message naming reopening the app as well as reloading the page, since
+  installed to a home screen there is no reload button to point at and only a
+  top-level navigation re-runs the Access handshake.
 - Only the current user's column checkboxes are enabled; others are read-only.
 - Each `NowWatching` chip leads with `.nw-jump`, a button that scrolls that
   person's currently-watching season into view down in the board and lights the
@@ -259,7 +285,20 @@ of the root `CLAUDE.md` so it loads only when working on these files.
   episode-scoped, `EpisodeBoard` is the common parent of `PostList` (whose
   reply button starts it) and `PostForm` (whose chip displays it and whose
   submit clears it), and scoping it there keeps a half-written reply from
-  following you to a different episode.
+  following you to a different episode. A failed post keeps its chip — the text
+  stays, so the quote has to — with one exception: a **404 means the parent was
+  deleted while the reply was being written**, and since `reply_to_post_id` is
+  frozen at submit time while visibility is recomputed on every read, that will
+  never stop being true. The chip alone then wedges the compose box, every later
+  attempt sending the same dead parent id and failing identically, with nothing
+  on screen tying the refusal to the quote sitting above the box.
+  `replyTargetGone` (`utils.js`) is the rule, `submitPost`'s `onFailure`
+  callback (`discussion.js`) the wiring, and `mutate`'s `onFailure` option is
+  how the error reaches it at all — `mutate` otherwise reports a bare boolean,
+  having already spent the error on the banner. Both the success and the
+  dead-parent paths clear through a functional update keyed on the id, the same
+  guard `saveEdit` uses, so neither closes a chip raised on a different note
+  while the post was in flight.
 - Editing a note is inline (`EditForm` in `post.js`): the Edit item in the note's
   ⋯ menu, shown via the server-computed `mine` flag, swaps the body for
   a textarea with Save and Cancel in place, so the surrounding conversation
