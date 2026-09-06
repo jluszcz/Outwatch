@@ -572,6 +572,7 @@ app.get('/api/seasons/:season_id/discussion', async (c) => {
         people,
         { results: reactionRows },
         { results: offsets },
+        { results: statusRows },
     ] = await Promise.all([
         c.env.DB.prepare(
             `SELECT id, episode, user_id, body, created_at, offset_secs, author_email,
@@ -616,6 +617,13 @@ app.get('/api/seasons/:season_id/discussion', async (c) => {
         )
             .bind(seasonId)
             .all(),
+        // Everyone's, not just the caller's: a status is not content, so it is
+        // not behind the spoiler gate. One query for the season, grouped below.
+        c.env.DB.prepare(
+            'SELECT user_id, episode, status, reason FROM episode_statuses WHERE season_id = ?',
+        )
+            .bind(seasonId)
+            .all(),
     ]);
 
     const watchedSeason = watchedRow != null;
@@ -641,6 +649,30 @@ app.get('/api/seasons/:season_id/discussion', async (c) => {
         if (!reactionsByPost.has(r.post_id)) reactionsByPost.set(r.post_id, []);
         reactionsByPost.get(r.post_id).push(r);
     }
+
+    const statusesByEpisode = new Map();
+    for (const s of statusRows) {
+        if (!statusesByEpisode.has(s.episode)) statusesByEpisode.set(s.episode, []);
+        statusesByEpisode.get(s.episode).push(s);
+    }
+
+    // Roster order, so the chip lists people the same way on everyone's screen —
+    // rosterPeople builds columnName in users.sort_order. A row whose column has
+    // since left the roster drops out rather than rendering nameless, matching
+    // how attribute() handles an author the roster no longer knows.
+    const rosterOrder = [...people.columnName.keys()];
+    const statusesFor = (episode) => {
+        const rows = statusesByEpisode.get(episode) ?? [];
+        return rosterOrder
+            .map((userId) => rows.find((r) => r.user_id === userId))
+            .filter(Boolean)
+            .map((r) => ({
+                user_id: r.user_id,
+                name: people.columnName.get(r.user_id),
+                status: r.status,
+                reason: r.reason,
+            }));
+    };
 
     const episodes = [];
     for (let episode = 1; episode <= season.episode_count; episode++) {
@@ -681,6 +713,7 @@ app.get('/api/seasons/:season_id/discussion', async (c) => {
             readable,
             count: all.length,
             authors,
+            statuses: statusesFor(episode),
             posts: visible.map((p) => ({
                 id: p.id,
                 user_id: p.user_id,

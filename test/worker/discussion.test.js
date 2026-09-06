@@ -1623,3 +1623,70 @@ describe('PUT /api/seasons/:season_id/episodes/:episode/status', () => {
         expect(results).toEqual([{ user_id: 'user-bob', reason: 'reunion' }]);
     });
 });
+
+describe('GET /api/seasons/:season_id/discussion — statuses', () => {
+    const setStatus = (episode, body, email) =>
+        req('PUT', `/api/seasons/45/episodes/${episode}/status`, { body, email });
+
+    const episodeOf = async (data, episode) => data.episodes.find((e) => e.episode === episode);
+
+    it('is an empty array when nobody has a status', async () => {
+        const data = await (
+            await req('GET', '/api/seasons/45/discussion', { email: 'alice@example.com' })
+        ).json();
+        expect((await episodeOf(data, 8)).statuses).toEqual([]);
+    });
+
+    it('carries everyone the caller can see, in roster order', async () => {
+        await setStatus(8, { status: 'skipping', reason: 'reunion' }, 'bob@example.com');
+        await setStatus(8, { status: 'skipping', reason: 'recap' }, 'alice@example.com');
+
+        const data = await (
+            await req('GET', '/api/seasons/45/discussion', { email: 'alice@example.com' })
+        ).json();
+        expect((await episodeOf(data, 8)).statuses).toEqual([
+            { user_id: 'user-alice', name: 'Alice', status: 'skipping', reason: 'recap' },
+            { user_id: 'user-bob', name: 'Bob & Carol', status: 'skipping', reason: 'reunion' },
+        ]);
+    });
+
+    it('scopes statuses to their own episode', async () => {
+        await setStatus(8, { status: 'skipping', reason: 'recap' }, 'alice@example.com');
+        const data = await (
+            await req('GET', '/api/seasons/45/discussion', { email: 'alice@example.com' })
+        ).json();
+        expect((await episodeOf(data, 8)).statuses).toHaveLength(1);
+        expect((await episodeOf(data, 9)).statuses).toEqual([]);
+    });
+
+    it('scopes statuses to their own season', async () => {
+        await setStatus(8, { status: 'skipping', reason: 'recap' }, 'alice@example.com');
+        const data = await (
+            await req('GET', '/api/seasons/46/discussion', { email: 'alice@example.com' })
+        ).json();
+        expect((await episodeOf(data, 8)).statuses).toEqual([]);
+    });
+
+    // A status is not content. It shows on a locked board for the same reason
+    // the authors list does: knowing someone is skipping an episode says
+    // nothing about what happens in it.
+    it('shows other people’s statuses on a locked board', async () => {
+        await setStatus(8, { status: 'skipping', reason: 'recap' }, 'bob@example.com');
+        const data = await (
+            await req('GET', '/api/seasons/45/discussion', { email: 'alice@example.com' })
+        ).json();
+        const ep = await episodeOf(data, 8);
+        expect(ep.readable).toBe(false);
+        expect(ep.statuses).toEqual([
+            { user_id: 'user-bob', name: 'Bob & Carol', status: 'skipping', reason: 'recap' },
+        ]);
+    });
+
+    it('never serializes an email', async () => {
+        await setStatus(8, { status: 'skipping', reason: 'recap' }, 'bob@example.com');
+        const body = await (
+            await req('GET', '/api/seasons/45/discussion', { email: 'alice@example.com' })
+        ).text();
+        expect(body).not.toContain('bob@example.com');
+    });
+});
