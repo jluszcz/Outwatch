@@ -532,7 +532,7 @@ function SkipControl({ mine, open, onToggle, onChoose }) {
                 onClick=${onToggle}
             >
                 <${Icon} name="skipForward" />
-                <span>${mine ? `Skipping ${mine.reason}` : 'Skip'}</span>
+                <span>${mine ? `Skipped ${mine.reason}` : 'Skip'}</span>
             </button>
             ${
                 open &&

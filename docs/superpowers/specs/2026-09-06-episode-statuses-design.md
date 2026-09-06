@@ -121,8 +121,8 @@ in it. Emails are never serialized, as everywhere else.
   never the same gesture. Open-menu state is episode-scoped in `EpisodeBoard`,
   matching how `menuFor` scopes the per-note `⋯` menu.
 - `utils.js` — `skipLabel(statuses, meId)`. Unanimous reasons collapse to
-  `Skipping recap: You, Bob & Carol`; mixed reasons fall back to a reason per
-  name, `Skipping: You (recap), Bob & Carol (reunion)`. "You" first, the rest
+  `Skipped recap: You, Bob & Carol`; mixed reasons fall back to a reason per
+  name, `Skipped: You (recap), Bob & Carol (reunion)`. "You" first, the rest
   in roster order, empty string when nobody is skipping. Pure, and labelling
   lives in `utils.js` in this repo, which is also where its test can reach it.
   The mixed branch is the rarer of the two and so the one most likely to rot

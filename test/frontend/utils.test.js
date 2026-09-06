@@ -636,9 +636,7 @@ describe('skipLabel', () => {
     });
 
     it('names the caller as You', () => {
-        expect(skipLabel([{ ...alice, reason: 'recap' }], 'user-alice')).toBe(
-            'Skipping recap: You',
-        );
+        expect(skipLabel([{ ...alice, reason: 'recap' }], 'user-alice')).toBe('Skipped recap: You');
     });
 
     it('collapses to one reason when everyone agrees', () => {
@@ -650,7 +648,7 @@ describe('skipLabel', () => {
                 ],
                 'user-alice',
             ),
-        ).toBe('Skipping recap: You, Bob & Carol');
+        ).toBe('Skipped recap: You, Bob & Carol');
     });
 
     // The rarer branch, and so the one most likely to rot unnoticed.
@@ -663,7 +661,7 @@ describe('skipLabel', () => {
                 ],
                 'user-alice',
             ),
-        ).toBe('Skipping: You (recap), Bob & Carol (reunion)');
+        ).toBe('Skipped: You (recap), Bob & Carol (reunion)');
     });
 
     it('puts the caller first regardless of roster order', () => {
@@ -675,17 +673,17 @@ describe('skipLabel', () => {
                 ],
                 'user-alice',
             ),
-        ).toBe('Skipping recap: You, Bob & Carol');
+        ).toBe('Skipped recap: You, Bob & Carol');
     });
 
     it('uses names when the caller is not skipping', () => {
         expect(skipLabel([{ ...bob, reason: 'reunion' }], 'user-alice')).toBe(
-            'Skipping reunion: Bob & Carol',
+            'Skipped reunion: Bob & Carol',
         );
     });
 
     // A reader who is not on the roster has no id to match, and every name stands.
     it('handles a null caller id', () => {
-        expect(skipLabel([{ ...bob, reason: 'recap' }], null)).toBe('Skipping recap: Bob & Carol');
+        expect(skipLabel([{ ...bob, reason: 'recap' }], null)).toBe('Skipped recap: Bob & Carol');
     });
 });

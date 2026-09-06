@@ -421,7 +421,7 @@ export function skipLabel(statuses, meId) {
 
     const reasons = new Set(ordered.map((s) => s.reason));
     if (reasons.size === 1) {
-        return `Skipping ${ordered[0].reason}: ${ordered.map(nameOf).join(', ')}`;
+        return `Skipped ${ordered[0].reason}: ${ordered.map(nameOf).join(', ')}`;
     }
-    return `Skipping: ${ordered.map((s) => `${nameOf(s)} (${s.reason})`).join(', ')}`;
+    return `Skipped: ${ordered.map((s) => `${nameOf(s)} (${s.reason})`).join(', ')}`;
 }
