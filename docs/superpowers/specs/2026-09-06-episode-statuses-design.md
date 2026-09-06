@@ -75,7 +75,8 @@ numbered finale, that finale is a real, numbered, skippable episode.
 ### `PUT /api/seasons/:season_id/episodes/:episode/status`
 
 Body `{ status, reason }`. Either `status: null` (clears the row, `reason`
-ignored) or `status: "skipping"` with `reason` one of `"recap"` or `"reunion"`.
+absent or `null`) or `status: "skipping"` with `reason` one of `"recap"` or
+`"reunion"`.
 Anything else — an unrecognised status, a skip with no reason, a reason with no
 status — is a 400.
 

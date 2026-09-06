@@ -414,12 +414,13 @@ function EpisodeBoard({
                             // them, and anything underneath that list moves
                             // every time it does.
                             //
-                            // One row: reveal on the left, timer pushed to the
-                            // right. Rendered only when it would hold something,
-                            // so a readable episode you can't post to doesn't
-                            // leave an empty band. The row holds its height on
-                            // its own (.episode-actions), so revealing removes
-                            // the button without dragging the timer upward.
+                            // One row: reveal, then the skip control, then the
+                            // timer pushed to the right. Rendered only when it
+                            // would hold something, so a readable episode you
+                            // can't post to doesn't leave an empty band. The
+                            // row holds its height on its own
+                            // (.episode-actions), so revealing removes the
+                            // button without dragging the timer upward.
                             (!ep.readable || meId) &&
                             html`
                                 <div class="episode-actions">
@@ -511,10 +512,22 @@ const SKIP_REASONS = [
 // menu, spending no request. The scrim is what makes a tap anywhere off the
 // menu dismiss it, matching the note menu in post.js.
 function SkipControl({ mine, open, onToggle, onChoose }) {
+    // Matching the note menu in post.js: Escape closes the menu, subscribed
+    // only while it's open and unsubscribed via the effect's own cleanup.
+    useEffect(() => {
+        if (!open) return;
+        const onKeyDown = (e) => {
+            if (e.key === 'Escape') onToggle();
+        };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+    }, [open]);
+
     return html`
         <div class="skip">
             <button
                 class=${'skip-btn' + (mine ? ' on' : '')}
+                aria-haspopup="true"
                 aria-expanded=${open}
                 onClick=${onToggle}
             >

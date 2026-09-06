@@ -2099,6 +2099,7 @@ tr.flash td {
    specificity), though nothing in that block sets these properties today. */
 @media (pointer: coarse) {
     .post-menu-item,
+    .skip-menu-item,
     .emoji-btn,
     .emoji-back {
         min-height: 44px;
@@ -2259,8 +2260,12 @@ tr.flash td {
 /* Touch gets no hover, so taps need their own feedback. .sort-btn:not(.active)
    for the same reason as the hover rule above: .sort-btn.active and
    .sort-btn:active are equal specificity, so without the exclusion the press
-   feedback would flash the already-selected sort button near-white. */
+   feedback would flash the already-selected sort button near-white.
+   .skip-btn:not(.on) is the same trap: .skip-btn.on and .skip-btn:active are
+   equal specificity, so a set skip would flash back to the hover fill on
+   press, reading as if the tap had just turned it off. */
 .sort-btn:not(.active):active,
+.skip-btn:not(.on):active,
 .timer-btn:active,
 .timer-adjust-toggle:active,
 .timer-chip:active,
