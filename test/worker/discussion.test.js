@@ -1495,3 +1495,131 @@ describe('POST /api/seasons/:season_id/episodes/:episode/timer { action: "stop" 
         expect((await timer('stranger@example.com', 7, 'stop')).status).toBe(403);
     });
 });
+
+describe('PUT /api/seasons/:season_id/episodes/:episode/status', () => {
+    const setStatus = (body, email = 'alice@example.com') =>
+        req('PUT', '/api/seasons/45/episodes/8/status', { body, email });
+
+    const storedFor = (userId) =>
+        env.DB.prepare(
+            'SELECT status, reason, created_at FROM episode_statuses WHERE user_id = ? AND season_id = 45 AND episode = 8',
+        )
+            .bind(userId)
+            .first();
+
+    it('records a skip with its reason', async () => {
+        const r = await setStatus({ status: 'skipping', reason: 'recap' });
+        expect(r.status).toBe(200);
+        expect(await r.json()).toMatchObject({
+            success: true,
+            season_id: 45,
+            episode: 8,
+            status: 'skipping',
+            reason: 'recap',
+        });
+        expect(await storedFor('user-alice')).toMatchObject({
+            status: 'skipping',
+            reason: 'recap',
+        });
+    });
+
+    it('is idempotent', async () => {
+        await setStatus({ status: 'skipping', reason: 'recap' });
+        const r = await setStatus({ status: 'skipping', reason: 'recap' });
+        expect(r.status).toBe(200);
+        const { results } = await env.DB.prepare(
+            'SELECT user_id FROM episode_statuses WHERE season_id = 45 AND episode = 8',
+        ).all();
+        expect(results).toHaveLength(1);
+    });
+
+    // The whole point of taking an absolute value: changing your mind about why
+    // is one request, not an unskip followed by a re-skip.
+    it('changes the reason in place, keeping created_at', async () => {
+        await setStatus({ status: 'skipping', reason: 'recap' });
+        const before = await storedFor('user-alice');
+        await setStatus({ status: 'skipping', reason: 'reunion' });
+        const after = await storedFor('user-alice');
+        expect(after.reason).toBe('reunion');
+        expect(after.created_at).toBe(before.created_at);
+    });
+
+    it('clears the status with a null status', async () => {
+        await setStatus({ status: 'skipping', reason: 'recap' });
+        const r = await setStatus({ status: null });
+        expect(r.status).toBe(200);
+        expect(await storedFor('user-alice')).toBeNull();
+    });
+
+    it('is idempotent when clearing a status that is not there', async () => {
+        const r = await setStatus({ status: null });
+        expect(r.status).toBe(200);
+        expect(await storedFor('user-alice')).toBeNull();
+    });
+
+    it('rejects an unrecognised status', async () => {
+        const r = await setStatus({ status: 'watched', reason: 'recap' });
+        expect(r.status).toBe(400);
+    });
+
+    it('rejects an unrecognised reason', async () => {
+        const r = await setStatus({ status: 'skipping', reason: 'boring' });
+        expect(r.status).toBe(400);
+    });
+
+    it('rejects a skip with no reason', async () => {
+        const r = await setStatus({ status: 'skipping' });
+        expect(r.status).toBe(400);
+    });
+
+    it('rejects a reason with no status', async () => {
+        const r = await setStatus({ status: null, reason: 'recap' });
+        expect(r.status).toBe(400);
+    });
+
+    it('rejects a caller who is not on the roster', async () => {
+        const r = await setStatus({ status: 'skipping', reason: 'recap' }, 'stranger@example.com');
+        expect(r.status).toBe(403);
+    });
+
+    // Caller before episode, so a stranger cannot map the seasons.
+    it('rejects a stranger before it checks the episode', async () => {
+        const r = await req('PUT', '/api/seasons/45/episodes/99/status', {
+            body: { status: 'skipping', reason: 'recap' },
+            email: 'stranger@example.com',
+        });
+        expect(r.status).toBe(403);
+    });
+
+    it('404s an episode the season does not have', async () => {
+        const r = await req('PUT', '/api/seasons/45/episodes/99/status', {
+            body: { status: 'skipping', reason: 'recap' },
+            email: 'alice@example.com',
+        });
+        expect(r.status).toBe(404);
+    });
+
+    it('404s a season that does not exist', async () => {
+        const r = await req('PUT', '/api/seasons/999/episodes/1/status', {
+            body: { status: 'skipping', reason: 'recap' },
+            email: 'alice@example.com',
+        });
+        expect(r.status).toBe(404);
+    });
+
+    // Neither gate applies: you decide to skip an episode before watching it.
+    it('needs neither a reveal nor a live timer session', async () => {
+        const r = await setStatus({ status: 'skipping', reason: 'recap' });
+        expect(r.status).toBe(200);
+    });
+
+    // A shared column is one skip, not two: both logins write the same row.
+    it('treats a shared column as one skipper', async () => {
+        await setStatus({ status: 'skipping', reason: 'recap' }, 'bob@example.com');
+        await setStatus({ status: 'skipping', reason: 'reunion' }, 'carol@example.com');
+        const { results } = await env.DB.prepare(
+            'SELECT user_id, reason FROM episode_statuses WHERE season_id = 45 AND episode = 8',
+        ).all();
+        expect(results).toEqual([{ user_id: 'user-bob', reason: 'reunion' }]);
+    });
+});

@@ -67,6 +67,22 @@ const offsetAdjust = z.object({
         }),
 });
 
+// Validated as a pair rather than as two independent fields: a reason belongs to
+// a skip, so `status: null` must come without one and `status: 'skipping'` must
+// come with one. A future second status would take no reason at all, which is
+// what the `status` column is for.
+const episodeStatus = z
+    .object({
+        status: z.enum(['skipping'], { message: 'status must be "skipping" or null' }).nullable(),
+        reason: z
+            .enum(['recap', 'reunion'], { message: 'reason must be "recap" or "reunion"' })
+            .nullish(),
+    })
+    .refine((data) => (data.status === null) === (data.reason == null), {
+        message: 'a skipping status needs a reason, and a reason needs a skipping status',
+        path: ['reason'],
+    });
+
 const postBody = z
     .string()
     .trim()
@@ -1196,6 +1212,58 @@ app.put(
         }
 
         return c.json({ success: true, season_id: season.id, episode, adjust_secs });
+    },
+);
+
+// What the caller intends for one episode, as opposed to what they have already
+// watched or said. One status today — skipping — and it carries a required
+// reason, so the other people watching read a silent episode as deliberate
+// rather than as nobody having got there yet.
+//
+// Absolute rather than a toggle, the same reason PUT .../reactions takes an
+// explicit `on`: a retried or duplicated request lands on the same state instead
+// of flipping back out of it. It is also what lets the reason change in place —
+// recap to reunion is one request, not an unskip followed by a re-skip.
+//
+// Requires a real episode and roster membership, but deliberately neither a
+// reveal nor a live session: deciding to skip an episode is something you do
+// before watching it, so gating on either would be backwards.
+app.put(
+    '/api/seasons/:season_id/episodes/:episode/status',
+    zValidator('json', episodeStatus, onInvalid),
+    async (c) => {
+        const [me, resolved] = await callerAndEpisode(c);
+        if (!me) return c.json({ error: 'Your account is not on the watch list' }, 403);
+        if (resolved.error) return c.json({ error: resolved.error }, resolved.status);
+        const { season, episode } = resolved;
+
+        const { status, reason = null } = c.req.valid('json');
+        const key = [me.id, season.id, episode];
+
+        if (status === null) {
+            // "No status" gets one representation rather than two.
+            await c.env.DB.prepare(
+                'DELETE FROM episode_statuses WHERE user_id = ? AND season_id = ? AND episode = ?',
+            )
+                .bind(...key)
+                .run();
+        } else {
+            // created_at is deliberately not in the DO UPDATE list: it records
+            // when the skip was declared, and changing your mind about why is
+            // not a new declaration.
+            await c.env.DB.prepare(
+                `INSERT INTO episode_statuses
+                     (user_id, season_id, episode, status, reason, created_at)
+                 VALUES (?, ?, ?, ?, ?, ?)
+                 ON CONFLICT (user_id, season_id, episode) DO UPDATE SET
+                     status = excluded.status,
+                     reason = excluded.reason`,
+            )
+                .bind(...key, status, reason, new Date().toISOString())
+                .run();
+        }
+
+        return c.json({ success: true, season_id: season.id, episode, status, reason });
     },
 );
 
