@@ -1687,6 +1687,13 @@ describe('GET /api/seasons/:season_id/discussion — statuses', () => {
         const body = await (
             await req('GET', '/api/seasons/45/discussion', { email: 'alice@example.com' })
         ).text();
+
+        // Anchor the leak check to a response that demonstrably carried the
+        // data — otherwise a regression that dropped `statuses` entirely
+        // would pass this test just as well as a correct one.
+        expect((await episodeOf(JSON.parse(body), 8)).statuses).toEqual([
+            { user_id: 'user-bob', name: 'Bob & Carol', status: 'skipping', reason: 'recap' },
+        ]);
         expect(body).not.toContain('bob@example.com');
     });
 });
