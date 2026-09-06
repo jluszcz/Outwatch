@@ -20,6 +20,7 @@ import {
     feedLine,
     parseHashRoute,
     shouldScrollToEpisode,
+    skipLabel,
 } from '../../frontend/utils.js';
 
 // ---------------------------------------------------------------------------
@@ -619,5 +620,72 @@ describe('shouldScrollToEpisode', () => {
 
     it('jumps again when the route names a different episode', () => {
         expect(shouldScrollToEpisode({ ...arrived, scrolled: 8 })).toBe(true);
+    });
+});
+
+describe('skipLabel', () => {
+    const alice = { user_id: 'user-alice', name: 'Alice', status: 'skipping' };
+    const bob = { user_id: 'user-bob', name: 'Bob & Carol', status: 'skipping' };
+
+    it('is empty when nobody is skipping', () => {
+        expect(skipLabel([], 'user-alice')).toBe('');
+    });
+
+    it('is empty when statuses is missing', () => {
+        expect(skipLabel(undefined, 'user-alice')).toBe('');
+    });
+
+    it('names the caller as You', () => {
+        expect(skipLabel([{ ...alice, reason: 'recap' }], 'user-alice')).toBe(
+            'Skipping recap: You',
+        );
+    });
+
+    it('collapses to one reason when everyone agrees', () => {
+        expect(
+            skipLabel(
+                [
+                    { ...alice, reason: 'recap' },
+                    { ...bob, reason: 'recap' },
+                ],
+                'user-alice',
+            ),
+        ).toBe('Skipping recap: You, Bob & Carol');
+    });
+
+    // The rarer branch, and so the one most likely to rot unnoticed.
+    it('names a reason per person when they disagree', () => {
+        expect(
+            skipLabel(
+                [
+                    { ...alice, reason: 'recap' },
+                    { ...bob, reason: 'reunion' },
+                ],
+                'user-alice',
+            ),
+        ).toBe('Skipping: You (recap), Bob & Carol (reunion)');
+    });
+
+    it('puts the caller first regardless of roster order', () => {
+        expect(
+            skipLabel(
+                [
+                    { ...bob, reason: 'recap' },
+                    { ...alice, reason: 'recap' },
+                ],
+                'user-alice',
+            ),
+        ).toBe('Skipping recap: You, Bob & Carol');
+    });
+
+    it('uses names when the caller is not skipping', () => {
+        expect(skipLabel([{ ...bob, reason: 'reunion' }], 'user-alice')).toBe(
+            'Skipping reunion: Bob & Carol',
+        );
+    });
+
+    // A reader who is not on the roster has no id to match, and every name stands.
+    it('handles a null caller id', () => {
+        expect(skipLabel([{ ...bob, reason: 'recap' }], null)).toBe('Skipping recap: Bob & Carol');
     });
 });
