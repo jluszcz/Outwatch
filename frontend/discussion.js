@@ -14,6 +14,7 @@ import {
     bodyAfterPost,
     replyTargetGone,
     shouldScrollToEpisode,
+    skipLabel,
 } from './utils.js';
 import { sessionOffsetSecs, MAX_OFFSET_ADJUST_SECS } from '../shared/session.js';
 import { PostList } from './post.js';
@@ -218,6 +219,17 @@ export function SeasonView({ seasonId, routeEpisode }) {
             { suppressError: (err) => err.status === 409 },
         );
 
+    // Absolute, matching the route: a retried PUT lands on the same state rather
+    // than toggling back out of it, and changing the reason is one request.
+    const setStatus = (episode, status, reason) =>
+        mutate(() =>
+            api(`/api/seasons/${seasonId}/episodes/${episode}/status`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status, reason }),
+            }),
+        );
+
     if (loading) return html`<div class="loading">Loading…</div>`;
     // Only a failure with nothing to show yet (the initial load) gets the view to
     // itself. Once there is data, an error is a banner *above* it, the way the
@@ -273,6 +285,7 @@ export function SeasonView({ seasonId, routeEpisode }) {
                             onTimer=${setTimer}
                             onOffsetAdjust=${setOffsetAdjust}
                             onSkip=${setTimerSkip}
+                            onStatus=${setStatus}
                         />`,
                 )}
             </div>
@@ -296,6 +309,7 @@ function EpisodeBoard({
     onTimer,
     onOffsetAdjust,
     onSkip,
+    onStatus,
 }) {
     const placed = useMemo(() => orderPosts(ep.posts), [ep.posts]);
 
@@ -317,6 +331,10 @@ function EpisodeBoard({
     // Which post's ⋯ menu is open, or null for none — one at a time, same as
     // editingId, and episode-scoped for the same reason.
     const [menuFor, setMenuFor] = useState(null);
+    // Whether the skip menu is open. Episode-scoped for the same reason menuFor
+    // is — one open menu per board, by construction — and local rather than in
+    // SkipControl so tapping a different episode's control cannot leave two open.
+    const [skipMenuOpen, setSkipMenuOpen] = useState(false);
     // Owned here rather than inside PostForm so tapping Reply can focus the box.
     const inputRef = useRef(null);
 
@@ -369,6 +387,8 @@ function EpisodeBoard({
     const summary =
         ep.count === 0 ? 'no notes' : `${ep.count} ${ep.count === 1 ? 'note' : 'notes'}`;
     const others = ep.authors.filter((a) => !a.mine).map((a) => a.name);
+    const skips = skipLabel(ep.statuses, meId);
+    const mySkip = ep.statuses?.find((s) => s.user_id === meId) ?? null;
 
     return html`
         <div
@@ -380,7 +400,7 @@ function EpisodeBoard({
                 <span class="episode-meta">
                     ${ep.readable ? '' : '🔒 '}${summary}${
                         others.length ? ` · ${others.join(', ')}` : ''
-                    }
+                    }${skips && html` · <span class="episode-skips">${skips}</span>`}
                 </span>
             </button>
             ${
@@ -411,6 +431,18 @@ function EpisodeBoard({
                                         >
                                             Show discussion
                                         </button>`
+                                    }
+                                    ${
+                                        meId &&
+                                        html`<${SkipControl}
+                                            mine=${mySkip}
+                                            open=${skipMenuOpen}
+                                            onToggle=${() => setSkipMenuOpen((v) => !v)}
+                                            onChoose=${(status, reason) => {
+                                                setSkipMenuOpen(false);
+                                                return onStatus(ep.episode, status, reason);
+                                            }}
+                                        />`
                                     }
                                     ${
                                         meId &&
@@ -454,6 +486,68 @@ function EpisodeBoard({
                                 onCancelReply=${() => setReplyTo(null)}
                                 onPost=${submitPost}
                             />`
+                        }
+                    </div>
+                `
+            }
+        </div>
+    `;
+}
+
+// The two reasons the menu offers, paired with their display text. A list
+// rather than two hand-written buttons so adding a third is one line here and
+// nothing in the markup.
+const SKIP_REASONS = [
+    ['recap', 'Recap'],
+    ['reunion', 'Reunion'],
+];
+
+// The actions-row control for a skip. A menu rather than a toggle, because a
+// skip carries a required reason: there is no single-tap state to toggle into.
+//
+// "Not skipping" is its own item rather than a second tap on the active reason,
+// so changing your mind about *why* and changing your mind about *whether* are
+// never the same gesture — picking the reason already in effect just closes the
+// menu, spending no request. The scrim is what makes a tap anywhere off the
+// menu dismiss it, matching the note menu in post.js.
+function SkipControl({ mine, open, onToggle, onChoose }) {
+    return html`
+        <div class="skip">
+            <button
+                class=${'skip-btn' + (mine ? ' on' : '')}
+                aria-expanded=${open}
+                onClick=${onToggle}
+            >
+                <${Icon} name="skipForward" />
+                <span>${mine ? `Skipping ${mine.reason}` : 'Skip'}</span>
+            </button>
+            ${
+                open &&
+                html`
+                    <div class="skip-scrim" onClick=${onToggle}></div>
+                    <div class="skip-menu" role="group" aria-label="Skip this episode">
+                        ${SKIP_REASONS.map(
+                            ([value, text]) =>
+                                html`<button
+                                    key=${value}
+                                    class="skip-menu-item"
+                                    aria-pressed=${mine?.reason === value}
+                                    onClick=${() =>
+                                        mine?.reason === value
+                                            ? onToggle()
+                                            : onChoose('skipping', value)}
+                                >
+                                    ${text}
+                                </button>`,
+                        )}
+                        ${
+                            mine &&
+                            html`<button
+                                class="skip-menu-item skip-menu-item-clear"
+                                onClick=${() => onChoose(null, null)}
+                            >
+                                Not skipping
+                            </button>`
                         }
                     </div>
                 `

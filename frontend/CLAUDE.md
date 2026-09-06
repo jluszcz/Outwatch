@@ -214,6 +214,19 @@ of the root `CLAUDE.md` so it loads only when working on these files.
   Deliberately width-driven rather than gated on the `640px` breakpoint — the
   controls fit on one line well below it, and a breakpoint would stack them
   where they didn't need stacking.
+- The skip control (`SkipControl` in `discussion.js`) sits between the reveal
+  button and the timer in that same row. It is a menu rather than a toggle
+  because a skip carries a required reason, so there is no single state to
+  toggle into: the items are the reasons, plus "Not skipping" once a status
+  exists. Picking the reason already in effect just closes the menu and spends
+  no request — clearing is its own item, so changing your mind about _why_ and
+  about _whether_ are never the same gesture. Open/closed state lives in
+  `EpisodeBoard` beside `menuFor`, not inside `SkipControl`, so one board can
+  never have two menus open. The header chip is `skipLabel` (`utils.js`), which
+  collapses to one reason when everyone skipping agrees and names a reason per
+  person when they don't. Statuses are **not** spoiler-gated — the server sends
+  everyone's even on a locked board, for the same reason it sends the authors
+  list — so the chip renders whether or not the board is readable.
 - Within an opened board, `orderPosts` (`utils.js`) places every note on one
   synced timeline by watch-timer offset instead of wall-clock time, using
   three cases per author: a real `offset_secs` is used as-is; an author who

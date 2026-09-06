@@ -1218,6 +1218,98 @@ tr.flash td {
     font-size: 0.85rem;
 }
 
+/* The chip inside .episode-meta. Full-strength text against the muted counts
+   around it, because a stated intention is a different kind of fact from a
+   note count — it was typed by a person rather than derived. */
+.episode-skips {
+    color: var(--text);
+}
+
+/* The positioning context the menu anchors to, so it opens under the button
+   rather than under the whole actions row. */
+.skip {
+    position: relative;
+    display: inline-flex;
+}
+
+/* Sized and weighted as .timer-btn's peer, not .reveal-btn's: revealing is the
+   row's one consequential, irreversible action and keeps the filled treatment
+   to itself. font-family: inherit because a <button> does not take the page's
+   font on its own. */
+.skip-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    min-height: var(--control-height);
+    padding: 0.25rem 0.6rem;
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-subtle);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.8rem;
+}
+
+/* Filled once a skip is set, so the row shows the state without the menu open —
+   the same accent .timer-chip.running takes for the same reason. */
+.skip-btn.on {
+    background: var(--surface-accent);
+    color: var(--text);
+}
+
+/* Transparent and full-viewport: a tap anywhere off the menu dismisses it,
+   which is what lets the menu itself carry no close button. */
+.skip-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+}
+
+/* Left-aligned to its button rather than right-aligned like .post-menu: this
+   control sits at the left of the actions row, so it opens inward from there. */
+.skip-menu {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    margin-block: 0.25rem;
+    z-index: 21;
+    min-width: 9rem;
+    display: flex;
+    flex-direction: column;
+    padding: 0.35rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    box-shadow: 0 4px 16px var(--shadow);
+}
+
+.skip-menu-item {
+    width: 100%;
+    background: none;
+    border: none;
+    border-radius: 0.35rem;
+    color: var(--text-subtle);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.85rem;
+    text-align: left;
+    padding: 0.4rem 0.5rem;
+}
+
+.skip-menu-item[aria-pressed='true'] {
+    background: var(--surface-accent);
+    color: var(--text);
+}
+
+/* Ruled off above: clearing the skip is a different kind of choice from
+   picking why, and the rule is what stops a mis-tap from crossing between them. */
+.skip-menu-item-clear {
+    margin-top: 0.35rem;
+    border-top: 1px solid var(--border-subtle);
+    padding-top: 0.5rem;
+}
+
 .timer {
     display: flex;
     align-items: center;
@@ -1781,6 +1873,7 @@ tr.flash td {
 
     .reveal-btn,
     .post-submit,
+    .skip-btn,
     .timer-chip,
     .timer-btn {
         min-height: 44px;
@@ -2175,6 +2268,7 @@ tr.flash td {
 .post-submit:active,
 .post-menu-item:active,
 .post-menu-close:active,
+.skip-menu-item:active,
 .theme-btn:active {
     background: var(--surface-hover);
 }

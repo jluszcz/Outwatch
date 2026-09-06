@@ -45,6 +45,11 @@ watching at different paces don't spoil each other.
   next to the timer corrects it after the fact — one number per episode,
   shifting every note you've already posted there along with it, so you don't
   have to catch the drift in the moment.
+- **Say what you're skipping.** Mark an episode as one you're not going to
+  watch — a recap or a reunion — and everyone else sees it on the season page,
+  whether or not they've opened that board. It's a note about your intentions
+  and nothing more: it doesn't open the board, doesn't count as watched, and
+  doesn't show up in the what's-new feed.
 - **Replies, reactions, and edits.** A note can answer another note on the same
   episode, and it renders as a quote block above the reply rather than as an
   indented thread. A reply keeps its own place on the watch-offset timeline,
