@@ -158,3 +158,25 @@ describe('feed seen marks', () => {
         expect(row.sql).not.toContain('feed_seen_at');
     });
 });
+
+// A skip is a per-column, per-episode row, the same shape reveals and
+// watch_offsets take. The index is what the discussion read leans on: it loads
+// every user's statuses for one season, filtering on the primary key's second
+// column, which the implicit PK index cannot serve.
+describe('episode statuses', () => {
+    it('creates the table with a status and a reason', async () => {
+        const row = await env.DB.prepare(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'episode_statuses'",
+        ).first();
+        expect(row).not.toBeNull();
+        expect(row.sql).toContain('status');
+        expect(row.sql).toContain('reason');
+    });
+
+    it('indexes the table by season', async () => {
+        const row = await env.DB.prepare(
+            "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_episode_statuses_season'",
+        ).first();
+        expect(row).not.toBeNull();
+    });
+});

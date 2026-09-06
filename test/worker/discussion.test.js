@@ -30,6 +30,7 @@ async function req(method, path, { body, email, envOverrides } = {}) {
 beforeEach(async () => {
     // Serve the test signing key the way Cloudflare serves the team's real one.
     await stubJwksEndpoint();
+    await env.DB.exec('DELETE FROM episode_statuses');
     await env.DB.exec('DELETE FROM reactions');
     await env.DB.exec('DELETE FROM watch_offsets');
     await env.DB.exec('DELETE FROM watch_sessions');
