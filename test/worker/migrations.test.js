@@ -169,8 +169,9 @@ describe('episode statuses', () => {
             "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'episode_statuses'",
         ).first();
         expect(row).not.toBeNull();
-        expect(row.sql).toContain('status');
-        expect(row.sql).toContain('reason');
+        expect(row.sql).toContain('PRIMARY KEY (user_id, season_id, episode)');
+        expect(row.sql).toMatch(/status\s+TEXT\s+NOT NULL/);
+        expect(row.sql).toMatch(/reason\s+TEXT\s+NOT NULL/);
     });
 
     it('indexes the table by season', async () => {
