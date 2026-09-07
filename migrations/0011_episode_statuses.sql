@@ -10,11 +10,11 @@
 -- couple shares a screen, so they skip the recap together.
 --
 -- Two enum columns rather than one. `status` has exactly one legal value today,
--- which is why this is not a reveals-style presence table: a second status
--- later is a change to a string set in the route rather than a migration. It
--- also carries real meaning against `reason` — a reason applies to `skipping`
--- and would not apply to a future status — so the route validates the pair
--- rather than the two fields independently. Absence of a row is the only
+-- which is why this is not a reveals-style presence table: another status that
+-- also takes a reason is a change to a string set in the route, with no
+-- migration. One that takes no reason needs `reason` made nullable first, since
+-- it is NOT NULL below — the pairing the route enforces is what lets that
+-- constraint stand while only `skipping` exists. Absence of a row is the only
 -- representation of "no status."
 --
 -- `created_at` is when the skip was first declared, and the route's upsert
