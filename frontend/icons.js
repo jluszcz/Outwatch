@@ -9,6 +9,7 @@ import {
     Moon,
     Pencil,
     Reply,
+    SkipForward,
     Sun,
     Trash2,
     X,
@@ -39,6 +40,7 @@ const ICONS = {
     sun: Sun,
     moon: Moon,
     info: Info,
+    skipForward: SkipForward,
 };
 
 // Painted with `currentColor` (Lucide's default) so a glyph inherits its

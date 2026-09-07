@@ -30,6 +30,7 @@ async function req(method, path, { body, email, envOverrides } = {}) {
 beforeEach(async () => {
     // Serve the test signing key the way Cloudflare serves the team's real one.
     await stubJwksEndpoint();
+    await env.DB.exec('DELETE FROM episode_statuses');
     await env.DB.exec('DELETE FROM reactions');
     await env.DB.exec('DELETE FROM watch_offsets');
     await env.DB.exec('DELETE FROM watch_sessions');
@@ -1492,5 +1493,207 @@ describe('POST /api/seasons/:season_id/episodes/:episode/timer { action: "stop" 
 
     it('403s for a stranger', async () => {
         expect((await timer('stranger@example.com', 7, 'stop')).status).toBe(403);
+    });
+});
+
+describe('PUT /api/seasons/:season_id/episodes/:episode/status', () => {
+    const setStatus = (body, email = 'alice@example.com') =>
+        req('PUT', '/api/seasons/45/episodes/8/status', { body, email });
+
+    const storedFor = (userId) =>
+        env.DB.prepare(
+            'SELECT status, reason, created_at FROM episode_statuses WHERE user_id = ? AND season_id = 45 AND episode = 8',
+        )
+            .bind(userId)
+            .first();
+
+    it('records a skip with its reason', async () => {
+        const r = await setStatus({ status: 'skipping', reason: 'recap' });
+        expect(r.status).toBe(200);
+        expect(await r.json()).toMatchObject({
+            success: true,
+            season_id: 45,
+            episode: 8,
+            status: 'skipping',
+            reason: 'recap',
+        });
+        expect(await storedFor('user-alice')).toMatchObject({
+            status: 'skipping',
+            reason: 'recap',
+        });
+    });
+
+    it('is idempotent', async () => {
+        await setStatus({ status: 'skipping', reason: 'recap' });
+        const r = await setStatus({ status: 'skipping', reason: 'recap' });
+        expect(r.status).toBe(200);
+        const { results } = await env.DB.prepare(
+            'SELECT user_id FROM episode_statuses WHERE season_id = 45 AND episode = 8',
+        ).all();
+        expect(results).toHaveLength(1);
+    });
+
+    // The whole point of taking an absolute value: changing your mind about why
+    // is one request, not an unskip followed by a re-skip.
+    it('changes the reason in place, keeping created_at', async () => {
+        await setStatus({ status: 'skipping', reason: 'recap' });
+        const before = await storedFor('user-alice');
+        await setStatus({ status: 'skipping', reason: 'reunion' });
+        const after = await storedFor('user-alice');
+        expect(after.reason).toBe('reunion');
+        expect(after.created_at).toBe(before.created_at);
+    });
+
+    it('clears the status with a null status', async () => {
+        await setStatus({ status: 'skipping', reason: 'recap' });
+        const r = await setStatus({ status: null });
+        expect(r.status).toBe(200);
+        expect(await storedFor('user-alice')).toBeNull();
+    });
+
+    it('is idempotent when clearing a status that is not there', async () => {
+        const r = await setStatus({ status: null });
+        expect(r.status).toBe(200);
+        expect(await storedFor('user-alice')).toBeNull();
+    });
+
+    it('rejects an unrecognised status', async () => {
+        const r = await setStatus({ status: 'watched', reason: 'recap' });
+        expect(r.status).toBe(400);
+    });
+
+    it('rejects an unrecognised reason', async () => {
+        const r = await setStatus({ status: 'skipping', reason: 'boring' });
+        expect(r.status).toBe(400);
+    });
+
+    it('rejects a skip with no reason', async () => {
+        const r = await setStatus({ status: 'skipping' });
+        expect(r.status).toBe(400);
+    });
+
+    it('rejects a reason with no status', async () => {
+        const r = await setStatus({ status: null, reason: 'recap' });
+        expect(r.status).toBe(400);
+    });
+
+    it('rejects a caller who is not on the roster', async () => {
+        const r = await setStatus({ status: 'skipping', reason: 'recap' }, 'stranger@example.com');
+        expect(r.status).toBe(403);
+    });
+
+    // Caller before episode, so a stranger cannot map the seasons.
+    it('rejects a stranger before it checks the episode', async () => {
+        const r = await req('PUT', '/api/seasons/45/episodes/99/status', {
+            body: { status: 'skipping', reason: 'recap' },
+            email: 'stranger@example.com',
+        });
+        expect(r.status).toBe(403);
+    });
+
+    it('404s an episode the season does not have', async () => {
+        const r = await req('PUT', '/api/seasons/45/episodes/99/status', {
+            body: { status: 'skipping', reason: 'recap' },
+            email: 'alice@example.com',
+        });
+        expect(r.status).toBe(404);
+    });
+
+    it('404s a season that does not exist', async () => {
+        const r = await req('PUT', '/api/seasons/999/episodes/1/status', {
+            body: { status: 'skipping', reason: 'recap' },
+            email: 'alice@example.com',
+        });
+        expect(r.status).toBe(404);
+    });
+
+    // Neither gate applies: you decide to skip an episode before watching it.
+    it('needs neither a reveal nor a live timer session', async () => {
+        const r = await setStatus({ status: 'skipping', reason: 'recap' });
+        expect(r.status).toBe(200);
+    });
+
+    // A shared column is one skip, not two: both logins write the same row.
+    it('treats a shared column as one skipper', async () => {
+        await setStatus({ status: 'skipping', reason: 'recap' }, 'bob@example.com');
+        await setStatus({ status: 'skipping', reason: 'reunion' }, 'carol@example.com');
+        const { results } = await env.DB.prepare(
+            'SELECT user_id, reason FROM episode_statuses WHERE season_id = 45 AND episode = 8',
+        ).all();
+        expect(results).toEqual([{ user_id: 'user-bob', reason: 'reunion' }]);
+    });
+});
+
+describe('GET /api/seasons/:season_id/discussion — statuses', () => {
+    const setStatus = (episode, body, email) =>
+        req('PUT', `/api/seasons/45/episodes/${episode}/status`, { body, email });
+
+    const episodeOf = async (data, episode) => data.episodes.find((e) => e.episode === episode);
+
+    it('is an empty array when nobody has a status', async () => {
+        const data = await (
+            await req('GET', '/api/seasons/45/discussion', { email: 'alice@example.com' })
+        ).json();
+        expect((await episodeOf(data, 8)).statuses).toEqual([]);
+    });
+
+    it('carries everyone the caller can see, in roster order', async () => {
+        await setStatus(8, { status: 'skipping', reason: 'reunion' }, 'bob@example.com');
+        await setStatus(8, { status: 'skipping', reason: 'recap' }, 'alice@example.com');
+
+        const data = await (
+            await req('GET', '/api/seasons/45/discussion', { email: 'alice@example.com' })
+        ).json();
+        expect((await episodeOf(data, 8)).statuses).toEqual([
+            { user_id: 'user-alice', name: 'Alice', status: 'skipping', reason: 'recap' },
+            { user_id: 'user-bob', name: 'Bob & Carol', status: 'skipping', reason: 'reunion' },
+        ]);
+    });
+
+    it('scopes statuses to their own episode', async () => {
+        await setStatus(8, { status: 'skipping', reason: 'recap' }, 'alice@example.com');
+        const data = await (
+            await req('GET', '/api/seasons/45/discussion', { email: 'alice@example.com' })
+        ).json();
+        expect((await episodeOf(data, 8)).statuses).toHaveLength(1);
+        expect((await episodeOf(data, 9)).statuses).toEqual([]);
+    });
+
+    it('scopes statuses to their own season', async () => {
+        await setStatus(8, { status: 'skipping', reason: 'recap' }, 'alice@example.com');
+        const data = await (
+            await req('GET', '/api/seasons/46/discussion', { email: 'alice@example.com' })
+        ).json();
+        expect((await episodeOf(data, 8)).statuses).toEqual([]);
+    });
+
+    // A status is not content. It shows on a locked board for the same reason
+    // the authors list does: knowing someone is skipping an episode says
+    // nothing about what happens in it.
+    it('shows other people’s statuses on a locked board', async () => {
+        await setStatus(8, { status: 'skipping', reason: 'recap' }, 'bob@example.com');
+        const data = await (
+            await req('GET', '/api/seasons/45/discussion', { email: 'alice@example.com' })
+        ).json();
+        const ep = await episodeOf(data, 8);
+        expect(ep.readable).toBe(false);
+        expect(ep.statuses).toEqual([
+            { user_id: 'user-bob', name: 'Bob & Carol', status: 'skipping', reason: 'recap' },
+        ]);
+    });
+
+    it('never serializes an email', async () => {
+        await setStatus(8, { status: 'skipping', reason: 'recap' }, 'bob@example.com');
+        const body = await (
+            await req('GET', '/api/seasons/45/discussion', { email: 'alice@example.com' })
+        ).text();
+
+        // Anchor the leak check to a response that demonstrably carried the
+        // data — otherwise a regression that dropped `statuses` entirely
+        // would pass this test just as well as a correct one.
+        expect((await episodeOf(JSON.parse(body), 8)).statuses).toEqual([
+            { user_id: 'user-bob', name: 'Bob & Carol', status: 'skipping', reason: 'recap' },
+        ]);
+        expect(body).not.toContain('bob@example.com');
     });
 });

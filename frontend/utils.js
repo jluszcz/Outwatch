@@ -398,3 +398,30 @@ export function shouldScrollToEpisode({ routeEpisode, openEpisode, ready, scroll
     if (openEpisode !== routeEpisode) return false;
     return scrolled !== routeEpisode;
 }
+
+// The episode header's summary of who is skipping and why. Collapses to one
+// reason when everyone skipping agrees — the usual case, since a recap is a
+// recap for everybody — and falls back to a reason per name when they don't. A
+// single rule that always printed the reason per name would be correct but
+// repetitive in the case that actually happens; a single rule that only ever
+// collapsed would be wrong in the case that occasionally does.
+//
+// "You" leads, and the rest keep the roster order the server sent, so the line
+// reads the same way on everyone's screen apart from which name is theirs.
+// Returns '' rather than null so the caller can test it as a string.
+export function skipLabel(statuses, meId) {
+    const skips = (statuses ?? []).filter((s) => s.status === 'skipping');
+    if (skips.length === 0) return '';
+
+    const ordered = [
+        ...skips.filter((s) => s.user_id === meId),
+        ...skips.filter((s) => s.user_id !== meId),
+    ];
+    const nameOf = (s) => (s.user_id === meId ? 'You' : s.name);
+
+    const reasons = new Set(ordered.map((s) => s.reason));
+    if (reasons.size === 1) {
+        return `Skipped ${ordered[0].reason}: ${ordered.map(nameOf).join(', ')}`;
+    }
+    return `Skipped: ${ordered.map((s) => `${nameOf(s)} (${s.reason})`).join(', ')}`;
+}
