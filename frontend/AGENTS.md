@@ -1,7 +1,7 @@
 # Frontend
 
 Conventions and gotchas for the Preact frontend under `frontend/`. Split out
-of the root `CLAUDE.md` so it loads only when working on these files.
+of the root `AGENTS.md` so it loads only when working on these files.
 
 - `App` fetches `/api/board` on load and owns `users`, `seasons`, `me` state; it refetches when the tab regains focus/visibility so other people's changes show up without a reload.
 - The `Board` component supports two sort modes toggled by a button group:

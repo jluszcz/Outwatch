@@ -325,7 +325,7 @@ Broadly, the routes cover:
 
 **The route-by-route contract — request and response shapes, status codes, and
 the reasoning behind each rule — lives in
-[`CLAUDE.md`](CLAUDE.md#api-routes).** It is deliberately not repeated here: the
+[`AGENTS.md`](AGENTS.md#api-routes).** It is deliberately not repeated here: the
 table this section used to hold had quietly fallen three features behind the code
 it described, which is what a second copy of an API reference is always drifting
 towards.
@@ -348,7 +348,7 @@ than by a migration — see [The roster](#the-roster). Every other table is crea
 by `migrations/*.sql`, which carry their own commentary on why each column exists.
 
 **The column-by-column schema lives in
-[`CLAUDE.md`](CLAUDE.md#database-schema)**, kept in one place for the same reason
+[`AGENTS.md`](AGENTS.md#database-schema)**, kept in one place for the same reason
 the API is.
 
 ## Authentication
