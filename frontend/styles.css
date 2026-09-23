@@ -666,7 +666,7 @@ tr.flash td {
    including border-left-color. This block MUST stay positioned after every
    rule above that sets border-left as a shorthand (.post, .post-quote), or
    the shorthand would run after these color-only rules and reset the colour
-   right back to transparent/var(--border). CLAUDE.md documents the same
+   right back to transparent/var(--border). AGENTS.md documents the same
    shorthand-after-color hazard for the @media (max-width: 640px) block
    further down; this is the same trap outside a media query. */
 .post-mine {
