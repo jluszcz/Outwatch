@@ -1,15 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import { env } from 'cloudflare:test';
 
-// The 50 episode counts in migration 0005 are transcribed by hand from Wikipedia
+// The episode counts in migrations 0005 and 0012 are transcribed by hand from Wikipedia
 // and are the likeliest place in this feature for a quiet error. A dropped row
 // leaves a 0; a slipped digit leaves a 130. Both are caught here.
 describe('seeded episode counts', () => {
-    it('gives all 50 seasons a plausible episode count', async () => {
+    it('gives all 51 seasons a plausible episode count', async () => {
         const { results } = await env.DB.prepare(
             'SELECT id, episode_count FROM seasons ORDER BY id ASC',
         ).all();
-        expect(results).toHaveLength(50);
+        expect(results).toHaveLength(51);
         for (const season of results) {
             expect(season.episode_count).toBeGreaterThanOrEqual(12);
             expect(season.episode_count).toBeLessThanOrEqual(17);
