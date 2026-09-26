@@ -334,8 +334,8 @@ towards.
 
 Nine tables in D1 (SQLite): `users` and `user_emails` (the roster — board
 columns, and the login emails that map onto them), `seasons` (reference data,
-seeded by migration `0002`), `watched`, `posts`, `reactions`, `reveals`,
-`watch_sessions`, and `watch_offsets`.
+seeded by migration `0002`, with later seasons added as they air), `watched`,
+`posts`, `reactions`, `reveals`, `watch_sessions`, and `watch_offsets`.
 
 One distinction runs through all of them: **a `users` row is a board column, not
 a person.** A couple shares one column, one checkbox, and one watch timer, so

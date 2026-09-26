@@ -172,8 +172,9 @@ specific to this repo:
 - `reactions` — `(post_id, email, emoji)` PK + `created_at`; presence = that individual put that emoji on that note. Keyed on the email, not the column, so both halves of a shared column react separately. `emoji` is any single emoji, not a member of a fixed set, and `created_at` is what orders a note's chips (first use, so a chip does not move as counts change)
 - `episode_statuses` — `(user_id, season_id, episode)` PK, `status`, `reason`, `created_at` (added in `0011`); what a column intends for one episode, as opposed to what it has already done. `status` has one legal value today, `'skipping'`, and `reason` is required alongside it (`'recap'` or `'reunion'`); the route validates the _pair_ rather than the two fields independently. `reason` is `NOT NULL`, so another status that also takes a reason is a route-only change while one that takes none needs the column made nullable first. Absence of a row is the only representation of "no status". Keyed on the column, like everything else about watching. `created_at` is when the skip was first declared and survives a change of reason
 
-Seasons (migration `0002`) are seeded reference data, present in every
-environment after `migrations apply`. The roster (`users` + `user_emails`)
+Seasons (migration `0002`, plus one migration per later season, e.g. `0012`)
+are seeded reference data, present in every environment after
+`migrations apply`. The roster (`users` + `user_emails`)
 contains real names and emails, so it is seeded from `roster.sql` (gitignored;
 template in `roster.example.sql`) rather than a committed migration — keep real
 names and emails out of source control. `seed.sql` holds only optional sample
