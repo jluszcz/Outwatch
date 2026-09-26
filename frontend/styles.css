@@ -481,6 +481,91 @@ tr.flash td {
     font-size: 1.25rem;
 }
 
+/* margin-right: auto keeps the pencil beside the title it edits, with
+   .season-view-head's space-between pushing only the Wikipedia link away. The
+   head aligns on baseline, which an icon-only button has none of, so it
+   centres itself instead. */
+.season-edit-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    align-self: center;
+    margin-right: auto;
+    min-width: var(--control-height);
+    min-height: var(--control-height);
+    padding: 0;
+    background: none;
+    border: 0;
+    border-radius: 6px;
+    color: var(--text-faint);
+    cursor: pointer;
+    font-size: 0.9rem;
+}
+
+/* One form for adding a season on the board and editing one on its page. The
+   count field is narrow on purpose: it holds two digits, and the subtitle is
+   what needs the room. Wraps rather than squeezing at phone widths. */
+.season-form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 0.6rem;
+    margin-bottom: 1rem;
+    padding: 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-subtle);
+}
+
+.season-form-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.season-form-field.grow {
+    flex: 1;
+    min-width: 12rem;
+}
+
+.season-form-label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+.season-form-input {
+    padding: 0.4rem 0.6rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--text);
+    font: inherit;
+    font-size: 0.9rem;
+}
+
+.season-form-input.count {
+    width: 5rem;
+}
+
+.season-form-actions {
+    display: flex;
+    gap: 0.4rem;
+}
+
+.season-form-error {
+    flex-basis: 100%;
+    font-size: 0.85rem;
+    color: var(--red);
+}
+
+.add-season {
+    margin-top: 12px;
+}
+
+.add-season .season-form {
+    margin-bottom: 0;
+}
+
 .wiki-link {
     color: var(--blue);
     text-decoration: none;
@@ -1859,7 +1944,8 @@ tr.flash td {
        would otherwise leave this the one control in the row too narrow to hit
        reliably, however tall it got. */
     .timer-adjust-toggle,
-    .timer-info-toggle {
+    .timer-info-toggle,
+    .season-edit-btn {
         min-width: 44px;
     }
 
@@ -1873,6 +1959,8 @@ tr.flash td {
 
     .reveal-btn,
     .post-submit,
+    .season-form-input,
+    .season-edit-btn,
     .skip-btn,
     .timer-chip,
     .timer-btn {
@@ -2078,7 +2166,8 @@ tr.flash td {
     .post-input,
     .post-input-wrap::after,
     .nw-select,
-    .emoji-search {
+    .emoji-search,
+    .season-form-input {
         font-size: 16px;
     }
 
@@ -2139,7 +2228,8 @@ tr.flash td {
 /* Hover effects only where a pointer can actually hover. On a touch device a
    :hover rule latches after a tap and stays until you tap something else. */
 @media (hover: hover) {
-    .theme-btn:hover {
+    .theme-btn:hover,
+    .season-edit-btn:hover {
         color: var(--text);
         background: var(--surface-hover);
     }
@@ -2274,7 +2364,8 @@ tr.flash td {
 .post-menu-item:active,
 .post-menu-close:active,
 .skip-menu-item:active,
-.theme-btn:active {
+.theme-btn:active,
+.season-edit-btn:active {
     background: var(--surface-hover);
 }
 

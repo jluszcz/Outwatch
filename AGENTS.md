@@ -22,7 +22,8 @@ It is a sibling of the **Seen** project and follows the same stack and structure
     - `hooks.js` — The app's hooks: theme and dark-mode observation, the refresh and submit guards, hash routing, and the focus refetch
     - `refresh-guard.js` — `createRefreshGuard`, the refetch-vs-mutation race rules as a plain state machine; `useRefreshGuard` is the wiring around it
     - `submit-guard.js` — `createSubmitGuard`, the submit-once and cannot-cancel-in-flight rules as a plain state machine, shared by the compose box and the edit box; `useSubmitGuard` is the wiring around it
-    - `board.js` — `Header`, `Board` and its child components (the season × user grid)
+    - `board.js` — `Header`, `Board` and its child components (the season × user grid, and the "Add Season N" control below it)
+    - `season-form.js` — `SeasonForm`, the episode-count + subtitle form shared by adding a season on the board and editing one from its page; shows a failure inline rather than on the page banner
     - `discussion.js` — `SeasonView`, `EpisodeBoard`, `WatchTimer`, and `PostForm`: the per-episode discussion board and its compose box + watch timer UI
     - `post.js` — The note renderer: `PostList` and its children, moved out of `discussion.js` so a quote block, a reaction bar, and the per-note `⋯` action menu have somewhere to live inside each note
     - `emoji-picker.js` — `FullEmojiPicker` (the searchable, category-grouped grid behind the ＋ in a note's menu) and `emojiName`; filters `emoji-data.json` through `isReactionEmoji` on load so the picker can never offer what the server would reject
@@ -32,6 +33,7 @@ It is a sibling of the **Seen** project and follows the same stack and structure
     - `styles.css` — Theme tokens + layout
 - `shared/` — Code the Worker and the browser bundle both import, so the two never disagree
     - `session.js` — `sessionOffsetSecs`, the one watch-timer rule both sides must compute identically
+    - `seasons.js` — `MAX_EPISODE_COUNT` and `MAX_SUBTITLE_LENGTH`, the bounds the season routes validate with and the season form's inputs enforce
     - `reactions.js` — `isReactionEmoji`, the "is this one emoji" rule the Worker validates with and the picker filters its offerings by; plus `REACTIONS` (the four-emoji quick row) and `MAX_REACTIONS_PER_POST`
 - `public/` — Served static assets
     - `index.html` — App shell that loads the bundled script
@@ -172,9 +174,11 @@ specific to this repo:
 - `reactions` — `(post_id, email, emoji)` PK + `created_at`; presence = that individual put that emoji on that note. Keyed on the email, not the column, so both halves of a shared column react separately. `emoji` is any single emoji, not a member of a fixed set, and `created_at` is what orders a note's chips (first use, so a chip does not move as counts change)
 - `episode_statuses` — `(user_id, season_id, episode)` PK, `status`, `reason`, `created_at` (added in `0011`); what a column intends for one episode, as opposed to what it has already done. `status` has one legal value today, `'skipping'`, and `reason` is required alongside it (`'recap'` or `'reunion'`); the route validates the _pair_ rather than the two fields independently. `reason` is `NOT NULL`, so another status that also takes a reason is a route-only change while one that takes none needs the column made nullable first. Absence of a row is the only representation of "no status". Keyed on the column, like everything else about watching. `created_at` is when the skip was first declared and survives a change of reason
 
-Seasons (migration `0002`, plus one migration per later season, e.g. `0012`)
-are seeded reference data, present in every environment after
-`migrations apply`. The roster (`users` + `user_emails`)
+Seasons 1–51 (migration `0002`, plus `0012` for Season 51) are seeded
+reference data, present in every environment after `migrations apply`. Later
+seasons are added through the app (`POST /api/seasons`) rather than by
+migration, so they exist only in the database they were added to — production
+has them, a fresh local database does not. The roster (`users` + `user_emails`)
 contains real names and emails, so it is seeded from `roster.sql` (gitignored;
 template in `roster.example.sql`) rather than a committed migration — keep real
 names and emails out of source control. `seed.sql` holds only optional sample
@@ -203,6 +207,8 @@ seasons.
 - `GET /api/board` — `{ me, users, seasons }`; each season carries `watched_by` (user ids), `episode_count`, and `post_count`; each user carries `currently_watching_season_id`. Emails are not exposed to the client.
 - `POST /api/watched` — `{ season_id }`; marks the caller watched (idempotent, `INSERT OR IGNORE`); also clears the season as the caller's currently-watching, atomically via `DB.batch`
 - `DELETE /api/watched/:season_id` — unmarks the caller (no-op safe)
+- `POST /api/seasons` — `{ id, subtitle?, episode_count }`; adds a season, open to anyone on the roster. `id` must be exactly the next season number (`MAX(id) + 1`), checked inside the `INSERT` itself, and anything else is a 409 — the client names the number it means to add so that two people adding at once produce one season and a 409, not Season 52 and a surprise Season 53. `wikipedia_url` is derived (`https://en.wikipedia.org/wiki/Survivor_<id>`), never accepted. `episode_count` is an integer 1–30 (loose, because it is usually a guess corrected later) and `subtitle` is trimmed, at most 100 characters, and defaults to empty. Returns 201 with the season row
+- `PATCH /api/seasons/:season_id` — `{ subtitle?, episode_count? }` (at least one); corrects a season, same validation as above. The id and link are fixed. Lowering `episode_count` is a 409 while any `posts`, `reveals`, `watch_sessions`, `watch_offsets`, or `episode_statuses` row sits on an episode it would drop — every episode-scoped route 404s past the count, so those rows would be stranded rather than removed. The check is in the `UPDATE`'s own `WHERE`, so nothing already written can slip between check and write; a write still in flight can, since episode-scoped routes read `episode_count` in `resolveEpisode` and insert in a later statement — an accepted gap for an edit this rare. Unknown season is a 404. There is deliberately no delete: a mistaken season is a manual fix
 - `PUT /api/currently-watching` — `{ season_id }` (nullable); sets the caller's currently-watching season, or clears it with `null`. Invariant: it's always one of the caller's unwatched seasons — a season the caller has already watched is rejected with 409.
 - `POST /api/seasons/:season_id/episodes/:episode/posts` — `{ body, reply_to_post_id? }`; adds a discussion note, stamped with the caller's live watch-timer offset (or `null` if no timer is running) and their `author_email`; also touches the timer session's `last_activity_at`. `reply_to_post_id` is optional and, when present, must name a post in this same season and episode that the caller can currently see (`visiblePost`); anything else — missing, a different episode, or not visible to the caller — is a 404, matching the delete route's "don't distinguish not-yours from doesn't-exist" rule.
 - `PATCH /api/posts/:post_id` — `{ body }`; rewrites one of the caller's own notes and stamps `edited_at`. Same ownership rule as `DELETE` (the individual author, or the column for a note with no recorded `author_email`), and the same 404 for a note that isn't theirs or doesn't exist. `created_at`, `offset_secs`, and `reply_to_post_id` are never touched, so an edit cannot move a note on the timeline

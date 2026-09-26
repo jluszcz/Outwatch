@@ -9,6 +9,7 @@ import {
     MAX_SKIP_DELTA_SECS,
 } from '../shared/session.js';
 import { MAX_REACTIONS_PER_POST, isReactionEmoji } from '../shared/reactions.js';
+import { MAX_EPISODE_COUNT, MAX_SUBTITLE_LENGTH } from '../shared/seasons.js';
 import { accessTokenEmail } from './access.js';
 import { groupNotes, FEED_WINDOW_MS, FEED_MAX_EVENTS } from './feed.js';
 
@@ -32,6 +33,33 @@ const currentlyWatchingUpdate = z.object({
         .positive({ message: 'season_id must be a positive integer' })
         .nullable(),
 });
+
+const episodeCount = z
+    .number({ message: 'episode_count must be a whole number' })
+    .int({ message: 'episode_count must be a whole number' })
+    .min(1, { message: `episode_count must be between 1 and ${MAX_EPISODE_COUNT}` })
+    .max(MAX_EPISODE_COUNT, {
+        message: `episode_count must be between 1 and ${MAX_EPISODE_COUNT}`,
+    });
+
+const subtitle = z
+    .string({ message: 'subtitle must be text' })
+    .trim()
+    .max(MAX_SUBTITLE_LENGTH, {
+        message: `subtitle must be at most ${MAX_SUBTITLE_LENGTH} characters`,
+    });
+
+const seasonCreate = z.object({
+    id: z.number().int().positive({ message: 'id must be a positive integer' }),
+    subtitle: subtitle.optional(),
+    episode_count: episodeCount,
+});
+
+const seasonEdit = z
+    .object({ subtitle: subtitle.optional(), episode_count: episodeCount.optional() })
+    .refine((data) => data.subtitle !== undefined || data.episode_count !== undefined, {
+        message: 'nothing to change: send subtitle, episode_count, or both',
+    });
 
 const timerAction = z
     .object({
@@ -302,6 +330,90 @@ app.delete('/api/watched/:season_id', async (c) => {
         .run();
 
     return c.json({ success: true, user_id: me.id, season_id: seasonId });
+});
+
+// Seasons were once seeded only by migration, which meant a new one waited on a
+// deploy while people were ready to watch it. Anyone on the roster can now add
+// the next season or correct one.
+//
+// The client names the number it means to create, and the insert only lands if
+// that is still the next one. Picking MAX(id) + 1 server-side would be just as
+// atomic, but two people clicking "Add Season 52" together would then quietly
+// create 52 and 53; this way the second click is a 409 and the board refetches.
+// The Wikipedia link is derived rather than accepted, since every season since
+// 41 is titled by number alone.
+app.post('/api/seasons', zValidator('json', seasonCreate, onInvalid), async (c) => {
+    const me = await callerUser(c);
+    if (!me) return c.json({ error: 'Your account is not on the watch list' }, 403);
+
+    const { id, subtitle = '', episode_count } = c.req.valid('json');
+    const season = await c.env.DB.prepare(
+        `INSERT INTO seasons (id, subtitle, wikipedia_url, episode_count)
+         SELECT ?1, ?2, ?3, ?4
+         WHERE ?1 = (SELECT COALESCE(MAX(id), 0) + 1 FROM seasons)
+         RETURNING id, subtitle, wikipedia_url, episode_count`,
+    )
+        .bind(id, subtitle, `https://en.wikipedia.org/wiki/Survivor_${id}`, episode_count)
+        .first();
+    if (!season) {
+        return c.json({ error: `Season ${id} is not the next season to add` }, 409);
+    }
+
+    return c.json(season, 201);
+});
+
+// Corrects a season's subtitle or episode count; the number and link are fixed.
+// Lowering the count is refused while anything is recorded against an episode
+// it would drop — every episode-scoped route 404s past episode_count, so those
+// rows would become unreachable rather than gone. The check lives in the
+// UPDATE's own WHERE, so nothing already written can slip between check and
+// write. A write still in flight can: episode-scoped routes read episode_count
+// in resolveEpisode and insert in a later statement, so a note whose request
+// read the old count just before this UPDATE lands past the new one. Closing
+// that means re-checking the count inside every episode-scoped INSERT, which is
+// not worth it for an edit made a couple of times a season.
+app.patch('/api/seasons/:season_id', zValidator('json', seasonEdit, onInvalid), async (c) => {
+    const me = await callerUser(c);
+    if (!me) return c.json({ error: 'Your account is not on the watch list' }, 403);
+
+    const seasonId = Number(c.req.param('season_id'));
+    if (!Number.isInteger(seasonId) || seasonId <= 0) {
+        return c.json({ error: 'season_id must be a positive integer' }, 400);
+    }
+
+    const { subtitle = null, episode_count = null } = c.req.valid('json');
+    const season = await c.env.DB.prepare(
+        `UPDATE seasons
+         SET subtitle = COALESCE(?2, subtitle),
+             episode_count = COALESCE(?3, episode_count)
+         WHERE id = ?1
+           AND (?3 IS NULL OR NOT EXISTS (
+               SELECT 1 FROM posts            WHERE season_id = ?1 AND episode > ?3
+               UNION ALL
+               SELECT 1 FROM reveals          WHERE season_id = ?1 AND episode > ?3
+               UNION ALL
+               SELECT 1 FROM watch_sessions   WHERE season_id = ?1 AND episode > ?3
+               UNION ALL
+               SELECT 1 FROM watch_offsets    WHERE season_id = ?1 AND episode > ?3
+               UNION ALL
+               SELECT 1 FROM episode_statuses WHERE season_id = ?1 AND episode > ?3
+           ))
+         RETURNING id, subtitle, wikipedia_url, episode_count`,
+    )
+        .bind(seasonId, subtitle, episode_count)
+        .first();
+    if (season) return c.json(season);
+
+    const exists = await c.env.DB.prepare('SELECT 1 FROM seasons WHERE id = ?')
+        .bind(seasonId)
+        .first();
+    if (!exists) return c.json({ error: `Unknown season: ${seasonId}` }, 404);
+    return c.json(
+        {
+            error: `Season ${seasonId} has activity past episode ${episode_count}, so it can't have fewer episodes`,
+        },
+        409,
+    );
 });
 
 // Resolves and validates the :season_id / :episode path pair. Returns either

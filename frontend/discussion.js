@@ -20,6 +20,7 @@ import { sessionOffsetSecs, MAX_OFFSET_ADJUST_SECS } from '../shared/session.js'
 import { PostList } from './post.js';
 import { prefersReducedMotion } from './board.js';
 import { Icon } from './icons.js';
+import { SeasonForm } from './season-form.js';
 
 const html = htm.bind(h);
 
@@ -31,6 +32,7 @@ export function SeasonView({ seasonId, routeEpisode }) {
     // per-board so opening one closes the rest: the boards are a tall stack, and
     // leaving them all open buries the one you just opened.
     const [openEpisode, setOpenEpisode] = useState(null);
+    const [editingSeason, setEditingSeason] = useState(false);
 
     // A feed line links straight at an episode, so the route can name one. An
     // effect rather than a useState seed because SeasonView is keyed on the
@@ -230,6 +232,26 @@ export function SeasonView({ seasonId, routeEpisode }) {
             }),
         );
 
+    // Not routed through `mutate`, which reports failure on the page banner:
+    // SeasonForm shows it inline instead, beside the values that were refused —
+    // most often a lowered episode count that would drop an episode someone
+    // has already posted on or opened.
+    const editSeason = async (values) => {
+        beginMutation();
+        try {
+            await api(`/api/seasons/${seasonId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(values),
+            });
+            setError(null);
+        } finally {
+            // In finally so a refused edit resyncs too, not only a saved one.
+            endMutation();
+            refresh().catch((err) => setError(err.message));
+        }
+    };
+
     if (loading) return html`<div class="loading">Loading…</div>`;
     // Only a failure with nothing to show yet (the initial load) gets the view to
     // itself. Once there is data, an error is a banner *above* it, the way the
@@ -252,6 +274,18 @@ export function SeasonView({ seasonId, routeEpisode }) {
             ${error && html`<div class="error">${error}</div>`}
             <div class="season-view-head">
                 <h2 class="season-view-title">${seasonLabel(data.season)}</h2>
+                ${
+                    data.me && !editingSeason
+                        ? html`<button
+                              class="season-edit-btn"
+                              aria-label=${`Edit ${seasonLabel(data.season)}`}
+                              title="Edit subtitle or episode count"
+                              onClick=${() => setEditingSeason(true)}
+                          >
+                              <${Icon} name="pencil" />
+                          </button>`
+                        : null
+                }
                 <a
                     class="wiki-link"
                     href=${data.season.wikipedia_url}
@@ -260,6 +294,20 @@ export function SeasonView({ seasonId, routeEpisode }) {
                     >Wikipedia ↗</a
                 >
             </div>
+            ${
+                editingSeason &&
+                html`<${SeasonForm}
+                    label=${`Edit ${seasonLabel(data.season)}`}
+                    initial=${data.season}
+                    submitLabel="Save"
+                    busyLabel="Saving…"
+                    onSubmit=${async (values) => {
+                        await editSeason(values);
+                        setEditingSeason(false);
+                    }}
+                    onCancel=${() => setEditingSeason(false)}
+                />`
+            }
             ${
                 !data.me &&
                 html`<div class="notice">

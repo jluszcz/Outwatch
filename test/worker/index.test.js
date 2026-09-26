@@ -41,11 +41,13 @@ beforeEach(async () => {
     // Access tokens are verified against the team's published keys, so the test
     // signing key has to be served the way Cloudflare serves the real one.
     await stubJwksEndpoint();
-    // Children before parents: watch_sessions, reveals, and posts all carry
+    // Children before parents: the timer, reveal, status, and post tables all carry
     // foreign keys into users and seasons, and leftover rows from any of the
     // discussion-adjacent tests below would otherwise make the DELETE FROM
     // users / seasons further down fail.
     await env.DB.exec('DELETE FROM watch_sessions');
+    await env.DB.exec('DELETE FROM watch_offsets');
+    await env.DB.exec('DELETE FROM episode_statuses');
     await env.DB.exec('DELETE FROM reveals');
     await env.DB.exec('DELETE FROM posts');
     await env.DB.exec('DELETE FROM watched');
@@ -593,5 +595,201 @@ describe('DELETE /api/watched/:season_id', () => {
     it('returns 400 for a non-numeric season_id', async () => {
         const r = await req('DELETE', '/api/watched/abc', { email: 'alice@example.com' });
         expect(r.status).toBe(400);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Seasons
+// ---------------------------------------------------------------------------
+
+describe('POST /api/seasons', () => {
+    it('adds the next season with a derived Wikipedia link', async () => {
+        const r = await req('POST', '/api/seasons', {
+            body: { id: 42, subtitle: '  Fans vs. Favorites  ', episode_count: 13 },
+            email: 'alice@example.com',
+        });
+        expect(r.status).toBe(201);
+        expect(await r.json()).toEqual({
+            id: 42,
+            subtitle: 'Fans vs. Favorites',
+            wikipedia_url: 'https://en.wikipedia.org/wiki/Survivor_42',
+            episode_count: 13,
+        });
+        const { seasons } = await (await req('GET', '/api/board')).json();
+        expect(seasons.map((s) => s.id)).toEqual([1, 41, 42]);
+    });
+
+    it('defaults the subtitle to empty', async () => {
+        const r = await req('POST', '/api/seasons', {
+            body: { id: 42, episode_count: 13 },
+            email: 'bob@example.com',
+        });
+        expect(r.status).toBe(201);
+        expect((await r.json()).subtitle).toBe('');
+    });
+
+    it('refuses a number that is not the next one with 409', async () => {
+        // A second click racing the first sends the same number; by the time it
+        // lands, 42 exists and the next is 43, so it must not create 43 instead.
+        await req('POST', '/api/seasons', {
+            body: { id: 42, episode_count: 13 },
+            email: 'alice@example.com',
+        });
+        const again = await req('POST', '/api/seasons', {
+            body: { id: 42, episode_count: 13 },
+            email: 'bob@example.com',
+        });
+        expect(again.status).toBe(409);
+        const skip = await req('POST', '/api/seasons', {
+            body: { id: 50, episode_count: 13 },
+            email: 'bob@example.com',
+        });
+        expect(skip.status).toBe(409);
+        const { count } = await env.DB.prepare('SELECT COUNT(*) AS count FROM seasons').first();
+        expect(count).toBe(3);
+    });
+
+    it('rejects an out-of-range episode count with 400', async () => {
+        for (const episode_count of [0, 31, 1.5, '13']) {
+            const r = await req('POST', '/api/seasons', {
+                body: { id: 42, episode_count },
+                email: 'alice@example.com',
+            });
+            expect(r.status).toBe(400);
+        }
+    });
+
+    it('rejects an overlong subtitle with 400', async () => {
+        const r = await req('POST', '/api/seasons', {
+            body: { id: 42, subtitle: 'x'.repeat(101), episode_count: 13 },
+            email: 'alice@example.com',
+        });
+        expect(r.status).toBe(400);
+    });
+
+    it('returns 403 for a caller off the roster', async () => {
+        const r = await req('POST', '/api/seasons', {
+            body: { id: 42, episode_count: 13 },
+            email: 'stranger@example.com',
+        });
+        expect(r.status).toBe(403);
+        const row = await env.DB.prepare('SELECT 1 FROM seasons WHERE id = 42').first();
+        expect(row).toBeNull();
+    });
+});
+
+describe('PATCH /api/seasons/:season_id', () => {
+    it('updates the subtitle and episode count', async () => {
+        const r = await req('PATCH', '/api/seasons/41', {
+            body: { subtitle: ' A New Era ', episode_count: 14 },
+            email: 'carol@example.com',
+        });
+        expect(r.status).toBe(200);
+        expect(await r.json()).toEqual({
+            id: 41,
+            subtitle: 'A New Era',
+            wikipedia_url: 'https://en.wikipedia.org/wiki/Survivor_41',
+            episode_count: 14,
+        });
+    });
+
+    it('leaves an omitted field alone', async () => {
+        const r = await req('PATCH', '/api/seasons/1', {
+            body: { episode_count: 14 },
+            email: 'alice@example.com',
+        });
+        expect(r.status).toBe(200);
+        expect(await r.json()).toMatchObject({ subtitle: 'Borneo', episode_count: 14 });
+    });
+
+    it('allows lowering the count down to the last episode with activity', async () => {
+        await env.DB.prepare(
+            `INSERT INTO posts (season_id, episode, user_id, body, created_at)
+             VALUES (41, 10, 'user-alice', 'hi', '2026-01-01T00:00:00Z')`,
+        ).run();
+        const r = await req('PATCH', '/api/seasons/41', {
+            body: { episode_count: 10 },
+            email: 'alice@example.com',
+        });
+        expect(r.status).toBe(200);
+    });
+
+    it.each([
+        [
+            'a note',
+            `INSERT INTO posts (season_id, episode, user_id, body, created_at)
+             VALUES (41, 13, 'user-alice', 'hi', '2026-01-01T00:00:00Z')`,
+        ],
+        [
+            'a reveal',
+            `INSERT INTO reveals (user_id, season_id, episode, created_at)
+             VALUES ('user-alice', 41, 13, '2026-01-01T00:00:00Z')`,
+        ],
+        [
+            'a timer',
+            `INSERT INTO watch_sessions
+                 (user_id, season_id, episode, elapsed_secs, running_since, last_activity_at)
+             VALUES ('user-alice', 41, 13, 0, NULL, '2026-01-01T00:00:00Z')`,
+        ],
+        [
+            'a timer correction',
+            `INSERT INTO watch_offsets (user_id, season_id, episode, adjust_secs, updated_at)
+             VALUES ('user-alice', 41, 13, 60, '2026-01-01T00:00:00Z')`,
+        ],
+        [
+            'a skip',
+            `INSERT INTO episode_statuses (user_id, season_id, episode, status, reason, created_at)
+             VALUES ('user-alice', 41, 13, 'skipping', 'reunion', '2026-01-01T00:00:00Z')`,
+        ],
+    ])('refuses to drop an episode that has %s with 409', async (_, sql) => {
+        await env.DB.prepare(sql).run();
+        const r = await req('PATCH', '/api/seasons/41', {
+            body: { episode_count: 12 },
+            email: 'alice@example.com',
+        });
+        expect(r.status).toBe(409);
+        const row = await env.DB.prepare('SELECT episode_count FROM seasons WHERE id = 41').first();
+        expect(row.episode_count).toBe(13);
+    });
+
+    it('ignores activity on other seasons when lowering the count', async () => {
+        await env.DB.prepare(
+            `INSERT INTO posts (season_id, episode, user_id, body, created_at)
+             VALUES (1, 13, 'user-alice', 'hi', '2026-01-01T00:00:00Z')`,
+        ).run();
+        const r = await req('PATCH', '/api/seasons/41', {
+            body: { episode_count: 12 },
+            email: 'alice@example.com',
+        });
+        expect(r.status).toBe(200);
+    });
+
+    it('rejects an empty body with 400', async () => {
+        const r = await req('PATCH', '/api/seasons/41', { body: {}, email: 'alice@example.com' });
+        expect(r.status).toBe(400);
+    });
+
+    it('returns 404 for an unknown season', async () => {
+        const r = await req('PATCH', '/api/seasons/99', {
+            body: { episode_count: 13 },
+            email: 'alice@example.com',
+        });
+        expect(r.status).toBe(404);
+    });
+
+    it('returns 400 for a non-numeric season_id', async () => {
+        const r = await req('PATCH', '/api/seasons/abc', {
+            body: { episode_count: 13 },
+            email: 'alice@example.com',
+        });
+        expect(r.status).toBe(400);
+    });
+
+    it('returns 403 for a caller off the roster', async () => {
+        const r = await req('PATCH', '/api/seasons/41', {
+            body: { episode_count: 20 },
+            email: 'stranger@example.com',
+        });
+        expect(r.status).toBe(403);
     });
 });

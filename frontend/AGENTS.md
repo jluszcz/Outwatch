@@ -44,6 +44,15 @@ of the root `AGENTS.md` so it loads only when working on these files.
   installed to a home screen there is no reload button to point at and only a
   top-level navigation re-runs the Access handshake.
 - Only the current user's column checkboxes are enabled; others are read-only.
+- Adding a season ("Add Season N" below the board, roster only) and editing one
+  (the pencil beside a season page's title) share `SeasonForm`
+  (`season-form.js`). Neither is optimistic: the server decides whether N is
+  still the next number, and whether a lowered episode count would strand
+  activity, so both await the request and refetch. A failure shows inline in
+  the form rather than on the page banner — the form stays open with what was
+  typed, next to the field that needs changing. N is computed from the loaded
+  seasons, so after a 409 the refetch moves the form on to the number that is
+  actually next.
 - Each `NowWatching` chip leads with `.nw-jump`, a button that scrolls that
   person's currently-watching season into view down in the board and lights the
   row for `FLASH_MS`. `Board` owns `flashId` and clears it on a timer;

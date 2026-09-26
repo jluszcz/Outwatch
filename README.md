@@ -11,6 +11,7 @@ Built on Cloudflare Workers with a D1 SQLite database, behind Cloudflare Access.
 ## Features
 
 - Every U.S. season of _Survivor_ seeded with official subtitles + Wikipedia links
+- Anyone on the board can add the next season as it airs, and correct a season's subtitle or episode count, without a deploy
 - One checkbox column per person/couple; you can only change your own (Access-derived identity)
 - Couples share a column — either partner's login can toggle it
 - Discussion notes are bylined to the individual who wrote them, so a shared column speaks with two voices
@@ -313,6 +314,8 @@ Broadly, the routes cover:
 
 - **The board** — who is on it, which seasons each person has watched, and what
   each person is currently watching.
+- **Seasons** — adding the next one as it airs, and correcting a season's
+  subtitle or episode count once Wikipedia settles it.
 - **The discussion boards** — the notes on a season's episodes, plus replies,
   edits, deletes, and emoji reactions. All of it sits behind the spoiler rule:
   someone else's note is readable only once you have watched the season or
@@ -333,8 +336,8 @@ towards.
 ## Database Schema
 
 Nine tables in D1 (SQLite): `users` and `user_emails` (the roster — board
-columns, and the login emails that map onto them), `seasons` (reference data,
-seeded by migration `0002`, with later seasons added as they air), `watched`,
+columns, and the login emails that map onto them), `seasons` (seeded by
+migration through Season 51, with later seasons added in the app as they air), `watched`,
 `posts`, `reactions`, `reveals`, `watch_sessions`, and `watch_offsets`.
 
 One distinction runs through all of them: **a `users` row is a board column, not
