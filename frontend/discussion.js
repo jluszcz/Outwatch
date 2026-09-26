@@ -246,9 +246,10 @@ export function SeasonView({ seasonId, routeEpisode }) {
             });
             setError(null);
         } finally {
+            // In finally so a refused edit resyncs too, not only a saved one.
             endMutation();
+            refresh().catch((err) => setError(err.message));
         }
-        refresh().catch((err) => setError(err.message));
     };
 
     if (loading) return html`<div class="loading">Loading…</div>`;
