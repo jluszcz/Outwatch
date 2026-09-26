@@ -153,6 +153,35 @@ function App() {
         [meId, beginMutation, endMutation],
     );
 
+    // Not optimistic: the server decides whether this number is still the next
+    // one, and a 409 means someone else got there first. Either way the board
+    // refetches, so a refusal leaves the form offering the right number to add
+    // next. Throws so SeasonForm can show the error beside what was typed.
+    const addSeason = useCallback(
+        async (season) => {
+            beginMutation();
+            try {
+                await api('/api/seasons', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(season),
+                });
+                setError(null);
+            } catch (err) {
+                if (err.status === 409) {
+                    throw new Error(`Season ${season.id} was just added by someone else.`, {
+                        cause: err,
+                    });
+                }
+                throw err;
+            } finally {
+                endMutation();
+                refresh().catch((err) => setError(err.message));
+            }
+        },
+        [beginMutation, endMutation, refresh],
+    );
+
     return html`
         <div class="container">
             <${Header} theme=${theme} onToggleTheme=${toggleTheme} showFeed=${Boolean(meId)} />
@@ -201,6 +230,7 @@ function App() {
                             meId=${meId}
                             onToggle=${toggle}
                             onSetCurrentlyWatching=${setCurrentlyWatching}
+                            onAddSeason=${addSeason}
                         />
                     `
                 }

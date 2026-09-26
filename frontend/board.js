@@ -12,6 +12,7 @@ import {
 } from './utils.js';
 import { Icon } from './icons.js';
 import { FeedBell } from './feed.js';
+import { SeasonForm } from './season-form.js';
 
 const html = htm.bind(h);
 
@@ -180,7 +181,39 @@ function NowWatching({ users, seasons, meId, onSetCurrentlyWatching, onJump }) {
     `;
 }
 
-export function Board({ users, seasons, meId, onToggle, onSetCurrentlyWatching }) {
+// Below the table rather than in the sort row: adding a season happens a
+// couple of times a year, and the board is for checking boxes the rest of it.
+// Only for someone on the roster, since the route 403s for anyone else.
+function AddSeason({ seasons, onAdd }) {
+    const [open, setOpen] = useState(false);
+    const next = seasons.reduce((max, s) => Math.max(max, s.id), 0) + 1;
+
+    if (!open) {
+        return html`
+            <div class="add-season">
+                <button class="timer-btn subtle" onClick=${() => setOpen(true)}>
+                    + Add Season ${next}
+                </button>
+            </div>
+        `;
+    }
+    return html`
+        <div class="add-season">
+            <${SeasonForm}
+                label=${`Add Season ${next}`}
+                submitLabel=${`Add Season ${next}`}
+                busyLabel="Adding…"
+                onSubmit=${async (values) => {
+                    await onAdd({ id: next, ...values });
+                    setOpen(false);
+                }}
+                onCancel=${() => setOpen(false)}
+            />
+        </div>
+    `;
+}
+
+export function Board({ users, seasons, meId, onToggle, onSetCurrentlyWatching, onAddSeason }) {
     const [sortMode, setSortMode] = useState('season');
     const [flashId, setFlashId] = useState(null);
     const userCount = users.length;
@@ -284,6 +317,7 @@ export function Board({ users, seasons, meId, onToggle, onSetCurrentlyWatching }
                     </tbody>
                 </table>
             </div>
+            ${meId ? html`<${AddSeason} seasons=${seasons} onAdd=${onAddSeason} />` : null}
         </div>
     `;
 }
