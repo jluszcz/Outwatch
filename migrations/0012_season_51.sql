@@ -2,4 +2,4 @@
 -- The episode count is a placeholder until the season's episode table is
 -- settled on Wikipedia; revise it in a later migration once it is known.
 INSERT INTO seasons (id, subtitle, wikipedia_url, episode_count) VALUES
-    (51, '', 'https://en.wikipedia.org/wiki/Survivor_51', 15);
+    (51, '', 'https://en.wikipedia.org/wiki/Survivor_51', 13);
