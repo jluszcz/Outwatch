@@ -42,7 +42,7 @@
         "lint-staged": "^17.6.0",
         "prettier": "^3.9.9",
         "unicode-emoji-json": "^0.9.0",
-        "vitest": "^5.0.2",
+        "vitest": "^4.1.11",
         "wrangler": "^4.142.0"
     },
     "dependencies": {
