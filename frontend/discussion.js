@@ -40,9 +40,10 @@ export function SeasonView({ seasonId, routeEpisode }) {
     // so an initial value would never re-run.
     //
     // It must NOT reveal. Expanding a board and revealing it are separate
-    // actions here (onToggle vs onReveal) and have to stay that way — a reveal
-    // is permanent and one-way, and spending someone's reveal on a tap they
-    // made in a header panel is not something they can undo. Landing on a
+    // actions here (onToggle vs onReveal) and have to stay that way — Hide
+    // discussion can re-lock the board, but not unsee what it showed, so
+    // spending someone's reveal on a tap they made in a header panel is not
+    // something they can undo. Landing on a
     // locked episode shows the locked board and its Reveal button, which is the
     // right destination.
     useEffect(() => {
@@ -138,6 +139,11 @@ export function SeasonView({ seasonId, routeEpisode }) {
     const reveal = (episode) =>
         mutate(() =>
             api(`/api/seasons/${seasonId}/episodes/${episode}/reveal`, { method: 'POST' }),
+        );
+
+    const hide = (episode) =>
+        mutate(() =>
+            api(`/api/seasons/${seasonId}/episodes/${episode}/reveal`, { method: 'DELETE' }),
         );
 
     // `onFailure` is how EpisodeBoard learns a reply's parent is gone; see
@@ -326,6 +332,7 @@ export function SeasonView({ seasonId, routeEpisode }) {
                             onToggle=${() =>
                                 setOpenEpisode((cur) => (cur === ep.episode ? null : ep.episode))}
                             onReveal=${reveal}
+                            onHide=${hide}
                             onPost=${addPost}
                             onDelete=${removePost}
                             onEdit=${editPost}
@@ -350,6 +357,7 @@ function EpisodeBoard({
     open,
     onToggle,
     onReveal,
+    onHide,
     onPost,
     onDelete,
     onEdit,
@@ -462,14 +470,14 @@ function EpisodeBoard({
                             // them, and anything underneath that list moves
                             // every time it does.
                             //
-                            // One row: reveal, then the skip control, then the
-                            // timer pushed to the right. Rendered only when it
-                            // would hold something, so a readable episode you
-                            // can't post to doesn't leave an empty band. The
-                            // row holds its height on its own
-                            // (.episode-actions), so revealing removes the
-                            // button without dragging the timer upward.
-                            (!ep.readable || meId) &&
+                            // One row: show or hide, then the skip control,
+                            // then the timer pushed to the right. Rendered
+                            // only when it would hold something, so a readable
+                            // episode you can't post to doesn't leave an empty
+                            // band. The row holds its height on its own
+                            // (.episode-actions), so a board with neither
+                            // button doesn't drag the timer upward.
+                            (!ep.readable || ep.hideable || meId) &&
                             html`
                                 <div class="episode-actions">
                                     ${
@@ -479,6 +487,18 @@ function EpisodeBoard({
                                             onClick=${() => onReveal(ep.episode)}
                                         >
                                             Show discussion
+                                        </button>`
+                                    }
+                                    ${
+                                        // In the spot Show discussion just
+                                        // vacated, so a mis-tap is undone by
+                                        // tapping the same place again.
+                                        ep.hideable &&
+                                        html`<button
+                                            class="reveal-btn"
+                                            onClick=${() => onHide(ep.episode)}
+                                        >
+                                            Hide discussion
                                         </button>`
                                     }
                                     ${
