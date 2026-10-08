@@ -1318,9 +1318,9 @@ tr.flash td {
 }
 
 /* Sized and weighted as .timer-btn's peer, not .reveal-btn's: revealing is the
-   row's one consequential, irreversible action and keeps the filled treatment
-   to itself. font-family: inherit because a <button> does not take the page's
-   font on its own. */
+   row's one consequential action — hiding re-locks the board but cannot unsee
+   it — and keeps the filled treatment to itself. font-family: inherit because a
+   <button> does not take the page's font on its own. */
 .skip-btn {
     display: inline-flex;
     align-items: center;

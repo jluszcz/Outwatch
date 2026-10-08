@@ -133,8 +133,11 @@ of the root `AGENTS.md` so it loads only when working on these files.
   `(userId, meId, users)` triple.
 - `SeasonView` renders one `EpisodeBoard` per episode. A locked board (not
   `readable`) shows only the note count, the authors, and the caller's own
-  notes; opening it (`POST .../reveal`) is permanent. Marking a whole season
-  watched has the same effect on every one of its episodes.
+  notes; opening it is `POST .../reveal`. Once open, the same spot offers Hide
+  discussion (`DELETE .../reveal`) whenever the episode is `hideable`, so a
+  mis-tap is undone by tapping the same place again. Marking a whole season
+  watched opens every one of its episodes and offers no Hide, since there is
+  no reveal to take back.
 - The boards are an accordion: `SeasonView` owns a single `openEpisode` (an
   episode number or `null`) and `EpisodeBoard` is controlled via `open` /
   `onToggle`, so expanding one collapses the rest rather than burying it in a
@@ -214,7 +217,8 @@ of the root `AGENTS.md` so it loads only when working on these files.
 - The reveal button and the watch timer share one row (`.episode-actions`):
   reveal left, timer pushed right by `margin-left: auto`. The row pins its own
   height to `--control-height` rather than taking it from its tallest child,
-  because that child is the reveal button and it vanishes on reveal — a
+  because that child is the reveal button and it can vanish — on a watched
+  season there is neither Show nor Hide discussion — a
   content-sized row would shrink by a few pixels and pull the timer up under
   the cursor mid-click. The row is `flex-wrap: wrap-reverse`, not `wrap`: only
   genuinely narrow widths (below roughly `430px`) fail to fit both, and the
@@ -727,9 +731,9 @@ of the root `AGENTS.md` so it loads only when working on these files.
       following a second feed link within the same season does not remount.
     - **Arriving from a feed line expands the board and must never reveal it.**
       Expanding and revealing are separate handlers (`onToggle` vs `onReveal`)
-      and have to stay that way — a reveal is permanent and one-way, and
-      spending someone's reveal on a tap they made in a header panel is not
-      something they can undo. Landing on a locked episode shows the locked
+      and have to stay that way — Hide discussion re-locks the board but
+      cannot unsee what it showed, so spending someone's reveal on a tap they
+      made in a header panel is not something they can undo. Landing on a locked episode shows the locked
       board, its authors, and its Reveal button, which is the right
       destination. There is no DOM suite to assert this, so a reviewer should
       check that `reveal` in `discussion.js` still has exactly one call site.

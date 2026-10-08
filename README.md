@@ -30,8 +30,9 @@ watching at different paces don't spoil each other.
 - **Write-only until revealed.** You can always post your own notes and see
   them, but everyone else's notes on an episode stay hidden until you
   deliberately open that episode's board for reading.
-- **Revealing is per-episode and permanent.** There's no re-locking — once
-  you've opened a board, it stays open.
+- **Revealing is per-episode, and can be taken back.** Show discussion turns
+  into Hide discussion once a board is open, so an accidental tap is undone by
+  tapping the same spot again.
 - **Watching a season opens all of its episodes.** Marking a season fully
   watched has the same effect as revealing every episode in it, so you don't
   have to open each one by hand.

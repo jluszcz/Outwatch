@@ -413,6 +413,61 @@ describe('POST /api/seasons/:season_id/episodes/:episode/reveal', () => {
     });
 });
 
+const hide = (email, episode) =>
+    req('DELETE', `/api/seasons/45/episodes/${episode}/reveal`, { email });
+
+describe('DELETE /api/seasons/:season_id/episodes/:episode/reveal', () => {
+    it('re-locks a revealed episode', async () => {
+        await post('bob@example.com', 7, 'no way she flips');
+        await reveal('alice@example.com', 7);
+
+        let ep7 = (await (await discussion('alice@example.com')).json()).episodes[6];
+        expect(ep7.readable).toBe(true);
+        expect(ep7.hideable).toBe(true);
+
+        expect((await hide('alice@example.com', 7)).status).toBe(200);
+
+        ep7 = (await (await discussion('alice@example.com')).json()).episodes[6];
+        expect(ep7.readable).toBe(false);
+        expect(ep7.hideable).toBe(false);
+        expect(ep7.posts).toEqual([]);
+    });
+
+    it('is idempotent and touches only that episode', async () => {
+        await reveal('alice@example.com', 7);
+        await reveal('alice@example.com', 8);
+        expect((await hide('alice@example.com', 7)).status).toBe(200);
+        expect((await hide('alice@example.com', 7)).status).toBe(200);
+
+        const { episodes } = await (await discussion('alice@example.com')).json();
+        expect(episodes.find((e) => e.episode === 8).readable).toBe(true);
+    });
+
+    it("leaves other columns' reveals alone", async () => {
+        await reveal('alice@example.com', 7);
+        await reveal('bob@example.com', 7);
+        await hide('alice@example.com', 7);
+
+        const { episodes } = await (await discussion('bob@example.com')).json();
+        expect(episodes.find((e) => e.episode === 7).readable).toBe(true);
+    });
+
+    it('is not offered on a watched season, where it could not re-lock anything', async () => {
+        await reveal('alice@example.com', 7);
+        await req('POST', '/api/watched', { body: { season_id: 45 }, email: 'alice@example.com' });
+
+        const { episodes } = await (await discussion('alice@example.com')).json();
+        const ep7 = episodes.find((e) => e.episode === 7);
+        expect(ep7.readable).toBe(true);
+        expect(ep7.hideable).toBe(false);
+    });
+
+    it('returns 404 for an episode past episode_count and 403 for a stranger', async () => {
+        expect((await hide('alice@example.com', 14)).status).toBe(404);
+        expect((await hide('stranger@example.com', 7)).status).toBe(403);
+    });
+});
+
 describe('DELETE /api/posts/:post_id', () => {
     it('removes your own note', async () => {
         const { post: mine } = await (await post('alice@example.com', 7, 'called it')).json();

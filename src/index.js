@@ -823,6 +823,10 @@ app.get('/api/seasons/:season_id/discussion', async (c) => {
         episodes.push({
             episode,
             readable,
+            // Whether Hide discussion would re-lock this board. False on a watched
+            // season even with a reveals row, since deleting the row would change
+            // nothing the caller can see.
+            hideable: !watchedSeason && revealed.has(episode),
             count: all.length,
             authors,
             statuses: statusesFor(episode),
@@ -861,9 +865,8 @@ app.get('/api/seasons/:season_id/discussion', async (c) => {
     });
 });
 
-// Opening an episode for reading is one-way and idempotent — there is no
-// re-lock, because you cannot unsee it. Reveals are stored independently of
-// `watched`, so un-marking a season (usually a mis-click correction) does not
+// Opening an episode for reading is idempotent. Reveals are stored independently
+// of `watched`, so un-marking a season (usually a mis-click correction) does not
 // take back an episode you have already read.
 app.post('/api/seasons/:season_id/episodes/:episode/reveal', async (c) => {
     const [me, resolved] = await callerAndEpisode(c);
@@ -876,6 +879,25 @@ app.post('/api/seasons/:season_id/episodes/:episode/reveal', async (c) => {
          VALUES (?, ?, ?, ?)`,
     )
         .bind(me.id, season.id, episode, new Date().toISOString())
+        .run();
+
+    return c.json({ success: true, season_id: season.id, episode });
+});
+
+// The undo for a reveal, so a mis-tapped Show discussion can be taken back
+// before anything on the board has been read. Idempotent: hiding a board that
+// was never revealed is still success. It cannot re-lock a watched season's
+// episodes, which are readable without a reveals row at all.
+app.delete('/api/seasons/:season_id/episodes/:episode/reveal', async (c) => {
+    const [me, resolved] = await callerAndEpisode(c);
+    if (!me) return c.json({ error: 'Your account is not on the watch list' }, 403);
+    if (resolved.error) return c.json({ error: resolved.error }, resolved.status);
+    const { season, episode } = resolved;
+
+    await c.env.DB.prepare(
+        'DELETE FROM reveals WHERE user_id = ? AND season_id = ? AND episode = ?',
+    )
+        .bind(me.id, season.id, episode)
         .run();
 
     return c.json({ success: true, season_id: season.id, episode });
