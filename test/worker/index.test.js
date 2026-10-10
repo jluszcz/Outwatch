@@ -42,10 +42,6 @@ beforeEach(async () => {
     // Access tokens are verified against the team's published keys, so the test
     // signing key has to be served the way Cloudflare serves the real one.
     await stubJwksEndpoint();
-    // Children before parents: the timer, reveal, status, and post tables all carry
-    // foreign keys into users and seasons, and leftover rows from any of the
-    // discussion-adjacent tests below would otherwise make the DELETE FROM
-    // users / seasons further down fail.
     await resetDatabase();
     // 'Alice' is one person; 'Bob & Carol' is a couple sharing a column with two emails.
     await env.DB.prepare(
