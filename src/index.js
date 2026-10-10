@@ -773,7 +773,7 @@ app.get('/api/seasons/:season_id/discussion', async (c) => {
     const revealed = new Set(reveals.map((r) => r.episode));
     const sessionByEpisode = new Map(sessions.map((s) => [s.episode, s]));
 
-    // A watch-timer correction (migration 0008) is applied here rather than stored
+    // A watch-timer correction is applied here rather than stored
     // into posts.offset_secs, which keeps meaning what the writer's timer actually
     // read. Applying on read is what lets a correction be revised, and what makes
     // it reach the notes that revealed the drift in the first place.

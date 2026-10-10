@@ -36,14 +36,28 @@ LOREM_WORDS = (
 UNIT_CHOICES = ("seconds", "minutes", "hours", "days")
 
 
+def has_survivor(path):
+    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    try:
+        return conn.execute("SELECT 1 FROM shows WHERE name = 'Survivor'").fetchone() is not None
+    except sqlite3.OperationalError:
+        return False
+    finally:
+        conn.close()
+
+
 def find_db_path():
     # metadata.sqlite is miniflare's own bookkeeping, not the D1 database
     # contents, which live in a file named after a hash of the database id.
-    matches = [p for p in REPO_ROOT.glob(D1_GLOB) if p.name != "metadata.sqlite"]
+    # Only TV Talk's schema has a Survivor show; a leftover local copy of the
+    # old outwatch database does not, and is skipped rather than ambiguous.
+    matches = [
+        p for p in REPO_ROOT.glob(D1_GLOB) if p.name != "metadata.sqlite" and has_survivor(p)
+    ]
     if not matches:
         sys.exit(
-            "No local D1 database found under .wrangler/state/. "
-            "Run `npm run dev` (or `wrangler dev`) at least once first."
+            "No local D1 database with a Survivor show found under .wrangler/state/. "
+            "Run `npx wrangler d1 migrations apply tvtalk --local` first."
         )
     if len(matches) > 1:
         joined = "\n".join(f"  {m}" for m in matches)
@@ -80,11 +94,15 @@ def resolve_author(pool, requested_name):
     sys.exit(f'No roster author named "{requested_name}". Available: {available}')
 
 
-def validate_season(conn, season_id):
-    row = conn.execute("SELECT episode_count FROM seasons WHERE id = ?", (season_id,)).fetchone()
+def validate_season(conn, season_number):
+    row = conn.execute(
+        "SELECT id, episode_count FROM seasons WHERE number = ? "
+        "AND show_id = (SELECT id FROM shows WHERE name = 'Survivor')",
+        (season_number,),
+    ).fetchone()
     if row is None:
-        sys.exit(f"No season {season_id} in the local database.")
-    return row[0]
+        sys.exit(f"No Survivor season {season_number} in the local database.")
+    return row
 
 
 def generate_lorem(length):
@@ -103,7 +121,7 @@ def compute_created_at(time, unit, future):
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--author", help="Roster name (e.g. Alice, Bob). Default: random.")
-    parser.add_argument("--season", type=int, default=1, help="Season id. Default: 1.")
+    parser.add_argument("--season", type=int, default=1, help="Survivor season number. Default: 1.")
     parser.add_argument("--episode", type=int, default=1, help="Episode number. Default: 1.")
     parser.add_argument("--length", type=int, default=20, help="Post length in words. Default: 20.")
     parser.add_argument("--time", type=int, default=0, help="Relative time magnitude. Default: 0 (now).")
@@ -129,7 +147,7 @@ def main():
             sys.exit("No roster found in the local database. Apply roster.sql first.")
         author = resolve_author(pool, args.author)
 
-        episode_count = validate_season(conn, args.season)
+        season_row_id, episode_count = validate_season(conn, args.season)
         if args.episode > episode_count:
             print(
                 f"Warning: episode {args.episode} exceeds season {args.season}'s "
@@ -146,7 +164,7 @@ def main():
                 (season_id, episode, user_id, body, created_at, offset_secs, author_email, reply_to_post_id, edited_at)
             VALUES (?, ?, ?, ?, ?, NULL, ?, NULL, NULL)
             """,
-            (args.season, args.episode, author["user_id"], body, created_at, author["email"]),
+            (season_row_id, args.episode, author["user_id"], body, created_at, author["email"]),
         )
         conn.commit()
 
