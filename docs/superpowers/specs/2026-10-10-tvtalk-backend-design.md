@@ -34,8 +34,9 @@ duplicated logic across the two Workers is acceptable.
 - Inserts the show `Survivor`, with `url` set to
   `https://en.wikipedia.org/wiki/Survivor_(American_TV_series)`.
 - Inserts seasons 1–51 with the subtitles and episode counts from Outwatch
-  migrations `0002`, `0005`, and `0012`. Each season's `url` is
-  `https://en.wikipedia.org/wiki/Survivor_<n>`, the same link Outwatch derives.
+  migrations `0002`, `0005`, and `0012`. Each season's `url` is Outwatch's
+  existing `wikipedia_url`, copied verbatim (`Survivor:_Borneo` for seasons
+  1–40, `Survivor_<n>` from 41 on).
   This gives local dev and both test suites the same reference data Outwatch
   has today.
 - Before applying it to production, confirm that TV Talk production has no
