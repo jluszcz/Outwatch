@@ -1,4 +1,10 @@
-"""Tests for import-to-tvtalk.py. Run: python3 -I -m unittest scripts/test_import_to_tvtalk.py"""
+"""Tests for import-to-tvtalk.py. Run: python3 -I scripts/test_import_to_tvtalk.py
+
+Not part of `npm test` or CI: the importer runs once, by hand."""
+
+import sys
+
+sys.dont_write_bytecode = True
 
 import glob
 import importlib.util
@@ -145,6 +151,46 @@ class ImportTest(unittest.TestCase):
     def test_rerun_is_rejected_by_post_ids(self):
         with self.assertRaises(sqlite3.IntegrityError):
             self.tv.executescript(importer.generate(self.outwatch(), self.offset))
+
+
+def roster_rows(conn):
+    return [
+        {"user_id": user_id, "email": email}
+        for user_id, email in conn.execute(
+            "SELECT users.id, user_emails.email FROM users "
+            "LEFT JOIN user_emails ON user_emails.user_id = users.id"
+        )
+    ]
+
+
+class RosterCheckTest(unittest.TestCase):
+    def setUp(self):
+        self.ow = outwatch_db()
+        self.addCleanup(self.ow.close)
+
+    def test_matching_roster_passes(self):
+        tv = tvtalk_db()
+        self.addCleanup(tv.close)
+        self.assertEqual(importer.roster_problems(self.ow, roster_rows(tv)), [])
+
+    def test_extra_tvtalk_logins_are_fine(self):
+        rows = [{"user_id": "user-1", "email": "Alice@Example.com"}] + [
+            {"user_id": "user-2", "email": e} for e in ("bob@example.com", "carol@example.com")
+        ] + [{"user_id": "user-3", "email": "dave@example.com"}]
+        self.assertEqual(importer.roster_problems(self.ow, rows), [])
+
+    def test_missing_or_moved_login_is_reported_without_the_address(self):
+        rows = [
+            {"user_id": "user-1", "email": "alice@example.com"},
+            {"user_id": "user-1", "email": "bob@example.com"},
+        ]
+        problems = importer.roster_problems(self.ow, rows)
+        self.assertEqual(problems, [
+            "Outwatch column user-2 is not a TV Talk column",
+            "a login on Outwatch column user-2 is missing from TV Talk or on another column",
+            "a login on Outwatch column user-2 is missing from TV Talk or on another column",
+        ])
+        self.assertNotIn("example.com", " ".join(problems))
 
 
 if __name__ == "__main__":

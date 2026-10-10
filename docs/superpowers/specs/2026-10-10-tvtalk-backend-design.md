@@ -110,7 +110,8 @@ accepted and documented.
   and `users.currently_watching_season_id` becomes `currently_watching`).
   `seed.sql` and `scripts/insert-test-post.py` get the same treatment.
 - `roster.sql` and `roster.example.sql`: the backfill `UPDATE`s for
-  pre-attribution notes move to the import (below). The README points roster
+  pre-attribution notes are dropped. Production Outwatch already ran them, so
+  attributed notes carry across as they are. The README points roster
   edits at TV Talk.
 
 ## One-time data import
@@ -148,14 +149,23 @@ group this small, the plan is to announce a short window rather than build a
 read-only mode.
 
 1. Apply `0003_survivor.sql` to TV Talk production.
-2. Export Outwatch production. Generate the import, review it, execute it
-   against `tvtalk --remote`.
-3. `npm run deploy` Outwatch with the new binding.
-4. Spot-check both apps.
+2. Export Outwatch production, and capture TV Talk production's roster and
+   `MAX(posts.id)`. Generate the import with the post-id offset padded well past
+   that maximum (TV Talk stays live during review), and review it. The script
+   refuses to generate anything if the rosters differ: every imported row
+   carries a foreign key into them, and a mismatch would fail the import
+   part-way.
+3. Record a D1 Time Travel bookmark for `tvtalk`, then execute the import
+   against `tvtalk --remote`. If it fails part-way, restore to the bookmark
+   rather than re-running.
+4. `npm run deploy` Outwatch with the new binding.
+5. Spot-check both apps.
 
 To roll back, redeploy the previous Outwatch commit. It is still bound to the
 untouched `outwatch` database, so nothing written to TV Talk in the meantime
-carries over.
+carries over. The imported rows stay in TV Talk. Re-importing later first
+needs a Time Travel restore to the bookmark, or a manual delete of the
+Survivor rows and of posts above the offset.
 
 ## Documentation
 

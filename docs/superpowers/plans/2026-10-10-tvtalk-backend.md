@@ -1425,32 +1425,37 @@ rm -f "$S/outwatch.sqlite" && sqlite3 "$S/outwatch.sqlite" < "$S/outwatch-export
 sqlite3 "$S/outwatch.sqlite" "SELECT COUNT(*) FROM posts; SELECT MAX(id) FROM seasons;"
 ```
 
-- [ ] **Step 2: Build a fresh local TV Talk database with TV Talk's own state**
+- [ ] **Step 2: Build a throwaway local TV Talk database**
+
+Kept in its own state directory, so real production notes never land in TV Talk's everyday local dev database.
 
 ```bash
 cd /Users/jacob/Documents/Programs/TvTalk
-npx wrangler d1 migrations apply tvtalk --local
-npx wrangler d1 execute tvtalk --local --file=roster.sql
-npx wrangler d1 execute tvtalk --local --json --command "SELECT COALESCE(MAX(id), 0) AS max_id FROM posts"
+D="--local --persist-to $S/dryrun-state"
+npx wrangler d1 migrations apply tvtalk $D
+npx wrangler d1 execute tvtalk $D --file=roster.sql
+npx wrangler d1 execute tvtalk $D --json --command "SELECT users.id AS user_id, user_emails.email AS email FROM users LEFT JOIN user_emails ON user_emails.user_id = users.id" > "$S/tvtalk-roster.json"
+npx wrangler d1 execute tvtalk $D --json --command "SELECT COALESCE(MAX(id), 0) AS max_id FROM posts"
 ```
 
 - [ ] **Step 3: Generate and apply the import locally**
 
 ```bash
 cd /Users/jacob/Documents/Programs/Outwatch
-python3 -I scripts/import-to-tvtalk.py --outwatch "$S/outwatch.sqlite" --post-id-offset <max_id> > "$S/import.sql"
-cd ../TvTalk && npx wrangler d1 execute tvtalk --local --file="$S/import.sql"
+python3 -I scripts/import-to-tvtalk.py --outwatch "$S/outwatch.sqlite" --tvtalk-roster "$S/tvtalk-roster.json" \
+    --post-id-offset <max_id + 10000> > "$S/import.sql"
+cd ../TvTalk && npx wrangler d1 execute tvtalk $D --file="$S/import.sql"
 ```
 
-Expected: no errors. Compare counts: `SELECT COUNT(*) FROM posts` grew by Outwatch's post count, and so on for `reactions`, `watched`, `reveals`.
+Expected: the script prints no roster problems, and the execute reports no errors. Compare counts: `SELECT COUNT(*) FROM posts` grew by Outwatch's post count, and so on for `reactions`, `watched`, `reveals`. This is also the only check that wrangler's SQL splitter handles real note bodies (newlines, `;`, `--` inside strings).
 
-- [ ] **Step 4: Run both apps on the same local database**
+- [ ] **Step 4: Run both apps on the same throwaway database**
 
 ```bash
 # terminal 1, in ../TvTalk
-npm run dev
-# terminal 2, in Outwatch: share TV Talk's local D1 state
-npx wrangler dev --persist-to ../TvTalk/.wrangler/state --port 8788   # alongside `node build.js --watch`
+npx wrangler dev --persist-to "$S/dryrun-state"          # alongside `node build.js --watch`
+# terminal 2, in Outwatch
+npx wrangler dev --persist-to "$S/dryrun-state" --port 8788   # alongside `node build.js --watch`
 ```
 
 Spot-check:
@@ -1469,10 +1474,17 @@ These commands write to production. Run each one only after the user confirms it
 
 - [ ] **Step 1:** Confirm that TV Talk production has no show named `Survivor`: `npx wrangler d1 execute tvtalk --remote --command "SELECT id FROM shows WHERE name = 'Survivor'"`. Expect no rows.
 - [ ] **Step 2:** Merge Task 1's TV Talk PR, then from `../TvTalk`: `npx wrangler d1 migrations apply tvtalk --remote`.
-- [ ] **Step 3:** Announce the window to the group. Re-export Outwatch production (Task 5, Step 1). Read `MAX(posts.id)` from `tvtalk --remote`. Regenerate `import.sql` and review it: skim the top and tail, check counts against the export, and grep for anything unexpected.
-- [ ] **Step 4:** `npx wrangler d1 execute tvtalk --remote --file="$S/import.sql"`.
+- [ ] **Step 3:** Announce the window to the group. Re-export Outwatch production (Task 5, Step 1). Capture TV Talk production's roster (`--remote` version of the roster query in Task 5, Step 2) and read its `MAX(posts.id)`. Regenerate `import.sql` with `--post-id-offset` set to `max_id + 10000`. The padding exists because TV Talk stays live during review, and a note posted there in the meantime would take the next id. The script refuses to generate anything if the rosters differ. Review the output: skim the top and tail, check counts against the export, and grep for anything unexpected.
+- [ ] **Step 4:** Record a restore point, then import:
+
+```bash
+npx wrangler d1 time-travel info tvtalk        # note the bookmark it prints
+npx wrangler d1 execute tvtalk --remote --file="$S/import.sql"
+```
+
+If the execute fails part-way, do not re-run it: the post inserts are deliberately not `OR IGNORE`, so a re-run collides with whatever landed. Restore with `npx wrangler d1 time-travel restore tvtalk --bookmark=<bookmark>`, which also discards any TV Talk writes made since the bookmark. Then fix the cause and repeat Steps 3–4.
 - [ ] **Step 5:** Merge the Outwatch PR, then `npm run deploy` from Outwatch.
 - [ ] **Step 6:** Spot-check both production apps as in Task 5, Step 4.
-- [ ] **Step 7:** Delete `$S/outwatch-export.sql`, `$S/outwatch.sqlite`, and `$S/import.sql`, which hold real emails.
+- [ ] **Step 7:** Delete `$S/outwatch-export.sql`, `$S/outwatch.sqlite`, `$S/tvtalk-roster.json`, `$S/import.sql`, and `$S/dryrun-state`, which hold real names and emails.
 
-Rollback: redeploy the previous Outwatch commit. It is bound to the untouched `outwatch` database.
+Rollback after Step 5: redeploy the previous Outwatch commit. It is bound to the untouched `outwatch` database. The imported Survivor rows stay in TV Talk, and so do any notes written through the new Outwatch before the rollback. A later re-import first needs either a Time Travel restore to the Step 4 bookmark (losing TV Talk's writes since then) or a manual delete of the Survivor rows and of posts above the offset.

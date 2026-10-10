@@ -5,22 +5,34 @@ SQL to run against `tvtalk`:
 
     npx wrangler d1 export outwatch --remote --output="$S/outwatch-export.sql"
     sqlite3 "$S/outwatch.sqlite" < "$S/outwatch-export.sql"
+    npx wrangler d1 execute tvtalk --remote --json --command "SELECT users.id AS user_id, \\
+        user_emails.email AS email FROM users LEFT JOIN user_emails \\
+        ON user_emails.user_id = users.id" > "$S/tvtalk-roster.json"
     npx wrangler d1 execute tvtalk --remote --json \\
         --command "SELECT COALESCE(MAX(id), 0) AS max_id FROM posts"
     python3 -I scripts/import-to-tvtalk.py --outwatch "$S/outwatch.sqlite" \\
-        --post-id-offset <max_id> > "$S/import.sql"
+        --tvtalk-roster "$S/tvtalk-roster.json" \\
+        --post-id-offset <max_id + 10000> > "$S/import.sql"
 
 The output carries real emails. Keep it out of the repo (write it to a scratch
 directory). Outwatch post ids are shifted by --post-id-offset so they cannot
 collide with TV Talk's own, and replies and reactions are shifted with them.
+Pad the offset well past TV Talk's MAX(posts.id): TV Talk stays live while the
+SQL is reviewed, and a note posted there in the meantime takes the next id.
 Seasons are looked up by number inside the SQL rather than by id, because
 seasons added in Outwatch after 51 do not exist in TV Talk until this runs.
+
+Every imported row points at a roster column, and notes and reactions at a
+login, so the script refuses to print anything unless every Outwatch column
+and login exists in TV Talk's roster on the same column. D1 enforces those
+foreign keys, and a mismatch would otherwise fail the import part-way.
 
 Stdlib only. It reads only the file it is given and never touches the network
 or wrangler.
 """
 
 import argparse
+import json
 import sqlite3
 import sys
 
@@ -37,6 +49,38 @@ def q(value):
 
 def season(number):
     return f"(SELECT id FROM seasons WHERE show_id = {SHOW} AND number = {int(number)})"
+
+
+def roster_problems(outwatch, tvtalk_rows):
+    """Why TV Talk's roster can't take Outwatch's rows, or [] if it can.
+
+    `tvtalk_rows` is TV Talk's users LEFT JOIN user_emails as dicts with
+    `user_id` and `email`. Problems name columns, never addresses, so the
+    output is safe to paste anywhere.
+    """
+    tv_columns = {row["user_id"] for row in tvtalk_rows}
+    tv_logins = {
+        (row["email"].lower(), row["user_id"]) for row in tvtalk_rows if row["email"] is not None
+    }
+    problems = []
+    for (user_id,) in outwatch.execute("SELECT id FROM users ORDER BY id"):
+        if user_id not in tv_columns:
+            problems.append(f"Outwatch column {user_id} is not a TV Talk column")
+    for email, user_id in outwatch.execute(
+        "SELECT email, user_id FROM user_emails ORDER BY user_id, email"
+    ):
+        if (email.lower(), user_id) not in tv_logins:
+            problems.append(
+                f"a login on Outwatch column {user_id} is missing from TV Talk or on another column"
+            )
+    return problems
+
+
+def load_wrangler_rows(path):
+    with open(path) as f:
+        data = json.load(f)
+    # `wrangler d1 execute --json` prints one result object per statement.
+    return data[0]["results"] if isinstance(data, list) else data["results"]
 
 
 def generate(outwatch, post_id_offset):
@@ -150,13 +194,21 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--outwatch", required=True, help="SQLite copy of the outwatch database.")
     parser.add_argument(
+        "--tvtalk-roster",
+        required=True,
+        help="`wrangler d1 execute tvtalk --json` output of users LEFT JOIN user_emails.",
+    )
+    parser.add_argument(
         "--post-id-offset",
         type=int,
         required=True,
-        help="TV Talk's current MAX(posts.id); Outwatch post ids are shifted by this.",
+        help="Padded past TV Talk's MAX(posts.id); Outwatch post ids are shifted by this.",
     )
     args = parser.parse_args()
     conn = sqlite3.connect(f"file:{args.outwatch}?mode=ro", uri=True)
+    problems = roster_problems(conn, load_wrangler_rows(args.tvtalk_roster))
+    if problems:
+        sys.exit("Rosters differ; fix TV Talk's roster first:\n  " + "\n  ".join(problems))
     sys.stdout.write(generate(conn, args.post_id_offset))
 
 
