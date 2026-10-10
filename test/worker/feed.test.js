@@ -3,6 +3,7 @@ import { env } from 'cloudflare:test';
 import worker from '../../src/index.js';
 import { accessEnv, signAccessToken, stubJwksEndpoint } from './access-token.js';
 import { groupNotes, FEED_GROUP_GAP_MS } from '../../src/feed.js';
+import { resetDatabase, insertSurvivorSeasons } from './survivor.js';
 
 // A row as the feed query returns it. author_key is what the SQL computes:
 // the lowercased email for an attributed note, 'user:<id>' for one written
@@ -172,11 +173,7 @@ async function addPost({
 describe('feed routes', () => {
     beforeEach(async () => {
         await stubJwksEndpoint();
-        await env.DB.exec('DELETE FROM reactions');
-        await env.DB.exec('DELETE FROM posts');
-        await env.DB.exec('DELETE FROM user_emails');
-        await env.DB.exec('DELETE FROM users');
-        await env.DB.exec('DELETE FROM seasons');
+        await resetDatabase();
         await env.DB.exec(
             "INSERT INTO users (id, name, sort_order) VALUES ('user-alice', 'Alice', 1)",
         );
@@ -189,11 +186,7 @@ describe('feed routes', () => {
                 "('bob@example.com', 'user-bob', 'Bob'), " +
                 "('carol@example.com', 'user-bob', 'Carol')",
         );
-        await env.DB.exec(
-            'INSERT INTO seasons (id, subtitle, wikipedia_url, episode_count) VALUES ' +
-                "(45, '', 'https://en.wikipedia.org/wiki/Survivor_45', 13), " +
-                "(46, '', 'https://en.wikipedia.org/wiki/Survivor_46', 13)",
-        );
+        await insertSurvivorSeasons([{ number: 45 }, { number: 46 }]);
     });
 
     describe('GET /api/feed', () => {

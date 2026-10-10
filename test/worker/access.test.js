@@ -10,6 +10,7 @@ import {
     signAccessToken,
     stubJwksEndpoint,
 } from './access-token.js';
+import { resetDatabase } from './survivor.js';
 
 function makeEnv(overrides = {}) {
     return {
@@ -42,10 +43,7 @@ async function me(options) {
 
 beforeEach(async () => {
     await stubJwksEndpoint();
-    await env.DB.exec('DELETE FROM watched');
-    await env.DB.exec('DELETE FROM user_emails');
-    await env.DB.exec('DELETE FROM users');
-    await env.DB.exec('DELETE FROM seasons');
+    await resetDatabase();
     await env.DB.exec("INSERT INTO users (id, name, sort_order) VALUES ('user-alice', 'Alice', 1)");
     await env.DB.exec("INSERT INTO users (id, name, sort_order) VALUES ('user-bob', 'Bob', 2)");
     await env.DB.exec(

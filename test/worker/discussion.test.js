@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { env } from 'cloudflare:test';
 import worker from '../../src/index.js';
 import { accessEnv, signAccessToken, stubJwksEndpoint } from './access-token.js';
+import { resetDatabase, insertSurvivorSeasons } from './survivor.js';
 
 const mockAssetsFetch = vi.fn().mockResolvedValue(new Response('index.html'));
 
@@ -30,16 +31,7 @@ async function req(method, path, { body, email, envOverrides } = {}) {
 beforeEach(async () => {
     // Serve the test signing key the way Cloudflare serves the team's real one.
     await stubJwksEndpoint();
-    await env.DB.exec('DELETE FROM episode_statuses');
-    await env.DB.exec('DELETE FROM reactions');
-    await env.DB.exec('DELETE FROM watch_offsets');
-    await env.DB.exec('DELETE FROM watch_sessions');
-    await env.DB.exec('DELETE FROM reveals');
-    await env.DB.exec('DELETE FROM posts');
-    await env.DB.exec('DELETE FROM watched');
-    await env.DB.exec('DELETE FROM user_emails');
-    await env.DB.exec('DELETE FROM users');
-    await env.DB.exec('DELETE FROM seasons');
+    await resetDatabase();
     await env.DB.exec("INSERT INTO users (id, name, sort_order) VALUES ('user-alice', 'Alice', 1)");
     await env.DB.exec(
         "INSERT INTO users (id, name, sort_order) VALUES ('user-bob', 'Bob & Carol', 2)",
@@ -50,11 +42,7 @@ beforeEach(async () => {
             "('bob@example.com', 'user-bob', 'Bob'), " +
             "('carol@example.com', 'user-bob', 'Carol')",
     );
-    await env.DB.exec(
-        'INSERT INTO seasons (id, subtitle, wikipedia_url, episode_count) VALUES ' +
-            "(45, '', 'https://en.wikipedia.org/wiki/Survivor_45', 13), " +
-            "(46, '', 'https://en.wikipedia.org/wiki/Survivor_46', 13)",
-    );
+    await insertSurvivorSeasons([{ number: 45 }, { number: 46 }]);
 });
 
 describe('POST /api/seasons/:season_id/episodes/:episode/posts', () => {
