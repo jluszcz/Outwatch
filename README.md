@@ -7,6 +7,9 @@ Cloudflare Access. Once everyone has checked a season, it grays out and sorts to
 the bottom.
 
 Built on Cloudflare Workers with a D1 SQLite database, behind Cloudflare Access.
+The database is [TV Talk](../TvTalk)'s: Outwatch is a Survivor-only frontend
+onto it, so a note posted in either app shows up in the other, and so does every
+watched mark, timer, and reaction.
 
 ## Features
 
@@ -149,23 +152,16 @@ reason to serve it.
 ```bash
 npm install
 
-# Create the D1 database (first time only)
-npx wrangler d1 create outwatch
-# Paste the database_id output into wrangler.toml
+# The database is TV Talk's (`tvtalk`), created, migrated, and given its
+# roster from ../TvTalk. Locally, apply the copied migrations/ here:
+npx wrangler d1 migrations apply tvtalk --local
 
-# Apply schema + season data locally
-npx wrangler d1 migrations apply outwatch --local
-
-# Apply schema + season data to production
-npx wrangler d1 migrations apply outwatch
-
-# Add the roster — the people and their login emails (not committed; see "The roster")
-cp roster.example.sql roster.sql   # then edit in the real names + emails
-npx wrangler d1 execute outwatch --local  --file=roster.sql
-npx wrangler d1 execute outwatch --remote --file=roster.sql
+# Add the roster locally (not committed; see "The roster")
+cp ../TvTalk/roster.sql roster.sql
+npx wrangler d1 execute tvtalk --local --file=roster.sql
 
 # Seed sample watched state for local dev (optional)
-npx wrangler d1 execute outwatch --local --file=seed.sql
+npx wrangler d1 execute tvtalk --local --file=seed.sql
 
 # Tell the Worker how to verify Access tokens (production only; see "Authentication")
 npx wrangler secret put ACCESS_TEAM_DOMAIN   # e.g. https://your-team.cloudflareaccess.com
@@ -184,6 +180,9 @@ is no Access token to verify locally, so `ACCESS_TEAM_DOMAIN` and `ACCESS_AUD`
 are not needed for local dev.
 
 ### The roster
+
+The roster is shared with TV Talk, which owns it: edit TV Talk's `roster.sql`
+and apply it from there. Production needs nothing from this repo.
 
 The roster — who the board's columns are and which login emails may act as each
 one — contains real names and email addresses, so it is **not committed**. It
@@ -211,12 +210,10 @@ enforces foreign keys unconditionally, so once that email has authored a note,
 `UPDATE`/upsert that reassigns the row leaves `posts.author_email` untouched.
 
 ```bash
-cp roster.example.sql roster.sql
-# edit roster.sql — real names + emails, keeping the generic user-N ids
+cp ../TvTalk/roster.sql roster.sql   # TV Talk's copy is the real one
 
-# apply to local and production (separate from `migrations apply`)
-npx wrangler d1 execute outwatch --local  --file=roster.sql
-npx wrangler d1 execute outwatch --remote --file=roster.sql
+# apply locally (production is applied from ../TvTalk)
+npx wrangler d1 execute tvtalk --local --file=roster.sql
 ```
 
 ### Test data
@@ -225,8 +222,9 @@ npx wrangler d1 execute outwatch --remote --file=roster.sql
 the local D1 database, for exercising the discussion UI (long notes, old or
 future timestamps, different authors) without posting through the app. It's
 stdlib-only Python, reads no network, and never touches production — it only
-opens the local SQLite file under `.wrangler/state/`, which `npm run dev`
-must have created at least once.
+opens the local SQLite file under `.wrangler/state/` that has the Survivor
+show, which `npx wrangler d1 migrations apply tvtalk --local` creates.
+`--season` is the Survivor season number.
 
 ```bash
 scripts/insert-test-post.py                                     # random author, season 1 episode 1, now
@@ -267,14 +265,13 @@ npm run build    # one-shot production bundle
 
 ### Deploy
 
-Apply any new migrations to production before deploying — `npm run deploy`
-does not do this for you. Deploying Worker code that reads or writes a column
-a migration hasn't added yet breaks outright; `author_email` (migration
-`0006`) is the current example, since the Worker both selects and inserts it
-on every discussion request.
+Schema changes are made and applied in TV Talk, never from this repo. Copy
+TV Talk's migrations here (`cp ../TvTalk/migrations/*.sql migrations/`) and make
+sure `npm test` passes before deploying either app: both Workers read the same
+tables, so a migration that breaks Outwatch's queries breaks it the moment TV
+Talk applies it.
 
 ```bash
-npx wrangler d1 migrations apply outwatch
 npm run deploy
 ```
 
@@ -336,10 +333,12 @@ towards.
 
 ## Database Schema
 
-Nine tables in D1 (SQLite): `users` and `user_emails` (the roster — board
-columns, and the login emails that map onto them), `seasons` (seeded by
-migration through Season 51, with later seasons added in the app as they air), `watched`,
-`posts`, `reactions`, `reveals`, `watch_sessions`, and `watch_offsets`.
+TV Talk's tables in D1 (SQLite), scoped to the show named `Survivor`: `users`
+and `user_emails` (the roster — board columns, and the login emails that map
+onto them), `shows` and `seasons` (Survivor's seeded through Season 51 by TV
+Talk's migration `0003`, with later seasons added in either app as they air),
+`watched`, `currently_watching`, `posts`, `reactions`, `reveals`,
+`watch_sessions`, `watch_offsets`, and `episode_statuses`.
 
 One distinction runs through all of them: **a `users` row is a board column, not
 a person.** A couple shares one column, one checkbox, and one watch timer, so
@@ -349,7 +348,8 @@ and an unread badge belong to a person rather than to a household.
 
 `users` and `user_emails` are populated from the gitignored `roster.sql` rather
 than by a migration — see [The roster](#the-roster). Every other table is created
-by `migrations/*.sql`, which carry their own commentary on why each column exists.
+by TV Talk's `migrations/*.sql` (copied here verbatim), which carry their own
+commentary on why each column exists.
 
 **The column-by-column schema lives in
 [`AGENTS.md`](AGENTS.md#database-schema)**, kept in one place for the same reason

@@ -5,8 +5,11 @@
 --
 -- Copy this file to roster.sql, replace the fake names/emails with the real ones
 -- (keep the generic user-N ids), then apply it to BOTH local and production D1:
---   npx wrangler d1 execute outwatch --local  --file=roster.sql
---   npx wrangler d1 execute outwatch --remote --file=roster.sql
+--   npx wrangler d1 execute tvtalk --local  --file=roster.sql
+--   npx wrangler d1 execute tvtalk --remote --file=roster.sql
+--
+-- The roster is shared with TV Talk (../TvTalk), which owns it. Maintain it
+-- there; this template mirrors TV Talk's.
 --
 -- Notes:
 --   * user ids are deliberately generic (user-1, user-2, …) so committed files
@@ -38,17 +41,3 @@ INSERT INTO user_emails (email, user_id, name) VALUES
     ('dave@example.com',  'user-3', 'Dave'),
     ('erin@example.com',  'user-3', 'Erin')
 ON CONFLICT (email) DO UPDATE SET user_id = excluded.user_id, name = excluded.name;
-
--- One-time attribution of notes written before individual authorship existed.
--- Nothing in the data records which half of a shared column wrote them, so each
--- column's old notes go to one partner; some will be wrong, and afterwards only
--- that partner can delete them. Solo columns need a line too — their bylines are
--- already right via the fallback, but without an author_email their notes have
--- no accent stripe. Guarded on IS NULL, so re-applying this file later matches
--- nothing: every note written from now on carries its author.
-UPDATE posts SET author_email = 'alice@example.com'
- WHERE user_id = 'user-1' AND author_email IS NULL;
-UPDATE posts SET author_email = 'bob@example.com'
- WHERE user_id = 'user-2' AND author_email IS NULL;
-UPDATE posts SET author_email = 'dave@example.com'
- WHERE user_id = 'user-3' AND author_email IS NULL;

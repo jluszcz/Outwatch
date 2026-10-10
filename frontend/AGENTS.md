@@ -542,7 +542,7 @@ of the root `AGENTS.md` so it loads only when working on these files.
       committed skip, so there's nothing left pending.
     - **No session → Correct.** Unchanged from before: Reset once the total is
       non-zero, then −1m / −15s / running total / +15s / +1m, all against
-      `PUT .../offset` (migration `0008`).
+      `PUT .../offset`.
 
     There is deliberately no Pause button: the chip itself is the pause/resume
     control, because the thing you want to stop is the number, and a separate

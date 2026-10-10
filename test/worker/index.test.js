@@ -3,6 +3,7 @@ import { env } from 'cloudflare:test';
 import { HTTPException } from 'hono/http-exception';
 import worker from '../../src/index.js';
 import { accessEnv, signAccessToken, stubJwksEndpoint } from './access-token.js';
+import { resetDatabase, insertSurvivorSeasons } from './survivor.js';
 
 const mockAssetsFetch = vi.fn().mockResolvedValue(new Response('index.html'));
 
@@ -41,19 +42,7 @@ beforeEach(async () => {
     // Access tokens are verified against the team's published keys, so the test
     // signing key has to be served the way Cloudflare serves the real one.
     await stubJwksEndpoint();
-    // Children before parents: the timer, reveal, status, and post tables all carry
-    // foreign keys into users and seasons, and leftover rows from any of the
-    // discussion-adjacent tests below would otherwise make the DELETE FROM
-    // users / seasons further down fail.
-    await env.DB.exec('DELETE FROM watch_sessions');
-    await env.DB.exec('DELETE FROM watch_offsets');
-    await env.DB.exec('DELETE FROM episode_statuses');
-    await env.DB.exec('DELETE FROM reveals');
-    await env.DB.exec('DELETE FROM posts');
-    await env.DB.exec('DELETE FROM watched');
-    await env.DB.exec('DELETE FROM user_emails');
-    await env.DB.exec('DELETE FROM users');
-    await env.DB.exec('DELETE FROM seasons');
+    await resetDatabase();
     // 'Alice' is one person; 'Bob & Carol' is a couple sharing a column with two emails.
     await env.DB.prepare(
         "INSERT INTO users (id, name, sort_order) VALUES ('user-alice', 'Alice', 1)",
@@ -67,12 +56,15 @@ beforeEach(async () => {
             "('bob@example.com', 'user-bob'), " +
             "('carol@example.com', 'user-bob')",
     );
-    await env.DB.prepare(
-        "INSERT INTO seasons (id, subtitle, wikipedia_url, episode_count) VALUES (1, 'Borneo', 'https://en.wikipedia.org/wiki/Survivor:_Borneo', 13)",
-    ).run();
-    await env.DB.prepare(
-        "INSERT INTO seasons (id, subtitle, wikipedia_url, episode_count) VALUES (41, '', 'https://en.wikipedia.org/wiki/Survivor_41', 13)",
-    ).run();
+    await insertSurvivorSeasons([
+        {
+            number: 1,
+            subtitle: 'Borneo',
+            url: 'https://en.wikipedia.org/wiki/Survivor:_Borneo',
+            episode_count: 13,
+        },
+        { number: 41, episode_count: 13 },
+    ]);
 });
 
 // ---------------------------------------------------------------------------
@@ -645,7 +637,9 @@ describe('POST /api/seasons', () => {
             email: 'bob@example.com',
         });
         expect(skip.status).toBe(409);
-        const { count } = await env.DB.prepare('SELECT COUNT(*) AS count FROM seasons').first();
+        const { count } = await env.DB.prepare(
+            "SELECT COUNT(*) AS count FROM seasons WHERE show_id = (SELECT id FROM shows WHERE name = 'Survivor')",
+        ).first();
         expect(count).toBe(3);
     });
 
@@ -673,7 +667,9 @@ describe('POST /api/seasons', () => {
             email: 'stranger@example.com',
         });
         expect(r.status).toBe(403);
-        const row = await env.DB.prepare('SELECT 1 FROM seasons WHERE id = 42').first();
+        const row = await env.DB.prepare(
+            "SELECT 1 FROM seasons WHERE number = 42 AND show_id = (SELECT id FROM shows WHERE name = 'Survivor')",
+        ).first();
         expect(row).toBeNull();
     });
 });
@@ -748,7 +744,9 @@ describe('PATCH /api/seasons/:season_id', () => {
             email: 'alice@example.com',
         });
         expect(r.status).toBe(409);
-        const row = await env.DB.prepare('SELECT episode_count FROM seasons WHERE id = 41').first();
+        const row = await env.DB.prepare(
+            "SELECT episode_count FROM seasons WHERE number = 41 AND show_id = (SELECT id FROM shows WHERE name = 'Survivor')",
+        ).first();
         expect(row.episode_count).toBe(13);
     });
 

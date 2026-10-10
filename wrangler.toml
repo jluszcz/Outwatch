@@ -33,8 +33,12 @@ head_sampling_rate = 1
 directory = "public"
 binding = "ASSETS"
 
+# TV Talk's database (../TvTalk). Outwatch is a Survivor-only frontend onto it,
+# and TV Talk owns the schema: migrations/ here is a byte-identical copy of
+# TV Talk's, kept so local dev and CI have the real schema. Never run
+# `wrangler d1 migrations apply --remote` from this repo; apply from TV Talk.
 [[d1_databases]]
 binding = "DB"
-database_name = "outwatch"
-database_id = "8a43f7b3-c34e-4a40-ae00-58204c016d9a"
+database_name = "tvtalk"
+database_id = "c58bdae1-7fa4-4332-806b-cffeb8e26080"
 migrations_dir = "migrations"

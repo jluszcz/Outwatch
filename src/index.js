@@ -163,6 +163,28 @@ app.use('/api/*', async (c, next) => {
     await next();
 });
 
+// Outwatch is the Survivor slice of TV Talk's database (../TvTalk), which owns
+// the schema. Everything Outwatch's API says about a season, in paths, bodies,
+// and responses, is the Survivor season number. TV Talk keys every table on a
+// surrogate seasons.id instead. resolveSeason is where a number becomes that
+// row id: carried as `row_id` and never serialized. The show is found by name
+// because its autoincrement id is not the same in every database.
+const SURVIVOR_SHOW_ID = "(SELECT id FROM shows WHERE name = 'Survivor')";
+const SURVIVOR_SEASON_IDS = `(SELECT id FROM seasons WHERE show_id = ${SURVIVOR_SHOW_ID})`;
+const SEASON_COLUMNS = 'id AS row_id, number AS id, subtitle, url AS wikipedia_url, episode_count';
+
+function resolveSeason(c, number) {
+    return c.env.DB.prepare(
+        `SELECT ${SEASON_COLUMNS} FROM seasons WHERE show_id = ${SURVIVOR_SHOW_ID} AND number = ?`,
+    )
+        .bind(number)
+        .first();
+}
+
+function publicSeason({ id, subtitle, wikipedia_url, episode_count }) {
+    return { id, subtitle, wikipedia_url, episode_count };
+}
+
 // Cloudflare Access authenticates at the edge and forwards the identity two ways:
 // a plaintext Cf-Access-Authenticated-User-Email header and a signed JWT in
 // Cf-Access-Jwt-Assertion. We use only the signed one. The header is trustworthy
@@ -205,41 +227,48 @@ app.get('/api/board', async (c) => {
         { results: seasons },
         { results: watched },
         { results: counts },
+        { results: picks },
     ] = await Promise.all([
         callerUser(c),
+        c.env.DB.prepare('SELECT id, name FROM users ORDER BY sort_order ASC, name ASC').all(),
         c.env.DB.prepare(
-            'SELECT id, name, currently_watching_season_id FROM users ORDER BY sort_order ASC, name ASC',
+            `SELECT ${SEASON_COLUMNS} FROM seasons
+             WHERE show_id = ${SURVIVOR_SHOW_ID} ORDER BY number ASC`,
         ).all(),
-        c.env.DB.prepare(
-            'SELECT id, subtitle, wikipedia_url, episode_count FROM seasons ORDER BY id ASC',
-        ).all(),
+        // Every show's rows come back; only Survivor row ids match a season below.
         c.env.DB.prepare('SELECT season_id, user_id FROM watched').all(),
         // Post counts let the board show which seasons have any discussion at
         // all — without it there is nothing to click towards.
         c.env.DB.prepare(
             'SELECT season_id, COUNT(*) AS post_count FROM posts GROUP BY season_id',
         ).all(),
+        c.env.DB.prepare(
+            `SELECT currently_watching.user_id AS user_id, seasons.number AS number
+             FROM currently_watching JOIN seasons ON seasons.id = currently_watching.season_id
+             WHERE currently_watching.show_id = ${SURVIVOR_SHOW_ID}`,
+        ).all(),
     ]);
 
-    const watchedBySeason = new Map(seasons.map((s) => [s.id, []]));
+    const watchedBySeason = new Map(seasons.map((s) => [s.row_id, []]));
     for (const row of watched) {
         watchedBySeason.get(row.season_id)?.push(row.user_id);
     }
 
     const postCounts = new Map(counts.map((row) => [row.season_id, row.post_count]));
+    const pickByUser = new Map(picks.map((row) => [row.user_id, row.number]));
 
     const board = seasons.map((s) => ({
-        id: s.id,
-        subtitle: s.subtitle,
-        wikipedia_url: s.wikipedia_url,
-        episode_count: s.episode_count,
-        post_count: postCounts.get(s.id) ?? 0,
-        watched_by: watchedBySeason.get(s.id),
+        ...publicSeason(s),
+        post_count: postCounts.get(s.row_id) ?? 0,
+        watched_by: watchedBySeason.get(s.row_id),
     }));
 
     return c.json({
         me: me ? { id: me.id, name: me.name } : null,
-        users,
+        users: users.map((u) => ({
+            ...u,
+            currently_watching_season_id: pickByUser.get(u.id) ?? null,
+        })),
         seasons: board,
     });
 });
@@ -254,9 +283,7 @@ app.put(
         const { season_id } = c.req.valid('json');
 
         if (season_id !== null) {
-            const season = await c.env.DB.prepare('SELECT id FROM seasons WHERE id = ?')
-                .bind(season_id)
-                .first();
+            const season = await resolveSeason(c, season_id);
             if (!season) return c.json({ error: `Unknown season: ${season_id}` }, 404);
 
             // Invariant: your currently-watching season is always one of your
@@ -265,18 +292,20 @@ app.put(
             // the write are a single statement so a concurrent POST /api/watched
             // can't land between them and leave you "watching" a watched season.
             const { meta } = await c.env.DB.prepare(
-                `UPDATE users SET currently_watching_season_id = ?1
-                 WHERE id = ?2
-                   AND NOT EXISTS (SELECT 1 FROM watched WHERE user_id = ?2 AND season_id = ?1)`,
+                `INSERT INTO currently_watching (user_id, show_id, season_id)
+                 SELECT ?2, show_id, id FROM seasons
+                 WHERE id = ?1
+                   AND NOT EXISTS (SELECT 1 FROM watched WHERE user_id = ?2 AND season_id = ?1)
+                 ON CONFLICT (user_id, show_id) DO UPDATE SET season_id = excluded.season_id`,
             )
-                .bind(season_id, me.id)
+                .bind(season.row_id, me.id)
                 .run();
             if (meta.changes === 0) {
                 return c.json({ error: `You have already watched season ${season_id}` }, 409);
             }
         } else {
             await c.env.DB.prepare(
-                'UPDATE users SET currently_watching_season_id = NULL WHERE id = ?',
+                `DELETE FROM currently_watching WHERE user_id = ? AND show_id = ${SURVIVOR_SHOW_ID}`,
             )
                 .bind(me.id)
                 .run();
@@ -291,21 +320,20 @@ app.post('/api/watched', zValidator('json', watchedCreate, onInvalid), async (c)
     if (!me) return c.json({ error: 'Your account is not on the watch list' }, 403);
 
     const { season_id } = c.req.valid('json');
-    const season = await c.env.DB.prepare('SELECT id FROM seasons WHERE id = ?')
-        .bind(season_id)
-        .first();
+    const season = await resolveSeason(c, season_id);
     if (!season) return c.json({ error: `Unknown season: ${season_id}` }, 404);
 
     const now = new Date().toISOString();
     await c.env.DB.batch([
         c.env.DB.prepare(
             'INSERT OR IGNORE INTO watched (user_id, season_id, created_at) VALUES (?, ?, ?)',
-        ).bind(me.id, season_id, now),
+        ).bind(me.id, season.row_id, now),
         // Finishing a season clears it as your currently-watching season — you
         // can't be mid-watch on something you've marked seen. No-op otherwise.
-        c.env.DB.prepare(
-            'UPDATE users SET currently_watching_season_id = NULL WHERE id = ? AND currently_watching_season_id = ?',
-        ).bind(me.id, season_id),
+        c.env.DB.prepare('DELETE FROM currently_watching WHERE user_id = ? AND season_id = ?').bind(
+            me.id,
+            season.row_id,
+        ),
     ]);
 
     return c.json({ success: true, user_id: me.id, season_id }, 201);
@@ -320,12 +348,16 @@ app.delete('/api/watched/:season_id', async (c) => {
         return c.json({ error: 'season_id must be a positive integer' }, 400);
     }
 
-    // Invariant: a user's currently_watching_season_id is always one of their
+    // Invariant: a user's Survivor currently_watching row is always one of their
     // *unwatched* seasons (the picker only offers those, and POST /api/watched
     // clears it on finish). Unmarking a season leaves it unwatched — a valid
     // currently-watching state — but we deliberately don't restore it here:
     // there's no signal the user resumed it, so we leave their pick untouched.
-    await c.env.DB.prepare('DELETE FROM watched WHERE user_id = ? AND season_id = ?')
+    await c.env.DB.prepare(
+        `DELETE FROM watched
+         WHERE user_id = ?
+           AND season_id = (SELECT id FROM seasons WHERE show_id = ${SURVIVOR_SHOW_ID} AND number = ?)`,
+    )
         .bind(me.id, seasonId)
         .run();
 
@@ -337,7 +369,7 @@ app.delete('/api/watched/:season_id', async (c) => {
 // the next season or correct one.
 //
 // The client names the number it means to create, and the insert only lands if
-// that is still the next one. Picking MAX(id) + 1 server-side would be just as
+// that is still the next one. Picking MAX(number) + 1 server-side would be just as
 // atomic, but two people clicking "Add Season 52" together would then quietly
 // create 52 and 53; this way the second click is a 409 and the board refetches.
 // The Wikipedia link is derived rather than accepted, since every season since
@@ -348,12 +380,19 @@ app.post('/api/seasons', zValidator('json', seasonCreate, onInvalid), async (c) 
 
     const { id, subtitle = '', episode_count } = c.req.valid('json');
     const season = await c.env.DB.prepare(
-        `INSERT INTO seasons (id, subtitle, wikipedia_url, episode_count)
-         SELECT ?1, ?2, ?3, ?4
-         WHERE ?1 = (SELECT COALESCE(MAX(id), 0) + 1 FROM seasons)
-         RETURNING id, subtitle, wikipedia_url, episode_count`,
+        `INSERT INTO seasons (show_id, number, subtitle, url, episode_count, created_at)
+         SELECT shows.id, ?1, ?2, ?3, ?4, ?5 FROM shows
+         WHERE shows.name = 'Survivor'
+           AND ?1 = (SELECT COALESCE(MAX(number), 0) + 1 FROM seasons WHERE show_id = shows.id)
+         RETURNING number AS id, subtitle, url AS wikipedia_url, episode_count`,
     )
-        .bind(id, subtitle, `https://en.wikipedia.org/wiki/Survivor_${id}`, episode_count)
+        .bind(
+            id,
+            subtitle,
+            `https://en.wikipedia.org/wiki/Survivor_${id}`,
+            episode_count,
+            new Date().toISOString(),
+        )
         .first();
     if (!season) {
         return c.json({ error: `Season ${id} is not the next season to add` }, 409);
@@ -386,28 +425,27 @@ app.patch('/api/seasons/:season_id', zValidator('json', seasonEdit, onInvalid), 
         `UPDATE seasons
          SET subtitle = COALESCE(?2, subtitle),
              episode_count = COALESCE(?3, episode_count)
-         WHERE id = ?1
+         WHERE show_id = ${SURVIVOR_SHOW_ID} AND number = ?1
            AND (?3 IS NULL OR NOT EXISTS (
-               SELECT 1 FROM posts            WHERE season_id = ?1 AND episode > ?3
+               SELECT 1 FROM posts            WHERE season_id = seasons.id AND episode > ?3
                UNION ALL
-               SELECT 1 FROM reveals          WHERE season_id = ?1 AND episode > ?3
+               SELECT 1 FROM reveals          WHERE season_id = seasons.id AND episode > ?3
                UNION ALL
-               SELECT 1 FROM watch_sessions   WHERE season_id = ?1 AND episode > ?3
+               SELECT 1 FROM watch_sessions   WHERE season_id = seasons.id AND episode > ?3
                UNION ALL
-               SELECT 1 FROM watch_offsets    WHERE season_id = ?1 AND episode > ?3
+               SELECT 1 FROM watch_offsets    WHERE season_id = seasons.id AND episode > ?3
                UNION ALL
-               SELECT 1 FROM episode_statuses WHERE season_id = ?1 AND episode > ?3
+               SELECT 1 FROM episode_statuses WHERE season_id = seasons.id AND episode > ?3
            ))
-         RETURNING id, subtitle, wikipedia_url, episode_count`,
+         RETURNING number AS id, subtitle, url AS wikipedia_url, episode_count`,
     )
         .bind(seasonId, subtitle, episode_count)
         .first();
     if (season) return c.json(season);
 
-    const exists = await c.env.DB.prepare('SELECT 1 FROM seasons WHERE id = ?')
-        .bind(seasonId)
-        .first();
-    if (!exists) return c.json({ error: `Unknown season: ${seasonId}` }, 404);
+    if (!(await resolveSeason(c, seasonId))) {
+        return c.json({ error: `Unknown season: ${seasonId}` }, 404);
+    }
     return c.json(
         {
             error: `Season ${seasonId} has activity past episode ${episode_count}, so it can't have fewer episodes`,
@@ -434,11 +472,7 @@ async function resolveEpisode(c) {
         return { error: 'episode must be a positive integer', status: 400 };
     }
 
-    const season = await c.env.DB.prepare(
-        'SELECT id, subtitle, wikipedia_url, episode_count FROM seasons WHERE id = ?',
-    )
-        .bind(seasonId)
-        .first();
+    const season = await resolveSeason(c, seasonId);
     if (!season) return { error: `Unknown season: ${seasonId}`, status: 404 };
 
     if (episode <= 0 || episode > season.episode_count) {
@@ -467,13 +501,14 @@ function callerAndEpisode(c) {
 // board is readable (season watched, or that episode revealed) or it is their
 // own column's note — and null otherwise. Callers turn null into the same 404 a
 // missing post gets, so these routes never become an oracle for which post ids
-// are real.
+// are real. Only Survivor's notes: Outwatch never shows another show's, so it
+// does not act on them either.
 async function visiblePost(c, postId, me) {
     if (!me) return null;
 
     const post = await c.env.DB.prepare(
         `SELECT id, season_id, episode, user_id, body, author_email
-         FROM posts WHERE id = ?`,
+         FROM posts WHERE id = ? AND season_id IN ${SURVIVOR_SEASON_IDS}`,
     )
         .bind(postId)
         .first();
@@ -525,7 +560,7 @@ app.post(
         // alike.
         if (replyToId != null) {
             const parent = await visiblePost(c, replyToId, me);
-            if (!parent || parent.season_id !== season.id || parent.episode !== episode) {
+            if (!parent || parent.season_id !== season.row_id || parent.episode !== episode) {
                 // Worded for the one reader who actually sees it: someone whose
                 // reply target was deleted while they were writing, watching
                 // this land in the season view's error banner. The status is
@@ -537,7 +572,7 @@ app.post(
 
         const nowMs = Date.now();
         const now = new Date(nowMs).toISOString();
-        const offsetSecs = await currentOffsetSecs(c, me.id, season.id, episode, nowMs);
+        const offsetSecs = await currentOffsetSecs(c, me.id, season.row_id, episode, nowMs);
 
         // Writing a note is activity: it keeps a live session from going stale
         // mid-episode just because you were typing. The touch is a no-op when
@@ -547,11 +582,11 @@ app.post(
                 `INSERT INTO posts (season_id, episode, user_id, body, created_at, offset_secs, author_email, reply_to_post_id)
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                  RETURNING id, season_id, episode, user_id, body, created_at, offset_secs, reply_to_post_id`,
-            ).bind(season.id, episode, me.id, body, now, offsetSecs, me.email, replyToId),
+            ).bind(season.row_id, episode, me.id, body, now, offsetSecs, me.email, replyToId),
             c.env.DB.prepare(
                 `UPDATE watch_sessions SET last_activity_at = ?
                  WHERE user_id = ? AND season_id = ? AND episode = ?`,
-            ).bind(now, me.id, season.id, episode),
+            ).bind(now, me.id, season.row_id, episode),
         ]);
 
         return c.json({ success: true, post: inserted.results[0] }, 201);
@@ -667,11 +702,7 @@ app.get('/api/seasons/:season_id/discussion', async (c) => {
         return c.json({ error: 'season_id must be a positive integer' }, 400);
     }
 
-    const season = await c.env.DB.prepare(
-        'SELECT id, subtitle, wikipedia_url, episode_count FROM seasons WHERE id = ?',
-    )
-        .bind(seasonId)
-        .first();
+    const season = await resolveSeason(c, seasonId);
     if (!season) return c.json({ error: `Unknown season: ${seasonId}` }, 404);
 
     const me = await callerUser(c);
@@ -691,16 +722,16 @@ app.get('/api/seasons/:season_id/discussion', async (c) => {
                     reply_to_post_id, edited_at
              FROM posts WHERE season_id = ? ORDER BY episode ASC, id ASC`,
         )
-            .bind(seasonId)
+            .bind(season.row_id)
             .all(),
         me
             ? c.env.DB.prepare('SELECT 1 FROM watched WHERE user_id = ? AND season_id = ?')
-                  .bind(me.id, seasonId)
+                  .bind(me.id, season.row_id)
                   .first()
             : null,
         me
             ? c.env.DB.prepare('SELECT episode FROM reveals WHERE user_id = ? AND season_id = ?')
-                  .bind(me.id, seasonId)
+                  .bind(me.id, season.row_id)
                   .all()
             : { results: [] },
         me
@@ -708,7 +739,7 @@ app.get('/api/seasons/:season_id/discussion', async (c) => {
                   `SELECT episode, elapsed_secs, running_since, last_activity_at
                    FROM watch_sessions WHERE user_id = ? AND season_id = ?`,
               )
-                  .bind(me.id, seasonId)
+                  .bind(me.id, season.row_id)
                   .all()
             : { results: [] },
         rosterPeople(c),
@@ -720,21 +751,21 @@ app.get('/api/seasons/:season_id/discussion', async (c) => {
              FROM reactions JOIN posts ON posts.id = reactions.post_id
              WHERE posts.season_id = ?`,
         )
-            .bind(seasonId)
+            .bind(season.row_id)
             .all(),
         // Every user's corrections, not just the caller's: a post is shifted by the
         // correction of whoever wrote it. One query for the season, grouped below.
         c.env.DB.prepare(
             'SELECT user_id, episode, adjust_secs FROM watch_offsets WHERE season_id = ?',
         )
-            .bind(seasonId)
+            .bind(season.row_id)
             .all(),
         // Everyone's, not just the caller's: a status is not content, so it is
         // not behind the spoiler gate. One query for the season, grouped below.
         c.env.DB.prepare(
             'SELECT user_id, episode, status, reason FROM episode_statuses WHERE season_id = ?',
         )
-            .bind(seasonId)
+            .bind(season.row_id)
             .all(),
     ]);
 
@@ -742,7 +773,7 @@ app.get('/api/seasons/:season_id/discussion', async (c) => {
     const revealed = new Set(reveals.map((r) => r.episode));
     const sessionByEpisode = new Map(sessions.map((s) => [s.episode, s]));
 
-    // A watch-timer correction (migration 0008) is applied here rather than stored
+    // A watch-timer correction is applied here rather than stored
     // into posts.offset_secs, which keeps meaning what the writer's timer actually
     // read. Applying on read is what lets a correction be revised, and what makes
     // it reach the notes that revealed the drift in the first place.
@@ -856,7 +887,7 @@ app.get('/api/seasons/:season_id/discussion', async (c) => {
     }
 
     return c.json({
-        season,
+        season: publicSeason(season),
         me: me ? { id: me.id, name: me.name } : null,
         // The server clock, so a device with a skewed one still renders a
         // correct ticking timer.
@@ -878,7 +909,7 @@ app.post('/api/seasons/:season_id/episodes/:episode/reveal', async (c) => {
         `INSERT OR IGNORE INTO reveals (user_id, season_id, episode, created_at)
          VALUES (?, ?, ?, ?)`,
     )
-        .bind(me.id, season.id, episode, new Date().toISOString())
+        .bind(me.id, season.row_id, episode, new Date().toISOString())
         .run();
 
     return c.json({ success: true, season_id: season.id, episode });
@@ -897,7 +928,7 @@ app.delete('/api/seasons/:season_id/episodes/:episode/reveal', async (c) => {
     await c.env.DB.prepare(
         'DELETE FROM reveals WHERE user_id = ? AND season_id = ? AND episode = ?',
     )
-        .bind(me.id, season.id, episode)
+        .bind(me.id, season.row_id, episode)
         .run();
 
     return c.json({ success: true, season_id: season.id, episode });
@@ -930,19 +961,20 @@ app.get('/api/feed', async (c) => {
 
     const [{ results: rows }, people, seenRow] = await Promise.all([
         c.env.DB.prepare(
-            `SELECT posts.season_id   AS season_id,
+            `SELECT seasons.number    AS season_id,
                     posts.episode     AS episode,
                     posts.user_id     AS user_id,
                     posts.author_email AS author_email,
                     posts.created_at  AS created_at,
                     COALESCE(LOWER(posts.author_email), 'user:' || posts.user_id) AS author_key
-             FROM posts
-             WHERE posts.created_at >= ?
+             FROM posts JOIN seasons ON seasons.id = posts.season_id
+             WHERE seasons.show_id = ${SURVIVOR_SHOW_ID}
+               AND posts.created_at >= ?
                AND CASE WHEN posts.author_email IS NULL
                         THEN posts.user_id <> ?
                         ELSE LOWER(posts.author_email) <> ?
                    END
-             ORDER BY author_key ASC, posts.season_id ASC, posts.episode ASC,
+             ORDER BY author_key ASC, seasons.number ASC, posts.episode ASC,
                       posts.created_at ASC`,
         )
             .bind(since, me.id, me.email)
@@ -1115,7 +1147,8 @@ app.patch('/api/posts/:post_id', zValidator('json', postEdit, onInvalid), async 
 
     const { meta } = await c.env.DB.prepare(
         `UPDATE posts SET body = ?, edited_at = ?
-         WHERE id = ? AND user_id = ? AND (author_email = ? OR author_email IS NULL)`,
+         WHERE id = ? AND user_id = ? AND (author_email = ? OR author_email IS NULL)
+           AND season_id IN ${SURVIVOR_SEASON_IDS}`,
     )
         .bind(body, editedAt, postId, me.id, me.email)
         .run();
@@ -1147,7 +1180,8 @@ app.delete('/api/posts/:post_id', async (c) => {
     // detach its replies.
     const owned = await c.env.DB.prepare(
         `SELECT id FROM posts
-         WHERE id = ? AND user_id = ? AND (author_email = ? OR author_email IS NULL)`,
+         WHERE id = ? AND user_id = ? AND (author_email = ? OR author_email IS NULL)
+           AND season_id IN ${SURVIVOR_SEASON_IDS}`,
     )
         .bind(postId, me.id, me.email)
         .first();
@@ -1191,7 +1225,7 @@ app.post(
         const { action } = c.req.valid('json');
         const nowMs = Date.now();
         const now = new Date(nowMs).toISOString();
-        const key = [me.id, season.id, episode];
+        const key = [me.id, season.row_id, episode];
 
         if (action === 'start') {
             // Starting again zeroes the session — it is the "I'm beginning this
@@ -1356,7 +1390,7 @@ app.put(
         const { season, episode } = resolved;
 
         const { adjust_secs } = c.req.valid('json');
-        const key = [me.id, season.id, episode];
+        const key = [me.id, season.row_id, episode];
 
         if (adjust_secs === 0) {
             // "No correction" gets one representation rather than two.
@@ -1405,7 +1439,7 @@ app.put(
         const { season, episode } = resolved;
 
         const { status, reason = null } = c.req.valid('json');
-        const key = [me.id, season.id, episode];
+        const key = [me.id, season.row_id, episode];
 
         if (status === null) {
             // "No status" gets one representation rather than two.
