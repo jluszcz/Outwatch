@@ -235,6 +235,11 @@ scripts/insert-test-post.py --time 2 --unit days --future        # 2 days from n
 
 Run it repeatedly (or in a shell loop) to build up more than one post.
 
+A wrangler upgrade can leave an older local database file beside the current
+one. The script then writes to the newest-created one, which is the one
+`npm run dev` reads, and names the older ones (safe to delete) on stderr.
+`--db <path>` picks a file explicitly.
+
 ### Validation
 
 CI runs these checks on every push and pull request to `main`.

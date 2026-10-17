@@ -59,10 +59,36 @@ def find_db_path():
             "No local D1 database with a Survivor show found under .wrangler/state/. "
             "Run `npx wrangler d1 migrations apply tvtalk --local` first."
         )
-    if len(matches) > 1:
-        joined = "\n".join(f"  {m}" for m in matches)
-        sys.exit(f"Found more than one local D1 database, expected exactly one:\n{joined}")
-    return matches[0]
+    return pick_db(matches)
+
+
+def created_at(path):
+    # Birth time where the platform records one (macOS). Not mtime: opening a
+    # WAL database, even to read it, can checkpoint and bump that, so the stale
+    # file would look fresh the moment anyone inspected it. The ctime fallback
+    # (Linux) is no better — it moves whenever mtime does — so off macOS the
+    # choice is a best guess and --db is the reliable override.
+    st = path.stat()
+    return getattr(st, "st_birthtime", st.st_ctime)
+
+
+def pick_db(matches):
+    # The file is named after an id workerd derives from the database id, and
+    # that derivation is internal to it: a wrangler/miniflare upgrade can change
+    # it, and wrangler then starts a fresh file beside the old one, which is
+    # never touched again. So with several to choose from, the newest-created
+    # is the one `wrangler dev` reads. Said out loud, since it is a guess.
+    if len(matches) == 1:
+        return matches[0]
+    newest = max(matches, key=created_at)
+    stale = "\n".join(f"  {m}" for m in matches if m != newest)
+    print(
+        f"Found {len(matches)} local D1 databases; using the newest:\n  {newest}\n"
+        f"Older ones are likely left over from a wrangler upgrade and safe to delete "
+        f"(or pass --db to choose):\n{stale}",
+        file=sys.stderr,
+    )
+    return newest
 
 
 def build_author_pool(conn):
@@ -127,6 +153,7 @@ def parse_args():
     parser.add_argument("--time", type=int, default=0, help="Relative time magnitude. Default: 0 (now).")
     parser.add_argument("--unit", choices=UNIT_CHOICES, default="minutes", help="Unit for --time. Default: minutes.")
     parser.add_argument("--future", action="store_true", help="Shift into the future instead of the past.")
+    parser.add_argument("--db", type=Path, help="Local D1 SQLite file to write to. Default: found under .wrangler/state/.")
     return parser.parse_args()
 
 
@@ -139,7 +166,10 @@ def main():
     if args.episode < 1:
         sys.exit("--episode must be at least 1.")
 
-    db_path = find_db_path()
+    if args.db and not args.db.is_file():
+        # sqlite3.connect would create an empty database at a mistyped path.
+        sys.exit(f"--db: no such file: {args.db}")
+    db_path = args.db or find_db_path()
     conn = sqlite3.connect(db_path)
     try:
         pool = build_author_pool(conn)

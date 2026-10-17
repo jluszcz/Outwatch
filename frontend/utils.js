@@ -100,6 +100,16 @@ export function clearsCurrentlyWatching(me, seasonId, checked) {
     return checked && me?.currently_watching_season_id === seasonId;
 }
 
+// Where the move dialog's pickers land after one of them changes: picking a
+// season keeps the chosen episode when that season has one by that number and
+// falls back to 1 otherwise. `seasonId` is the Survivor number. Returns the
+// target unchanged when no season by that number is in `seasons`.
+export function moveTarget(seasons, { seasonId, episode }) {
+    const season = seasons.find((s) => s.id === seasonId);
+    if (!season) return { seasonId, episode };
+    return { seasonId, episode: episode >= 1 && episode <= season.episode_count ? episode : 1 };
+}
+
 // The episode numbers of a season, 1..count.
 export function episodeNumbers(count) {
     return Array.from({ length: count || 0 }, (_, i) => i + 1);

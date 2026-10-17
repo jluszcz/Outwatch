@@ -552,6 +552,48 @@ tr.flash td {
     gap: 0.4rem;
 }
 
+/* The dialog itself is a bare frame: the .season-form inside draws the card,
+   so the move dialog reads as the same kind of form as add and edit. The UA's
+   dialog padding and border would otherwise put a second box around it, and a
+   click on that padding would land on the dialog and read as a backdrop click.
+   margin: auto is the UA's own centring for a modal dialog, restated because
+   the `* { margin: 0 }` reset at the top of this file removes it and pins the
+   dialog to the top-left corner. */
+.move-dialog {
+    width: min(26rem, calc(100vw - 2rem));
+    margin: auto;
+    padding: 0;
+    border: none;
+    border-radius: 8px;
+    background: none;
+    color: var(--text);
+}
+
+.move-dialog .season-form {
+    margin: 0;
+    background: var(--surface);
+    box-shadow: 0 4px 16px var(--shadow);
+}
+
+.move-dialog::backdrop {
+    background: rgb(0 0 0 / 0.4);
+}
+
+.move-dialog-title,
+.move-dialog-note {
+    flex-basis: 100%;
+    margin: 0;
+}
+
+.move-dialog-title {
+    font-size: 1rem;
+}
+
+.move-dialog-note {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
 .season-form-error {
     flex-basis: 100%;
     font-size: 0.85rem;

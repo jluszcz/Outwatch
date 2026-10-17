@@ -21,6 +21,7 @@ import { PostList } from './post.js';
 import { prefersReducedMotion } from './board.js';
 import { Icon } from './icons.js';
 import { SeasonForm } from './season-form.js';
+import { MoveNotesDialog } from './move-dialog.js';
 
 const html = htm.bind(h);
 
@@ -238,6 +239,15 @@ export function SeasonView({ seasonId, routeEpisode }) {
             }),
         );
 
+    // The move has already committed by the time this runs, so a plain refresh
+    // is enough: starting a fetch discards any older one still in flight, which
+    // may have read the notes where they were. Not bracketed in begin/endMutation,
+    // which would defer this fetch and resolve before the view updates, closing
+    // the dialog over notes that have not moved yet. A failure here is a refetch
+    // failure, not a failed move, so it goes on the banner rather than in the
+    // dialog, which closes either way.
+    const refreshAfterMove = () => refresh().catch((err) => setError(err.message));
+
     // Not routed through `mutate`, which reports failure on the page banner:
     // SeasonForm shows it inline instead, beside the values that were refused —
     // most often a lowered episode count that would drop an episode someone
@@ -326,6 +336,7 @@ export function SeasonView({ seasonId, routeEpisode }) {
                         html`<${EpisodeBoard}
                             key=${ep.episode}
                             ep=${ep}
+                            seasonId=${seasonId}
                             meId=${data.me?.id ?? null}
                             serverSkewMs=${serverSkewMs}
                             open=${openEpisode === ep.episode}
@@ -341,6 +352,7 @@ export function SeasonView({ seasonId, routeEpisode }) {
                             onOffsetAdjust=${setOffsetAdjust}
                             onSkip=${setTimerSkip}
                             onStatus=${setStatus}
+                            onMoved=${refreshAfterMove}
                         />`,
                 )}
             </div>
@@ -352,6 +364,7 @@ export function SeasonView({ seasonId, routeEpisode }) {
 // wrote, plus your own notes, and nothing else until you choose to open it.
 function EpisodeBoard({
     ep,
+    seasonId,
     meId,
     serverSkewMs,
     open,
@@ -366,6 +379,7 @@ function EpisodeBoard({
     onOffsetAdjust,
     onSkip,
     onStatus,
+    onMoved,
 }) {
     const placed = useMemo(() => orderPosts(ep.posts), [ep.posts]);
 
@@ -391,6 +405,9 @@ function EpisodeBoard({
     // is — one open menu per board, by construction — and local rather than in
     // SkipControl so tapping a different episode's control cannot leave two open.
     const [skipMenuOpen, setSkipMenuOpen] = useState(false);
+    // Whether the move dialog is up. Episode-scoped like the menus above: the
+    // dialog moves this board's notes and no other's.
+    const [moving, setMoving] = useState(false);
     // Owned here rather than inside PostForm so tapping Reply can focus the box.
     const inputRef = useRef(null);
 
@@ -445,6 +462,9 @@ function EpisodeBoard({
     const others = ep.authors.filter((a) => !a.mine).map((a) => a.name);
     const skips = skipLabel(ep.statuses, meId);
     const mySkip = ep.statuses?.find((s) => s.user_id === meId) ?? null;
+    // The caller's own notes are serialized even on a locked board, so this
+    // count is exact whether or not the board is readable.
+    const myCount = ep.posts.filter((p) => p.mine).length;
 
     return html`
         <div
@@ -502,6 +522,20 @@ function EpisodeBoard({
                                         </button>`
                                     }
                                     ${
+                                        // Only when there is something of
+                                        // yours here to move: the route
+                                        // moves the caller's notes alone.
+                                        meId &&
+                                        myCount > 0 &&
+                                        html`<button
+                                            class="skip-btn move-btn"
+                                            onClick=${() => setMoving(true)}
+                                        >
+                                            <${Icon} name="move" />
+                                            <span>Move comments</span>
+                                        </button>`
+                                    }
+                                    ${
                                         meId &&
                                         html`<${SkipControl}
                                             mine=${mySkip}
@@ -546,6 +580,19 @@ function EpisodeBoard({
                             html`<div class="hidden-note">
                                 — ${ep.count - ep.posts.length} notes hidden —
                             </div>`
+                        }
+                        ${
+                            moving &&
+                            html`<${MoveNotesDialog}
+                                seasonId=${seasonId}
+                                episode=${ep.episode}
+                                count=${myCount}
+                                onMoved=${async () => {
+                                    await onMoved();
+                                    setMoving(false);
+                                }}
+                                onCancel=${() => setMoving(false)}
+                            />`
                         }
                         ${
                             meId &&

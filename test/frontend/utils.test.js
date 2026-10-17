@@ -21,6 +21,7 @@ import {
     parseHashRoute,
     shouldScrollToEpisode,
     skipLabel,
+    moveTarget,
 } from '../../frontend/utils.js';
 
 // ---------------------------------------------------------------------------
@@ -685,5 +686,34 @@ describe('skipLabel', () => {
     // A reader who is not on the roster has no id to match, and every name stands.
     it('handles a null caller id', () => {
         expect(skipLabel([{ ...bob, reason: 'recap' }], null)).toBe('Skipped recap: Bob & Carol');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// moveTarget
+// ---------------------------------------------------------------------------
+
+describe('moveTarget', () => {
+    const seasons = [
+        { id: 45, episode_count: 13 },
+        { id: 46, episode_count: 6 },
+    ];
+    it('keeps an episode the season has', () => {
+        expect(moveTarget(seasons, { seasonId: 45, episode: 9 })).toEqual({
+            seasonId: 45,
+            episode: 9,
+        });
+    });
+    it('falls back to episode 1 when the season is too short', () => {
+        expect(moveTarget(seasons, { seasonId: 46, episode: 9 })).toEqual({
+            seasonId: 46,
+            episode: 1,
+        });
+    });
+    it('leaves a target naming an unknown season alone', () => {
+        expect(moveTarget(seasons, { seasonId: 99, episode: 4 })).toEqual({
+            seasonId: 99,
+            episode: 4,
+        });
     });
 });

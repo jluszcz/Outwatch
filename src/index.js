@@ -128,6 +128,11 @@ const postCreate = z.object({
 
 const postEdit = z.object({ body: postBody });
 
+const postMove = z.object({
+    to_season_id: z.number().int().positive({ message: 'to_season_id must be a positive integer' }),
+    to_episode: z.number().int().positive({ message: 'to_episode must be a positive integer' }),
+});
+
 const reactionUpdate = z.object({
     emoji: z
         .string({ message: 'emoji must be a single emoji' })
@@ -590,6 +595,78 @@ app.post(
         ]);
 
         return c.json({ success: true, post: inserted.results[0] }, 201);
+    },
+);
+
+// Moves every note the caller wrote on one episode to another Survivor episode —
+// the repair for notes posted on the wrong one. TV Talk has the same route
+// (../TvTalk), which can also move notes to another show; here both ends are
+// Survivor season numbers. Ownership is the edit/delete rule: the individual
+// author, or the column for a note with no recorded author. Nobody else's notes
+// move.
+//
+// A move keeps a note where it was in time: created_at is untouched, and so is
+// the offset the board displays. That displayed offset is the stored one plus
+// the column's correction for the episode (watch_offsets, applied on read), and
+// the two episodes' corrections need not match — so the difference is folded
+// into the stored offset_secs as the note moves. NULL stays NULL.
+//
+// A reply link may not cross episodes (POST .../posts refuses one, and the read
+// path only ever looks for a parent within the season), so any link the move
+// would stretch across two episodes is detached the way DELETE detaches one: a
+// moved reply to a note left behind, and a left-behind reply to a moved note.
+// A reply to one of the caller's own moved notes moves with it, intact.
+//
+// The target is read before the batch writes, so a shrink of the target season
+// committing in between can leave notes above its new episode_count — the same
+// accepted gap every episode-scoped route has (see PATCH /api/seasons).
+app.post(
+    '/api/seasons/:season_id/episodes/:episode/posts/move',
+    zValidator('json', postMove, onInvalid),
+    async (c) => {
+        const [me, resolved] = await callerAndEpisode(c);
+        if (!me) return c.json({ error: 'Your account is not on the watch list' }, 403);
+        if (resolved.error) return c.json({ error: resolved.error }, resolved.status);
+        const { season, episode } = resolved;
+
+        const { to_season_id: toNumber, to_episode: toEpisode } = c.req.valid('json');
+        if (toNumber === season.id && toEpisode === episode) {
+            return c.json({ error: 'Those notes are already on that episode' }, 400);
+        }
+
+        const target = await resolveSeason(c, toNumber);
+        if (!target) return c.json({ error: `Unknown season: ${toNumber}` }, 404);
+        if (toEpisode > target.episode_count) {
+            return c.json({ error: `Season ${toNumber} has no episode ${toEpisode}` }, 404);
+        }
+
+        // ?1–?4 pick out the notes that move; ?5–?6 are where they go.
+        const mine = `season_id = ?1 AND episode = ?2 AND user_id = ?3
+              AND (author_email = ?4 OR author_email IS NULL)`;
+        const moving = `SELECT id FROM posts WHERE ${mine}`;
+        const correction = (seasonParam, episodeParam) =>
+            `COALESCE((SELECT adjust_secs FROM watch_offsets
+                       WHERE user_id = ?3 AND season_id = ${seasonParam} AND episode = ${episodeParam}), 0)`;
+        const args = [season.row_id, episode, me.id, me.email, target.row_id, toEpisode];
+
+        const [, , moved] = await c.env.DB.batch([
+            c.env.DB.prepare(
+                `UPDATE posts SET reply_to_post_id = NULL
+                 WHERE reply_to_post_id IN (${moving}) AND id NOT IN (${moving})`,
+            ).bind(...args.slice(0, 4)),
+            c.env.DB.prepare(
+                `UPDATE posts SET reply_to_post_id = NULL
+                 WHERE id IN (${moving}) AND reply_to_post_id NOT IN (${moving})`,
+            ).bind(...args.slice(0, 4)),
+            c.env.DB.prepare(
+                `UPDATE posts
+                 SET season_id = ?5, episode = ?6,
+                     offset_secs = offset_secs + ${correction('?1', '?2')} - ${correction('?5', '?6')}
+                 WHERE ${mine}`,
+            ).bind(...args),
+        ]);
+
+        return c.json({ success: true, moved: moved.meta.changes });
     },
 );
 

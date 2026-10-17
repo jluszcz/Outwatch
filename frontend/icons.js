@@ -6,6 +6,7 @@ import {
     Info,
     MessageCircle,
     MoreHorizontal,
+    MoveRight,
     Moon,
     Pencil,
     Reply,
@@ -41,6 +42,7 @@ const ICONS = {
     moon: Moon,
     info: Info,
     skipForward: SkipForward,
+    move: MoveRight,
 };
 
 // Painted with `currentColor` (Lucide's default) so a glyph inherits its
