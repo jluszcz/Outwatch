@@ -227,6 +227,25 @@ of the root `AGENTS.md` so it loads only when working on these files.
   Deliberately width-driven rather than gated on the `640px` breakpoint — the
   controls fit on one line well below it, and a breakpoint would stack them
   where they didn't need stacking.
+- **Move comments** sits between the reveal button and the skip control in that
+  same row, and only renders when the caller has a note on the episode (their
+  own notes are serialized even on a locked board, so the count is exact
+  either way). It borrows `.skip-btn` for its look, since it is the same kind
+  of secondary control as Skip. It opens `MoveNotesDialog` (`move-dialog.js`),
+  the app's only native modal `<dialog>`: `showModal()` supplies the focus
+  trap, Escape, and the backdrop. Escape's `cancel` event and a backdrop click
+  both route through `canCancel()`, so the dialog cannot be dismissed while a
+  move is in flight; a `close` the browser forces without a cancelable
+  `cancel` (Chrome's second Escape) is mirrored into the parent's state, or
+  the dialog is reopened if a move is in flight. A backdrop click counts only
+  when the press and the release both land on the backdrop, so a drag out of
+  the form does not dismiss it. It fetches `/api/board` on open for its season picker,
+  which starts on the episode the notes are already on; Move stays disabled
+  until the target differs, and picking a season keeps the episode number
+  when the season has one (`moveTarget`, `utils.js`). There is no show picker
+  — TV Talk's copy of the dialog has one, and moving notes off Survivor is
+  done there. Not optimistic, like `SeasonForm`: an error shows inline, and
+  success waits for a plain refetch (`refreshAfterMove`) before closing the dialog — deliberately outside `beginMutation`/`endMutation`, which would queue the fetch and close the dialog over notes that had not moved yet; a refetch failure goes on the page banner, since the move itself succeeded.
 - The skip control (`SkipControl` in `discussion.js`) sits between the reveal
   button and the timer in that same row. It is a menu rather than a toggle
   because a skip carries a required reason, so there is no single state to
