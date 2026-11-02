@@ -138,7 +138,7 @@ reason to serve it.
 | Database | Cloudflare D1 (SQLite)                      |
 | Frontend | Preact + htm, bundled with esbuild          |
 | Auth     | Cloudflare Access, JWT verified with `jose` |
-| Testing  | Vitest + `@cloudflare/vitest-pool-workers`  |
+| Testing  | Vitest + `@cloudflare/vitest-plugin`        |
 
 ## Getting Started
 
