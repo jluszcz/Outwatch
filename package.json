@@ -49,8 +49,8 @@
         "@hono/zod-validator": "^0.9.1",
         "hono": "^4.13.14",
         "htm": "^3.1.1",
-        "jose": "^6.2.13",
-        "lucide-preact": "^1.64.0",
+        "jose": "^6.2.14",
+        "lucide-preact": "^1.65.0",
         "preact": "^11.1.0",
         "zod": "^4.6.7"
     }
