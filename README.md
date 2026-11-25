@@ -1,5 +1,12 @@
 # Outwatch
 
+> [!IMPORTANT]
+> **Outwatch is replaced by [TV Talk](https://github.com/jluszcz/TvTalk)** and is
+> no longer maintained. The Outwatch site redirects to TV Talk, which holds all
+> of the same seasons, notes, and watched marks. The redirect is a Worker managed
+> in the Cloudflare dashboard, so do not deploy from this repo: that would
+> overwrite it. The rest of this document describes Outwatch as it last ran.
+
 A shared tracker for which seasons of _Survivor_ a small group has watched. One
 row per season ("Season X: Subtitle", linked to Wikipedia) and one checkbox
 column per person. You can only toggle your own column — identity comes from
